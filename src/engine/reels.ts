@@ -44,12 +44,15 @@ export function buildStrip(roster: readonly RosterEntry[], tierWeights: Record<T
   const counts = tierCounts(roster);
   let scale = 1;
   for (const tier of TIERS) if (counts[tier] > 0) scale = lcm(scale, counts[tier]);
+  for (const tier of TIERS) assertInt(tierWeights[tier], `tierWeights.${tier}`, 0);
   const symbols = roster.map((e) => e.id);
   const weights = roster.map((e) => tierWeights[e.tier] * (scale / counts[e.tier]));
   const cumulative: number[] = [];
   let total = 0;
   for (const w of weights) {
+    assertInt(w, "strip weight", 0);
     total += w;
+    assertInt(total, "strip total", 0);
     cumulative.push(total);
   }
   if (total < 1) throw new RangeError("tierWeights: strip has no weight");

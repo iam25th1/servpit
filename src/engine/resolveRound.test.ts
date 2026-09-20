@@ -210,3 +210,84 @@ describe("resolveRound hostile input", () => {
     expect(() => resolveRound("mode", entrants(16), cfg({ mode: "battleRoyale" as unknown as RoundMode }))).toThrow(/mode/);
   });
 });
+
+describe("resolveRound reads every input exactly once", () => {
+  it("snapshots config so a getter cannot change a value after validation", () => {
+    let topReads = 0;
+    let nestedReads = 0;
+    const c = cfg();
+    Object.defineProperty(c, "rakeBps", {
+      enumerable: true,
+      configurable: true,
+      get: () => (++topReads === 1 ? 0 : 5000),
+    });
+    Object.defineProperty(c.stakeTiers, "low", {
+      enumerable: true,
+      configurable: true,
+      get: () => (++nestedReads === 1 ? 100 : 7),
+    });
+    const r = resolveRound("config-getter", entrants(16), c);
+    expect(topReads).toBe(1);
+    expect(nestedReads).toBe(1);
+    expect(r.rake).toBe(0);
+    expect(r.pot).toBe(1600);
+  });
+
+  it("reads each entrant id once and uses that value everywhere", () => {
+    const e = entrants(16);
+    let reads = 0;
+    e[3] = {
+      get id() {
+        return ++reads === 1 ? "p3" : "__proto__";
+      },
+    };
+    const r = resolveRound("entrant-getter", e, cfg());
+    expect(reads).toBe(1);
+    expect(r.characters[3].entrantId).toBe("p3");
+    expect(JSON.stringify(r)).not.toContain("__proto__");
+  });
+
+  it("normalizes mode output so getters and extra fields never reach the result", () => {
+    let amountReads = 0;
+    let facingReads = 0;
+    const sneaky: RoundMode = {
+      ...DEFAULT_ROUND.mode,
+      simulate: (ctx) => {
+        const out = DEFAULT_ROUND.mode.simulate(ctx);
+        const first = { ...out.log[0], extra: "should be dropped" } as typeof out.log[0];
+        Object.defineProperty(first, "facing", {
+          enumerable: true,
+          configurable: true,
+          get: () => (++facingReads === 1 ? 0 : 9),
+        });
+        out.log[0] = first;
+        return out;
+      },
+      distribute: (prize, placements) =>
+        placements.map((id, i) =>
+          i === 0
+            ? {
+                entrantId: id,
+                get amount() {
+                  return ++amountReads === 1 ? prize : prize * 2;
+                },
+              }
+            : { entrantId: id, amount: 0 },
+        ),
+    };
+    const r = resolveRound("sneaky-mode", entrants(16), cfg({ mode: sneaky }));
+    expect(amountReads).toBe(1);
+    expect(facingReads).toBe(1);
+    expect(r.payouts[0].amount).toBe(r.pot - r.rake);
+    expect(r.log[0].facing).toBe(0);
+    expect("extra" in r.log[0]).toBe(false);
+    expect(Object.getOwnPropertyDescriptor(r.payouts[0], "amount")?.get).toBeUndefined();
+    expect(Object.getOwnPropertyDescriptor(r.log[0], "facing")?.get).toBeUndefined();
+  });
+
+  it("rejects config that is not plain data", () => {
+    const c = cfg();
+    (c.reels as unknown as Record<string, unknown>).hook = () => 1;
+    expect(() => resolveRound("fn-in-config", entrants(16), c)).toThrow(/plain data/);
+  });
+});

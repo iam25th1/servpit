@@ -21,6 +21,12 @@ export const battleRoyale: RoundMode = {
   maxEntrants: 32,
 
   simulate(ctx) {
+    if (!Number.isSafeInteger(ctx.stormDamage) || ctx.stormDamage < 1) {
+      throw new RangeError("stormDamage must be a positive integer or the round may never end");
+    }
+    if (!Number.isSafeInteger(ctx.maxTicks) || ctx.maxTicks < 1) {
+      throw new RangeError("maxTicks must be a positive integer");
+    }
     const log: RoundEvent[] = [];
     const fighters = placeFighters(ctx.rng, ctx.combatants, ctx.arena);
     const occupied = new Set(fighters.map((f) => tileKey(f.x, f.y)));

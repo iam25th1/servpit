@@ -1,13 +1,15 @@
 // The pure round resolver. Inputs are treated as hostile: every field is
-// validated before any money or fight math runs, and everything a mode
-// returns is checked before it is trusted.
+// read exactly once into a plain snapshot, validated before any money or
+// fight math runs, and everything a mode returns is copied field by field
+// before it is trusted. Getters, proxies and extra fields never reach the
+// result.
 
 import type { RoundConfig } from "@/config/round";
 import { ROSTER, TIERS } from "@/config/roster";
 import { buildCombatant, type Combatant } from "./combat";
-import { isFacing, type RoundEvent } from "./events";
+import { isFacing, type EventType, type RoundEvent } from "./events";
 import { assertInt } from "./intmath";
-import type { RoundMode } from "./modes/types";
+import type { FightContext, RoundMode } from "./modes/types";
 import { assertConservation, computePot, computeRake, type Payout } from "./payout";
 import { pull, validateReelConfig, type Pull } from "./reels";
 import { createRng } from "./rng";
@@ -31,7 +33,7 @@ export interface RoundResult {
 const SEED_MAX_LENGTH = 256;
 const ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 const RESERVED_IDS = new Set(["__proto__", "constructor", "prototype"]);
-const EVENT_TYPES = new Set(["spawn", "move", "attack", "hit", "death", "storm", "win"]);
+const EVENT_TYPES: ReadonlySet<string> = new Set<EventType>(["spawn", "move", "attack", "hit", "death", "storm", "win"]);
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null;
 const hasOwn = (o: object, k: string): boolean => Object.prototype.hasOwnProperty.call(o, k);
@@ -42,21 +44,41 @@ function validateSeed(seed: unknown): asserts seed is string {
   }
 }
 
-function validateMode(mode: unknown): asserts mode is RoundMode {
+/** Reads the strategy object's members once and returns a plain wrapper around them. */
+function readMode(mode: unknown): RoundMode {
   if (!isObject(mode)) throw new TypeError("mode must be a strategy object");
-  if (typeof mode.id !== "string" || mode.id.length < 1) throw new TypeError("mode.id must be a non empty string");
-  assertInt(mode.minEntrants as number, "mode.minEntrants", 2, 1024);
-  assertInt(mode.maxEntrants as number, "mode.maxEntrants", 2, 1024);
-  if ((mode.minEntrants as number) > (mode.maxEntrants as number)) throw new RangeError("mode.minEntrants exceeds mode.maxEntrants");
-  if (typeof mode.simulate !== "function" || typeof mode.distribute !== "function") {
+  const id = mode.id;
+  const minEntrants = mode.minEntrants;
+  const maxEntrants = mode.maxEntrants;
+  const simulate = mode.simulate;
+  const distribute = mode.distribute;
+  if (typeof id !== "string" || id.length < 1) throw new TypeError("mode.id must be a non empty string");
+  assertInt(minEntrants as number, "mode.minEntrants", 2, 1024);
+  assertInt(maxEntrants as number, "mode.maxEntrants", 2, 1024);
+  if ((minEntrants as number) > (maxEntrants as number)) throw new RangeError("mode.minEntrants exceeds mode.maxEntrants");
+  if (typeof simulate !== "function" || typeof distribute !== "function") {
     throw new TypeError("mode must implement simulate and distribute");
   }
+  return {
+    id,
+    minEntrants: minEntrants as number,
+    maxEntrants: maxEntrants as number,
+    simulate: (ctx: FightContext) => (simulate as RoundMode["simulate"]).call(mode, ctx),
+    distribute: (prize: number, placements: readonly string[]) => (distribute as RoundMode["distribute"]).call(mode, prize, placements),
+  };
 }
 
-function validateRoundConfig(config: unknown): asserts config is RoundConfig {
+/** Copies config into plain data (every property read once) and validates it. */
+function snapshotConfig(config: unknown): RoundConfig {
   if (!isObject(config)) throw new TypeError("config must be an object");
-  validateMode(config.mode);
-  const c = config as unknown as RoundConfig;
+  const { mode, ...data } = config;
+  let plain: Record<string, unknown>;
+  try {
+    plain = structuredClone(data);
+  } catch {
+    throw new TypeError("config must be plain data: no functions, symbols or exotic objects outside mode");
+  }
+  const c = { ...plain, mode: readMode(mode) } as unknown as RoundConfig;
 
   validateReelConfig(c.reels, ROSTER);
 
@@ -88,76 +110,143 @@ function validateRoundConfig(config: unknown): asserts config is RoundConfig {
     throw new RangeError(`stakeTier must name one of stakeTiers, got ${String(c.stakeTier)}`);
   }
   assertInt(c.rakeBps, "rakeBps", 0, 10_000);
+  return c;
 }
 
-function validateEntrants(entrants: unknown, mode: RoundMode): asserts entrants is readonly Entrant[] {
+/** Reads each entrant id once, validates it, returns the plain id list. */
+function readEntrantIds(entrants: unknown, mode: RoundMode): string[] {
   if (!Array.isArray(entrants)) throw new TypeError("entrants must be an array");
-  if (entrants.length < mode.minEntrants || entrants.length > mode.maxEntrants) {
-    throw new RangeError(`entrants: ${mode.id} needs between ${mode.minEntrants} and ${mode.maxEntrants}, got ${entrants.length}`);
+  const n = entrants.length;
+  if (n < mode.minEntrants || n > mode.maxEntrants) {
+    throw new RangeError(`entrants: ${mode.id} needs between ${mode.minEntrants} and ${mode.maxEntrants}, got ${n}`);
   }
+  const ids: string[] = [];
   const seen = new Set<string>();
-  entrants.forEach((e, i) => {
-    if (!isObject(e) || typeof e.id !== "string" || !ID_PATTERN.test(e.id) || RESERVED_IDS.has(e.id)) {
+  for (let i = 0; i < n; i++) {
+    const e: unknown = entrants[i];
+    if (!isObject(e)) throw new TypeError(`entrant[${i}] must be an object`);
+    const id = e.id;
+    if (typeof id !== "string" || !ID_PATTERN.test(id) || RESERVED_IDS.has(id)) {
       throw new TypeError(`entrant[${i}].id must match ${ID_PATTERN} and not be a reserved name`);
     }
-    if (seen.has(e.id)) throw new RangeError(`entrant ids must be unique, duplicate ${e.id}`);
-    seen.add(e.id);
-  });
+    if (seen.has(id)) throw new RangeError(`entrant ids must be unique, duplicate ${id}`);
+    seen.add(id);
+    ids.push(id);
+  }
+  return ids;
 }
 
-function validateLog(log: unknown, ids: ReadonlySet<string>): asserts log is RoundEvent[] {
+/** Copies the mode's log event by event, reading each field once and dropping anything unknown. */
+function normalizeLog(log: unknown, ids: ReadonlySet<string>, arena: RoundConfig["arena"]): RoundEvent[] {
   if (!Array.isArray(log) || log.length < 1) throw new TypeError("mode returned an empty or non array log");
+  const n = log.length;
+  const out: RoundEvent[] = [];
   let lastT = 0;
-  log.forEach((ev, i) => {
+  for (let i = 0; i < n; i++) {
+    const ev: unknown = log[i];
     if (!isObject(ev)) throw new TypeError(`log[${i}] is not an object`);
-    assertInt(ev.t as number, `log[${i}].t`, lastT);
-    lastT = ev.t as number;
-    if (!EVENT_TYPES.has(ev.type as string)) throw new TypeError(`log[${i}].type ${String(ev.type)} is unknown`);
-    if (typeof ev.actor !== "string" || !ids.has(ev.actor)) throw new TypeError(`log[${i}].actor is not an entrant`);
-    if (ev.target !== null && (typeof ev.target !== "string" || !ids.has(ev.target))) throw new TypeError(`log[${i}].target is not an entrant`);
-    if (!isFacing(ev.facing)) throw new TypeError(`log[${i}].facing must be 0 to 3`);
-    assertInt(ev.value as number, `log[${i}].value`, 0);
-  });
+    const t = ev.t as number;
+    const type = ev.type as EventType;
+    const actor = ev.actor;
+    const target = ev.target;
+    const value = ev.value as number;
+    const facing = ev.facing;
+    const x = ev.x;
+    const y = ev.y;
+    const hp = ev.hp;
+
+    assertInt(t, `log[${i}].t`, lastT);
+    lastT = t;
+    if (!EVENT_TYPES.has(type)) throw new TypeError(`log[${i}].type ${String(type)} is unknown`);
+    if (typeof actor !== "string" || !ids.has(actor)) throw new TypeError(`log[${i}].actor is not an entrant`);
+    if (target !== null && (typeof target !== "string" || !ids.has(target))) throw new TypeError(`log[${i}].target is not an entrant`);
+    if (!isFacing(facing)) throw new TypeError(`log[${i}].facing must be 0 to 3`);
+    assertInt(value, `log[${i}].value`, 0);
+
+    const copy: RoundEvent = { t, type, actor, target, value, facing };
+    if (x !== undefined || y !== undefined) {
+      assertInt(x as number, `log[${i}].x`, 0, arena.width - 1);
+      assertInt(y as number, `log[${i}].y`, 0, arena.height - 1);
+      copy.x = x as number;
+      copy.y = y as number;
+    }
+    if (hp !== undefined) {
+      assertInt(hp as number, `log[${i}].hp`, 0);
+      copy.hp = hp as number;
+    }
+    out.push(copy);
+  }
+  return out;
 }
 
-function validateCoverage(ids: readonly string[], expected: ReadonlySet<string>, what: string): void {
-  if (ids.length !== expected.size || new Set(ids).size !== ids.length || ids.some((id) => !expected.has(id))) {
+function normalizePlacements(placements: unknown, ids: ReadonlySet<string>): string[] {
+  if (!Array.isArray(placements)) throw new TypeError("mode returned non array placements");
+  const out: string[] = [];
+  const n = placements.length;
+  for (let i = 0; i < n; i++) {
+    const id: unknown = placements[i];
+    if (typeof id !== "string") throw new TypeError(`placements[${i}] is not a string`);
+    out.push(id);
+  }
+  assertCoverage(out, ids, "placements");
+  return out;
+}
+
+function normalizePayouts(payouts: unknown, ids: ReadonlySet<string>): Payout[] {
+  if (!Array.isArray(payouts)) throw new TypeError("mode returned non array payouts");
+  const out: Payout[] = [];
+  const n = payouts.length;
+  for (let i = 0; i < n; i++) {
+    const p: unknown = payouts[i];
+    if (!isObject(p)) throw new TypeError(`payouts[${i}] is not an object`);
+    const entrantId = p.entrantId;
+    const amount = p.amount;
+    if (typeof entrantId !== "string") throw new TypeError(`payouts[${i}].entrantId is not a string`);
+    assertInt(amount as number, `payouts[${i}].amount`, 0);
+    out.push({ entrantId, amount: amount as number });
+  }
+  assertCoverage(
+    out.map((p) => p.entrantId),
+    ids,
+    "payouts",
+  );
+  return out;
+}
+
+function assertCoverage(found: readonly string[], expected: ReadonlySet<string>, what: string): void {
+  if (found.length !== expected.size || new Set(found).size !== found.length || found.some((id) => !expected.has(id))) {
     throw new Error(`mode returned ${what} that do not cover every entrant exactly once`);
   }
 }
 
 export function resolveRound(seed: string, entrants: readonly Entrant[], config: RoundConfig): RoundResult {
   validateSeed(seed);
-  validateRoundConfig(config);
-  validateEntrants(entrants, config.mode);
-
-  const ids = new Set(entrants.map((e) => e.id));
+  const c = snapshotConfig(config);
+  const ids = readEntrantIds(entrants, c.mode);
+  const idSet = new Set(ids);
   const rng = createRng(seed);
 
-  const reels = entrants.map(() => pull(rng, ROSTER, config.reels));
-  const characters = entrants.map((e, i) => buildCombatant(e.id, reels[i], config.baseStats[reels[i].characterTier]));
+  const reels = ids.map(() => pull(rng, ROSTER, c.reels));
+  const characters = ids.map((id, i) => buildCombatant(id, reels[i], c.baseStats[reels[i].characterTier]));
 
-  const { log, placements } = config.mode.simulate({
+  const simulated = c.mode.simulate({
     rng,
     combatants: characters,
-    arena: { width: config.arena.width, height: config.arena.height },
-    maxTicks: config.maxTicks,
-    stormDamage: config.stormDamage,
-    damageVariancePct: config.damageVariancePct,
-    minDamage: config.minDamage,
+    arena: { width: c.arena.width, height: c.arena.height },
+    maxTicks: c.maxTicks,
+    stormDamage: c.stormDamage,
+    damageVariancePct: c.damageVariancePct,
+    minDamage: c.minDamage,
   });
-  validateLog(log, ids);
-  validateCoverage(placements, ids, "placements");
+  if (!isObject(simulated)) throw new TypeError("mode.simulate must return an object");
+  const log = normalizeLog(simulated.log, idSet, c.arena);
+  const placements = normalizePlacements(simulated.placements, idSet);
 
-  const pot = computePot(config.stakeTiers[config.stakeTier], entrants.length);
-  const rake = computeRake(pot, config.rakeBps);
+  const pot = computePot(c.stakeTiers[c.stakeTier], ids.length);
+  const rake = computeRake(pot, c.rakeBps);
   const prize = pot - rake;
 
-  const payouts = config.mode.distribute(prize, placements);
-  if (!Array.isArray(payouts) || payouts.some((p) => !isObject(p) || typeof p.entrantId !== "string")) {
-    throw new TypeError("mode returned malformed payouts");
-  }
-  validateCoverage(payouts.map((p) => p.entrantId), ids, "payouts");
+  const payouts = normalizePayouts(c.mode.distribute(prize, placements), idSet);
   assertConservation(payouts, prize);
 
   return { reels, characters, log, placements, payouts, pot, rake };

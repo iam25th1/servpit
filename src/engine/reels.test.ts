@@ -123,3 +123,9 @@ describe("validateReelConfig", () => {
     expect(() => validateReelConfig(b, ROSTER)).toThrow(/statRoll/);
   });
 });
+
+describe("buildStrip overflow guard", () => {
+  it("throws instead of producing unsafe integer weights", () => {
+    expect(() => buildStrip(ROSTER, { common: 2 ** 53, uncommon: 1, rare: 1 })).toThrow(RangeError);
+  });
+});
