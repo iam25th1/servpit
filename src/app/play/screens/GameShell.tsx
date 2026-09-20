@@ -18,6 +18,8 @@ import { ninePatchStyle } from "@/ui/ninePatchGeometry";
 import { uiScale } from "@/ui/tokens";
 import { staggerIn } from "@/ui/transitions";
 import type { FlowState } from "../machine";
+import type { ArenaStanding } from "./arenaHud";
+import { swingMeters } from "./bankrollMeter";
 import { transferRows } from "./transferRows";
 import styles from "./shell.module.css";
 
@@ -67,6 +69,8 @@ export interface GameShellProps {
   run: RunShape | null;
   muted: boolean;
   leverNote: string;
+  /** Live from the replay's timeline, not from the final placement list. */
+  arena: ArenaStanding;
   slotCanvasRef: RefObject<HTMLCanvasElement | null>;
   arenaCanvasRef: RefObject<HTMLCanvasElement | null>;
   onChooseMode: (modeId: string, stake: StakeTierId) => void;
@@ -74,9 +78,6 @@ export interface GameShellProps {
   onPlayAgain: () => void;
   onToggleMute: () => void;
 }
-
-/** Bankroll shown as a fraction of the largest bankroll on screen. */
-const meterValue = (wei: string, peak: bigint): number => (peak === 0n ? 0 : Number((BigInt(wei) * 1000n) / peak) / 1000);
 
 
 export function GameShell(props: GameShellProps) {
@@ -118,7 +119,7 @@ export function GameShell(props: GameShellProps) {
             )}
           </div>
 
-          {state.screen === "arena" ? <ArenaHud run={run} /> : <Lineup plan={plan} error={state.error} />}
+          {state.screen === "arena" ? <ArenaHud run={run} arena={props.arena} /> : <Lineup plan={plan} error={state.error} />}
       </div>
 
       {state.screen === "result" && run && <ResultScreen run={run} onPlayAgain={props.onPlayAgain} />}
@@ -214,7 +215,6 @@ export function GameShell(props: GameShellProps) {
       void staggerIn(rows);
     }, [plan]);
 
-    const peak = plan ? plan.decisions.reduce((max, d) => (BigInt(d.balanceWei) > max ? BigInt(d.balanceWei) : max), 0n) : 0n;
 
     return (
       <NinePatch sprite="bg" data-anim="lineup">
@@ -236,7 +236,6 @@ export function GameShell(props: GameShellProps) {
                     <span className={styles.agentName}>
                       {d.name} <span className={d.enter ? styles.in : styles.agentVerdict}>{d.enter ? `in for ${d.stake}` : "holding"}</span>
                     </span>
-                    <Meter value={meterValue(d.balanceWei, peak)} variant="mini" scale={4} label={`${d.name} bankroll`} />
                   </span>
                   <Dialog scale={2}>{d.reason}</Dialog>
                 </div>
@@ -249,29 +248,35 @@ export function GameShell(props: GameShellProps) {
     );
   }
 
-  function ArenaHud({ run }: { run: RunShape | null }) {
+  function ArenaHud({ run, arena }: { run: RunShape | null; arena: ArenaStanding }) {
     const feedRef = useRef<HTMLUListElement>(null);
     useEffect(() => {
       const items = feedRef.current ? [...feedRef.current.querySelectorAll<HTMLElement>("li")] : [];
       void staggerIn(items);
-    }, [run]);
+    }, [arena.downed.length]);
 
-    const placements = run?.replay.placements ?? [];
+    const entrants = run?.replay.placements.length ?? 0;
     return (
       <NinePatch sprite="bg" data-anim="hud" className={styles.hud}>
         <h2 className={styles.sideHead}>The pit</h2>
         <div className={styles.hudRow}>
           <span>Standing</span>
-          <span className={styles.hudValue}>{placements.length > 0 ? placements.length : "24"}</span>
+          <span className={styles.hudValue}>
+            {arena.standing}
+            {entrants > 0 ? <span className={styles.hudOf}> of {entrants}</span> : null}
+          </span>
         </div>
         <div className={styles.hudRow}>
           <span>Pot</span>
           <span className={styles.hudValue}>{run ? run.potWei : "-"}</span>
         </div>
+        {/* The feed grows as the pit empties. It used to render the final
+            placement list in full the moment the replay started, which is
+            how the count beside it came to disagree with it. */}
         <ul ref={feedRef} className={styles.feed}>
-          {placements.slice(1, 12).map((id, i) => (
+          {arena.downed.slice(0, 12).map((id, i) => (
             <li key={id} className={styles.feedItem}>
-              {placements.length - i - 1}. {id} is out
+              {arena.standing + i + 1}. {id} is out
             </li>
           ))}
         </ul>
@@ -283,7 +288,7 @@ export function GameShell(props: GameShellProps) {
     const rootRef = useRef<HTMLDivElement>(null);
     const coinPathRef = useRef<SVGPathElement>(null);
     const prize = BigInt(run.potWei) - BigInt(run.rakeWei);
-    const peak = run.agents.reduce((max, a) => (BigInt(a.balanceAfterWei) > max ? BigInt(a.balanceAfterWei) : max), 0n);
+    const meters = swingMeters(run.agents.map((a) => ({ agentId: a.agentId, changeWei: BigInt(a.balanceAfterWei) - BigInt(a.balanceBeforeWei) })));
     const winnerAgent = run.agents.find((a) => `agent-${a.agentId}` === run.winner);
 
     useEffect(() => {
@@ -329,7 +334,7 @@ export function GameShell(props: GameShellProps) {
         ))}
 
         <NinePatch sprite="panelAlt" scale={uiScale} className={styles.winner} data-anim="winner-panel">
-          <img className={styles.winnerFace} src={facesetPath(winnerCharacter(run))} alt="" width={38 * 3} height={38 * 3} />
+          <img className={styles.winnerFace} src={facesetPath(winnerCharacter(run))} alt="" width={38 * 2} height={38 * 2} />
           <h2 className={`${styles.winnerName} ${styles.nameplate}`}>{winnerAgent ? winnerAgent.name : run.winner}</h2>
           <p className={styles.winnerPot}>{prize.toString()} taken</p>
           <p className={styles.sideNote}>Reconciliation {run.reconciled ? "held against chain balances" : "FAILED"}</p>
@@ -342,7 +347,7 @@ export function GameShell(props: GameShellProps) {
             return (
               <div key={a.agentId} className={styles.ledgerRow} data-ledger-row="">
                 <span>{a.name}</span>
-                <Meter value={meterValue(a.balanceAfterWei, peak)} variant="mini" scale={5} label={`${a.name} bankroll`} />
+                <Meter value={meters.get(a.agentId) ?? 0} variant="mini" scale={5} label={`${a.name} swing this round`} />
                 <span className={`${styles.delta} ${change > 0n ? styles.up : styles.down}`}>
                   {change >= 0n ? "+" : ""}
                   {change.toString()}
@@ -371,13 +376,15 @@ export function GameShell(props: GameShellProps) {
           </ul>
         </NinePatch>
 
-        <p className={styles.notice}>
-          {run.settles
-            ? `Settled on ${run.network}. Every hash above links to the block explorer.`
-            : "This round ran off chain against the local test chain. The hashes above are local, so there is nothing to look up on a block explorer. Set the wallet keys to settle on Base Sepolia."}
-        </p>
-
-        <div className={`${styles.row} ${styles.notice}`}>
+        {/* The notice and the action share a row. Stacked they cost the
+            composition 74 px it does not have, and the result screen ran off
+            the bottom of the stage and over the top bar. */}
+        <div className={styles.footer}>
+          <p className={styles.notice}>
+            {run.settles
+              ? `Settled on ${run.network}. Every hash above links to the block explorer.`
+              : "This round ran off chain against the local test chain. The hashes above are local, so there is nothing to look up on a block explorer. Set the wallet keys to settle on Base Sepolia."}
+          </p>
           <Button onClick={onPlayAgain}>Another round</Button>
         </div>
       </div>

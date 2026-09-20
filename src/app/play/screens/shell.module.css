@@ -350,6 +350,11 @@
   color: var(--amber);
 }
 
+/* The entrant count the standing figure is counting down from. */
+.hudOf {
+  color: var(--on-surface-dim, var(--bone-dim));
+}
+
 .feed {
   list-style: none;
   margin: 0;
@@ -498,10 +503,19 @@ a.transferHash {
 }
 
 .notice {
-  grid-column: 1 / -1;
+  margin: 0;
   font-size: var(--text-small);
   color: var(--on-surface-dim, var(--bone-dim));
-  line-height: 1.6;
+  line-height: 1.45;
+}
+
+/* The explanation and the way out, on one row. */
+.footer {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-wide);
+  align-items: center;
 }
 
 .coinLayer {
