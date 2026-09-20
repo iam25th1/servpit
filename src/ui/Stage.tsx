@@ -25,17 +25,24 @@ export function Stage({ children }: { children: ReactNode }) {
 
   return (
     <div className={styles.letterbox} data-stage-scale={fit.scale.toFixed(3)} data-stage-fractional={String(fit.fractional)}>
-      <div
-        ref={frameRef}
-        className={styles.stage}
-        style={{
-          width: STAGE_WIDTH,
-          height: STAGE_HEIGHT,
-          transform: `scale(${fit.scale})`,
-          transformOrigin: "center center",
-        }}
-      >
-        {children}
+      {/* The frame carries the scaled size, so the centring is done on the
+          size the stage actually occupies. Scaling about the centre of a box
+          that is still 1280 wide leaves the layout box overflowing, and the
+          grid then aligns the unscaled box: at a 0.9375 fit the stage landed
+          40 px right of centre and its right hand column was clipped. */}
+      <div className={styles.frame} style={{ width: fit.width, height: fit.height }}>
+        <div
+          ref={frameRef}
+          className={styles.stage}
+          style={{
+            width: STAGE_WIDTH,
+            height: STAGE_HEIGHT,
+            transform: `scale(${fit.scale})`,
+            transformOrigin: "top left",
+          }}
+        >
+          {children}
+        </div>
       </div>
     </div>
   );

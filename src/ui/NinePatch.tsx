@@ -6,6 +6,7 @@
 import type { CSSProperties, ElementType, ReactNode } from "react";
 import { uiScale } from "./tokens";
 import { ninePatchStyle } from "./ninePatchGeometry";
+import { inkFor } from "./surfaces";
 import { useUiKit } from "./UiKit";
 import styles from "./ui.module.css";
 
@@ -27,8 +28,13 @@ export interface NinePatchProps {
 export function NinePatch({ sprite = "panel", scale = uiScale, as: Tag = "div", className, style, children, ...rest }: NinePatchProps) {
   const { ui } = useUiKit();
   const patch = ninePatchStyle(ui(sprite), scale);
+  const ink = inkFor(sprite);
   return (
-    <Tag className={`${styles.panel} ${className ?? ""}`.trim()} style={{ ...patch, ...style } as CSSProperties} {...rest}>
+    <Tag
+      className={`${styles.panel} ${className ?? ""}`.trim()}
+      style={{ ...patch, color: ink.color, "--on-surface-dim": ink.dim, ...style } as CSSProperties}
+      {...rest}
+    >
       {children}
     </Tag>
   );
@@ -38,8 +44,13 @@ export function NinePatch({ sprite = "panel", scale = uiScale, as: Tag = "div", 
 export function Frame({ sprite = "bg", scale = uiScale, className, style, children, ...rest }: NinePatchProps) {
   const { ui } = useUiKit();
   const patch = ninePatchStyle(ui(sprite), scale);
+  const ink = inkFor(sprite);
   return (
-    <div className={`${styles.frame} ${className ?? ""}`.trim()} style={{ ...patch, ...style } as CSSProperties} {...rest}>
+    <div
+      className={`${styles.frame} ${className ?? ""}`.trim()}
+      style={{ ...patch, color: ink.color, "--on-surface-dim": ink.dim, ...style } as CSSProperties}
+      {...rest}
+    >
       {children}
     </div>
   );

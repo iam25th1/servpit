@@ -53,7 +53,7 @@
   align-items: center;
   gap: var(--space-base);
   font-size: var(--text-small);
-  color: var(--bone-dim);
+  color: var(--on-surface-dim, var(--bone-dim));
 }
 
 /* Mode select */
@@ -78,8 +78,12 @@
 
 .modeHead {
   /* A cleared band behind the title, so a locked card's name is fully
-     readable whatever the slats do. */
+     readable whatever the slats do. The band is dark while the card is light,
+     so it restores bone: inheriting the panel's ink made the mode names
+     invisible against their own band. */
   background: var(--pit-deep);
+  color: var(--bone);
+  --on-surface-dim: var(--bone-dim);
   padding: var(--space-tight) var(--space-snug);
   margin: calc(var(--space-tight) * -1) calc(var(--space-snug) * -1) 0;
   display: flex;
@@ -101,8 +105,14 @@
 
 .modeBlurb {
   font-size: var(--text-small);
-  color: var(--bone-dim);
+  color: var(--on-surface-dim, var(--bone-dim));
   margin: 0;
+  flex: 1;
+}
+
+/* Holds the card open to the same height the blurb would, so a locked card
+   and a live one have the same silhouette apart from the slats. */
+.shutterFill {
   flex: 1;
 }
 
@@ -137,6 +147,8 @@
 /* Corner badge at a deliberate size. It used to sit at the card's centre and
    overlap the body text. */
 .lockBadge {
+  color: var(--bone);
+  --on-surface-dim: var(--bone-dim);
   position: absolute;
   right: var(--space-snug);
   bottom: var(--space-snug);
@@ -163,11 +175,13 @@
   gap: var(--space-tight);
 }
 
+/* The tab sprite is white art, so the label is ink. Bone on it measured
+   1.87:1 and was the unreadable "Low 100 / High 1000" row. */
 .stakeTab {
   flex: 1;
   font-family: var(--font-ui);
-  font-size: var(--text-small);
-  color: var(--bone);
+  font-size: var(--text-body);
+  color: var(--ink);
   background: transparent;
   cursor: pointer;
   padding: var(--space-snug) var(--space-tight);
@@ -202,6 +216,12 @@
   justify-content: center;
 }
 
+/* Without this a grid item's automatic minimum is its content, so the lineup
+   panel grew to 854 px inside a 720 px stage and ran off the bottom. */
+.playfield > * {
+  min-height: 0;
+}
+
 .cabinet {
   display: flex;
   flex-direction: column;
@@ -223,7 +243,7 @@
 
 .leverNote {
   font-size: var(--text-micro);
-  color: var(--bone-dim);
+  color: var(--on-surface-dim, var(--bone-dim));
   margin: 0;
   min-height: 1.3em;
   text-align: center;
@@ -238,7 +258,7 @@
 
 .sideNote {
   font-size: var(--text-micro);
-  color: var(--bone-dim);
+  color: var(--on-surface-dim, var(--bone-dim));
   margin: 0 0 var(--space-snug);
 }
 
@@ -248,10 +268,11 @@
   justify-content: space-between;
   flex: 1;
   min-height: 0;
-  gap: var(--space-snug);
+  gap: var(--space-tight);
   margin: 0;
   padding: 0;
   list-style: none;
+  overflow: hidden;
 }
 
 .agentRow {
@@ -270,19 +291,28 @@
   display: block;
 }
 
-.emote {
-  position: absolute;
-  top: -8px;
-  right: -8px;
-  image-rendering: pixelated;
-}
+/* The emote bubbles were cut rather than scaled. They are 14x13 sprites whose
+   meaning is carried by two pixel eyes and a two pixel mouth: at twice the
+   pack's density that is a four pixel feature, still not readable at a normal
+   viewing distance, and three times over would have made the bubble larger
+   than the portrait it belongs to. They also said nothing the verdict beside
+   them does not already say in words. UiKit still exposes emote() and the
+   manifest still carries the sprites, for a surface with room for them. */
 
 .agentBody {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--space-tight);
+  gap: var(--space-hair);
+}
+
+/* One line for the name, the verdict and the bankroll. At the raised type
+   scale three stacked lines per agent no longer fit six agents in the stage. */
+.agentLine {
+  display: flex;
+  align-items: center;
+  gap: var(--space-snug);
 }
 
 .agentName {
@@ -293,7 +323,7 @@
 
 .agentVerdict {
   font-size: var(--text-micro);
-  color: var(--bone-dim);
+  color: var(--on-surface-dim, var(--bone-dim));
 }
 
 .in {
@@ -330,11 +360,13 @@
   flex: 1;
   min-height: 0;
   overflow: hidden;
-  font-size: var(--text-micro);
+  /* Off micro: the kill feed was one of the two places the old scale was
+     least readable. */
+  font-size: var(--text-small);
 }
 
 .feedItem {
-  color: var(--bone-dim);
+  color: var(--on-surface-dim, var(--bone-dim));
 }
 
 /* Result */
@@ -358,12 +390,16 @@
   text-align: center;
 }
 
-/* The winner panel art is light sage, so its supporting line is dark rather
-   than the dim bone used on the dark surfaces. */
-.winner .sideNote,
-.onLight {
-  color: var(--pit-deep);
-  opacity: 0.85;
+/* Amber is lamplight and only reads on a dark surface, so the winner's name
+   gets a cleared nameplate rather than sitting straight on the sage panel,
+   where it measured 1.7:1. */
+.nameplate {
+  background: var(--pit-deep);
+  color: var(--amber);
+  --on-surface-dim: var(--bone-dim);
+  padding: var(--space-tight) var(--space-base);
+  align-self: stretch;
+  text-align: center;
 }
 
 .winnerFace {
@@ -464,7 +500,7 @@ a.transferHash {
 .notice {
   grid-column: 1 / -1;
   font-size: var(--text-small);
-  color: var(--bone-dim);
+  color: var(--on-surface-dim, var(--bone-dim));
   line-height: 1.6;
 }
 
@@ -483,7 +519,7 @@ a.transferHash {
 }
 
 .dim {
-  color: var(--bone-dim);
+  color: var(--on-surface-dim, var(--bone-dim));
 }
 
 .row {

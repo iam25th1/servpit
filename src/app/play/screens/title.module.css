@@ -78,7 +78,7 @@
 .tagline {
   font-family: var(--font-ui);
   font-size: var(--text-small);
-  color: var(--bone-dim);
+  color: var(--on-surface-dim, var(--bone-dim));
   margin: 0;
   max-width: 44ch;
   line-height: 1.6;

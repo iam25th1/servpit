@@ -78,11 +78,10 @@ export interface GameShellProps {
 /** Bankroll shown as a fraction of the largest bankroll on screen. */
 const meterValue = (wei: string, peak: bigint): number => (peak === 0n ? 0 : Number((BigInt(wei) * 1000n) / peak) / 1000);
 
-const emoteFor = (d: PlanDecision): string => (d.enter ? "committed" : d.source === "heuristic" ? "thinking" : "holding");
 
 export function GameShell(props: GameShellProps) {
   const { state, plan, run } = props;
-  const { ui, emote, modeIcon, facesetPath } = useUiKit();
+  const { ui, modeIcon, facesetPath } = useUiKit();
   const showStage = state.screen === "lobby" || state.screen === "slot" || state.screen === "spinning" || state.screen === "arena";
 
   return (
@@ -162,7 +161,11 @@ export function GameShell(props: GameShellProps) {
                   <img className={styles.modeIcon} src={icon.path} alt="" width={icon.width * 2} height={icon.height * 2} />
                   <h2 className={styles.modeName}>{mode.name}</h2>
                 </div>
-                <p className={styles.modeBlurb}>{mode.blurb}</p>
+                {/* A shuttered card does not show its body. The slats drew
+                    straight through the blurb, which read as broken text
+                    rather than as a closed card, and no colour clears the
+                    threshold against alternating slat and panel. */}
+                {mode.locked ? <div className={styles.shutterFill} /> : <p className={styles.modeBlurb}>{mode.blurb}</p>}
 
                 {mode.locked ? (
                   <div className={styles.lockBadge}>
@@ -223,18 +226,18 @@ export function GameShell(props: GameShellProps) {
         </p>
         <ul ref={listRef} className={styles.lineup}>
           {plan?.decisions.map((d) => {
-            const bubble = emote(emoteFor(d));
             return (
               <li key={d.agentId} className={styles.agentRow}>
                 <div className={styles.agentPortrait}>
                   <img className={styles.faceset} src={facesetPath(characterFor(d.agentId))} alt="" width={38} height={38} />
-                  <img className={styles.emote} src={bubble.path} alt="" width={bubble.width} height={bubble.height} />
                 </div>
                 <div className={styles.agentBody}>
-                  <span className={styles.agentName}>
-                    {d.name} <span className={d.enter ? styles.in : styles.agentVerdict}>{d.enter ? `in for ${d.stake}` : "holding"}</span>
+                  <span className={styles.agentLine}>
+                    <span className={styles.agentName}>
+                      {d.name} <span className={d.enter ? styles.in : styles.agentVerdict}>{d.enter ? `in for ${d.stake}` : "holding"}</span>
+                    </span>
+                    <Meter value={meterValue(d.balanceWei, peak)} variant="mini" scale={4} label={`${d.name} bankroll`} />
                   </span>
-                  <Meter value={meterValue(d.balanceWei, peak)} variant="mini" scale={4} label={`${d.name} bankroll`} />
                   <Dialog scale={2}>{d.reason}</Dialog>
                 </div>
               </li>
@@ -327,9 +330,9 @@ export function GameShell(props: GameShellProps) {
 
         <NinePatch sprite="panelAlt" scale={uiScale} className={styles.winner} data-anim="winner-panel">
           <img className={styles.winnerFace} src={facesetPath(winnerCharacter(run))} alt="" width={38 * 3} height={38 * 3} />
-          <h2 className={styles.winnerName}>{winnerAgent ? winnerAgent.name : run.winner}</h2>
+          <h2 className={`${styles.winnerName} ${styles.nameplate}`}>{winnerAgent ? winnerAgent.name : run.winner}</h2>
           <p className={styles.winnerPot}>{prize.toString()} taken</p>
-          <p className={`${styles.sideNote} ${styles.onLight}`}>Reconciliation {run.reconciled ? "held against chain balances" : "FAILED"}</p>
+          <p className={styles.sideNote}>Reconciliation {run.reconciled ? "held against chain balances" : "FAILED"}</p>
         </NinePatch>
 
         <NinePatch sprite="bg" className={styles.ledger} data-anim="ledger">

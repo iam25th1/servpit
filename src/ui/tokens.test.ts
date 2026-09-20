@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync, readdirSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { palette, space, timing, tokensToCss, type, uiScale } from "./tokens";
 
 const hue = (hex: string): number => {
@@ -240,5 +240,22 @@ describe("no gradients anywhere in the stylesheets", () => {
     };
     walk(join(process.cwd(), "src"));
     expect(offenders).toEqual([]);
+  });
+});
+
+describe("globals.css and the token module", () => {
+  const globals = readFileSync(resolve(__dirname, "../app/globals.css"), "utf8");
+  const root = globals.slice(globals.indexOf(":root {"), globals.indexOf("}", globals.indexOf(":root {")));
+
+  it("declares every token the module produces, with the same value", () => {
+    // These two had silently drifted: globals.css is what the browser reads,
+    // tokensToCss was called by nothing but its own test, so raising a size or
+    // a colour in the module changed nothing on screen.
+    const missing = tokensToCss()
+      .split(";")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .filter((decl) => !root.includes(decl.endsWith(";") ? decl : `${decl};`));
+    expect(missing).toEqual([]);
   });
 });
