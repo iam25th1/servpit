@@ -251,8 +251,12 @@ export function GameShell(props: GameShellProps) {
   function ArenaHud({ run, arena }: { run: RunShape | null; arena: ArenaStanding }) {
     const feedRef = useRef<HTMLUListElement>(null);
     useEffect(() => {
-      const items = feedRef.current ? [...feedRef.current.querySelectorAll<HTMLElement>("li")] : [];
-      void staggerIn(items);
+      // Only the line that just arrived. Staggering the whole list on every
+      // death set every item back to zero opacity and restarted the run, so
+      // with ten entrants out the feed showed three: the rest were mid fade
+      // when the next death restarted them.
+      const first = feedRef.current?.querySelector<HTMLElement>("li");
+      if (first) void staggerIn([first]);
     }, [arena.downed.length]);
 
     const entrants = run?.replay.placements.length ?? 0;
