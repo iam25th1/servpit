@@ -1,0 +1,21 @@
+/* The wall is #5f7160, so at this opacity its lightest pixel composites to
+   #3a4438 over the page. That is the surface the contrast test checks text
+   against. At 0.16 the planks were not visible at all. */
+.wall {
+  position: absolute;
+  inset: 0;
+  image-rendering: pixelated;
+  opacity: 0.5;
+  z-index: 0;
+}
+
+.vignette {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  /* Flat inset shadow, not a gradient fill: darkens the edges so the centre
+     holds without painting a ramp. A fixed inset rather than a viewport unit,
+     because the stage is a fixed pixel box. */
+  box-shadow: inset 0 0 0 48px var(--pit-deep);
+  pointer-events: none;
+}

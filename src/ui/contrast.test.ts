@@ -61,6 +61,12 @@ const PAIRS = [
   { what: "title attract line", text: palette.amber, surface: TITLE_FIELD },
   { what: "anything on the wall outside the panel", text: palette.bone, surface: TITLE_WALL },
 
+  // Boot, whose panel is the same wood as a mode card.
+  { what: "boot wordmark on its nameplate", text: palette.amber, surface: palette.pitDeep, large: true },
+  { what: "boot progress count on the wood panel", text: palette.inkDim, surface: lightSurfaces.panel },
+  { what: "boot current file on the wood panel", text: palette.inkDim, surface: lightSurfaces.panel },
+  { what: "boot error on the wood panel", text: palette.ink, surface: lightSurfaces.panel },
+
   // On the page itself.
   { what: "offchain notice", text: palette.boneDim, surface: palette.pit },
   { what: "lever note", text: palette.boneDim, surface: palette.pit },
@@ -119,6 +125,6 @@ describe("every text style against the surface it lands on", () => {
   });
 
   it("covers every text style, so a new one cannot be added unchecked", () => {
-    expect(PAIRS.length).toBeGreaterThanOrEqual(34);
+    expect(PAIRS.length).toBeGreaterThanOrEqual(38);
   });
 });
