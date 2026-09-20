@@ -10,13 +10,13 @@
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 8px 20px;
-  border-bottom: 1px solid var(--ash);
+  border-bottom: 1px solid var(--edge);
   padding-bottom: 10px;
   margin-bottom: 24px;
 }
 
 .wordmark {
-  font-family: var(--display);
+  font-family: var(--font-ui);
   font-size: 1.9rem;
   font-weight: 700;
   letter-spacing: -0.02em;
@@ -27,14 +27,14 @@
   display: flex;
   align-items: center;
   gap: 16px;
-  color: var(--sage);
+  color: var(--bone-dim);
   font-size: 0.9rem;
 }
 
 .ghost {
   background: transparent;
   color: var(--bone);
-  border: 1px solid var(--ash);
+  border: 1px solid var(--edge);
   padding: 5px 12px;
   font: inherit;
   font-size: 0.85rem;
@@ -54,7 +54,7 @@
 }
 
 .lede {
-  font-family: var(--display);
+  font-family: var(--font-ui);
   font-size: 1.5rem;
   line-height: 1.35;
   max-width: 24ch;
@@ -62,7 +62,7 @@
 }
 
 .sub {
-  color: var(--ash-light);
+  color: var(--bone-dim);
   max-width: 62ch;
   margin: 0 0 24px;
 }
@@ -78,8 +78,8 @@
 }
 
 .primary:disabled {
-  background: var(--ash);
-  color: var(--ash-light);
+  background: var(--edge);
+  color: var(--bone-dim);
   cursor: default;
 }
 
@@ -90,7 +90,7 @@
 }
 
 .card {
-  border: 1px solid var(--ash);
+  border: 1px solid var(--edge);
   background: var(--pit);
   padding: 14px 16px;
   text-align: left;
@@ -111,12 +111,12 @@
 
 .cardLocked {
   border-style: dashed;
-  color: var(--ash-light);
+  color: var(--bone-dim);
   cursor: not-allowed;
 }
 
 .cardName {
-  font-family: var(--display);
+  font-family: var(--font-ui);
   font-size: 1.2rem;
   margin: 0;
 }
@@ -128,10 +128,10 @@
 
 .roadmap {
   align-self: flex-start;
-  border: 1px solid var(--ash);
+  border: 1px solid var(--edge);
   padding: 1px 7px;
   font-size: 0.72rem;
-  color: var(--sage);
+  color: var(--bone-dim);
 }
 
 .stakes {
@@ -144,7 +144,7 @@
   flex: 1;
   background: transparent;
   color: var(--bone);
-  border: 1px solid var(--ash);
+  border: 1px solid var(--edge);
   padding: 6px 8px;
   font: inherit;
   font-size: 0.85rem;
@@ -190,14 +190,14 @@
 }
 
 .lever:disabled {
-  background: var(--ash);
-  color: var(--ash-light);
+  background: var(--edge);
+  color: var(--bone-dim);
   cursor: default;
 }
 
 .leverNote {
   margin: 6px 0 0;
-  color: var(--ash-light);
+  color: var(--bone-dim);
   font-size: 0.82rem;
   min-height: 1.2em;
 }
@@ -208,13 +208,13 @@
 }
 
 .sideHead {
-  font-family: var(--display);
+  font-family: var(--font-ui);
   font-size: 1.25rem;
   margin: 0 0 2px;
 }
 
 .sideNote {
-  color: var(--ash-light);
+  color: var(--bone-dim);
   font-size: 0.85rem;
   margin: 0 0 12px;
 }
@@ -229,7 +229,7 @@
 }
 
 .agent {
-  border: 1px solid var(--ash);
+  border: 1px solid var(--edge);
   padding: 8px 10px;
 }
 
@@ -241,7 +241,7 @@
 }
 
 .agentName {
-  font-family: var(--display);
+  font-family: var(--font-ui);
   font-size: 1rem;
 }
 
@@ -251,7 +251,7 @@
 }
 
 .out {
-  color: var(--ash-light);
+  color: var(--bone-dim);
   font-size: 0.85rem;
 }
 
@@ -264,7 +264,7 @@
 .source {
   margin: 4px 0 0;
   font-size: 0.75rem;
-  color: var(--ash-light);
+  color: var(--bone-dim);
 }
 
 .result {
@@ -279,13 +279,13 @@
 }
 
 .statLabel {
-  color: var(--sage);
+  color: var(--bone-dim);
   font-size: 0.82rem;
   margin: 0 0 2px;
 }
 
 .statValue {
-  font-family: var(--display);
+  font-family: var(--font-ui);
   font-size: 1.6rem;
   margin: 0;
 }
@@ -301,23 +301,23 @@
 .ledger td {
   text-align: left;
   padding: 5px 12px 5px 0;
-  border-bottom: 1px solid var(--ash);
+  border-bottom: 1px solid var(--edge);
 }
 
 .ledger th {
-  color: var(--sage);
+  color: var(--bone-dim);
   font-weight: 400;
 }
 
 .ledger a {
-  color: var(--sage);
+  color: var(--bone-dim);
 }
 
 .chain {
   margin-top: 14px;
   padding: 9px 12px;
-  border: 1px solid var(--ash);
-  color: var(--ash-light);
+  border: 1px solid var(--edge);
+  color: var(--bone-dim);
   font-size: 0.85rem;
 }
 
