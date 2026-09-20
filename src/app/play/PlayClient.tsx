@@ -74,6 +74,8 @@ interface RunResponse {
   roundId: string;
   network: string;
   backend: string;
+  /** True when the chain settles for real, so a hash is worth linking. */
+  settles: boolean;
   winner: string;
   potWei: string;
   rakeWei: string;

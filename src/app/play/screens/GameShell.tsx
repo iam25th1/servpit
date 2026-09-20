@@ -18,6 +18,7 @@ import { ninePatchStyle } from "@/ui/ninePatchGeometry";
 import { uiScale } from "@/ui/tokens";
 import { staggerIn } from "@/ui/transitions";
 import type { FlowState } from "../machine";
+import { transferRows } from "./transferRows";
 import styles from "./shell.module.css";
 
 interface PlanDecision {
@@ -52,6 +53,8 @@ interface RunShape {
   rakeWei: string;
   network: string;
   backend: string;
+  /** True when the chain settles for real, so a hash is worth linking. */
+  settles: boolean;
   reconciled: boolean;
   agents: RunAgent[];
   transfers: Array<{ kind: string; agentId: string; amountWei: string; txHash: string | null; link: string | null }>;
@@ -338,10 +341,29 @@ export function GameShell(props: GameShellProps) {
           })}
         </NinePatch>
 
+        <NinePatch sprite="bg" className={styles.transfers} data-anim="transfers">
+          <h2 className={styles.sideHead}>Transfers</h2>
+          <ul className={styles.transferList}>
+            {transferRows(run.transfers).map((row) => (
+              <li key={`${row.kind}-${row.label}`} className={styles.transferRow} data-transfer-row="">
+                <span className={styles.transferLabel}>{row.label}</span>
+                <span className={styles.transferAmount}>{row.amountWei}</span>
+                {row.explorable ? (
+                  <a className={styles.transferHash} href={row.link ?? undefined} target="_blank" rel="noreferrer">
+                    {row.hashShort}
+                  </a>
+                ) : (
+                  <span className={`${styles.transferHash} ${styles.dim}`}>{row.hashShort}</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </NinePatch>
+
         <p className={styles.notice}>
-          {run.backend === "viem" || run.backend === "cdp"
-            ? `Settled on ${run.network}. The transaction hashes are the record.`
-            : "This round ran off chain against the local test chain, so nothing here is on a block explorer. Set the wallet keys to settle on Base Sepolia."}
+          {run.settles
+            ? `Settled on ${run.network}. Every hash above links to the block explorer.`
+            : "This round ran off chain against the local test chain. The hashes above are local, so there is nothing to look up on a block explorer. Set the wallet keys to settle on Base Sepolia."}
         </p>
 
         <div className={`${styles.row} ${styles.notice}`}>
