@@ -9,12 +9,13 @@
 // So a hit lands when the walk that produced it completes, and the first
 // window is not dead time. durationMs = lastTick * tickMs.
 
+import { TICK_MS } from "@/config/playback";
 import type { Tier } from "@/config/roster";
 import type { Combatant } from "@/engine/combat";
 import type { Facing, RoundEvent } from "@/engine/events";
 
 export interface TimelineOptions {
-  /** Milliseconds per tick. Default 200 (a 37 tick round plays in about 7.5 s). */
+  /** Milliseconds per tick. Defaults to TICK_MS, which is where it is set. */
   tickMs?: number;
 }
 
@@ -81,7 +82,7 @@ export class Timeline {
   private applied = 0;
 
   constructor(round: { log: readonly RoundEvent[]; characters: readonly Combatant[] }, options: TimelineOptions = {}) {
-    const tickMs = options.tickMs ?? 200;
+    const tickMs = options.tickMs ?? TICK_MS;
     if (!Number.isFinite(tickMs) || tickMs <= 0) throw new RangeError(`tickMs must be a positive number, got ${tickMs}`);
     this.tickMs = tickMs;
     this.characters = round.characters;
