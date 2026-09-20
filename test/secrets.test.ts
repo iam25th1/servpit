@@ -77,7 +77,9 @@ describe("secrets never reach the client", () => {
     for (const rel of listed) {
       if (!/\.(ts|tsx|json|md|yml|yaml|env|txt)$/.test(rel)) continue;
       if (rel === "test/secrets.test.ts" || rel === "package-lock.json") continue;
-      const body = readFileSync(join(root, rel), "utf8");
+      const path = join(root, rel);
+      if (!existsSync(path)) continue;
+      const body = readFileSync(path, "utf8");
       if (/\b0x[0-9a-fA-F]{64}\b/.test(body)) offenders.push(`${rel}: 64 hex literal`);
       if (/\bsk-[A-Za-z0-9_-]{20,}\b/.test(body)) offenders.push(`${rel}: api key literal`);
     }

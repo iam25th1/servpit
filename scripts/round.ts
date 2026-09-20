@@ -35,7 +35,7 @@ async function main(): Promise<void> {
   const run = await runRound(flow, plan);
   console.log(`\nwinner ${run.round.placements[0]}, pot ${run.round.pot}, rake ${run.round.rake}`);
   for (const t of [...run.entries, ...(run.payout ? [run.payout] : [])]) {
-    const link = ctx.chain.kind === "cdp" && t.txHash ? ` ${basescanTx(ctx.chain.network, t.txHash)}` : "";
+    const link = ctx.chain.settles && t.txHash ? ` ${basescanTx(ctx.chain.network, t.txHash)}` : "";
     console.log(`  ${t.kind.padEnd(7)} ${t.agentId.padEnd(7)} ${t.amountWei} wei  ${t.applied ? "applied" : "already settled"}  ${t.txHash ?? "no hash"}${link}`);
   }
   console.log(`\nreconciliation ${run.reconciliation.ok ? "held against chain balances" : "FAILED"}`);

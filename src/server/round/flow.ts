@@ -129,7 +129,7 @@ export async function runRound(ctx: FlowContext, plan: RoundPlan): Promise<Round
   const entries: TransferOutcome[] = [];
   for (const entrant of plan.entering) {
     const wallet = ctx.wallets.agents.get(entrant.agentId)!;
-    entries.push(await collectEntry({ ledger: ctx.ledger, bankroll: ctx.bankroll, network: ctx.chain.network, chainKind: ctx.chain.kind }, plan.roundId, entrant.agentId, wallet, pot, entrant.stakeWei));
+    entries.push(await collectEntry({ ledger: ctx.ledger, bankroll: ctx.bankroll, network: ctx.chain.network, settles: ctx.chain.settles }, plan.roundId, entrant.agentId, wallet, pot, entrant.stakeWei));
   }
 
   const round = resolveRound(plan.seed, plan.entrants, DEFAULT_ROUND);
@@ -141,7 +141,7 @@ export async function runRound(ctx: FlowContext, plan: RoundPlan): Promise<Round
   let payout: TransferOutcome | null = null;
   if (winnerAgent) {
     const wallet = ctx.wallets.agents.get(winnerAgent.agentId)!;
-    payout = await payWinner({ ledger: ctx.ledger, bankroll: ctx.bankroll, network: ctx.chain.network, chainKind: ctx.chain.kind }, plan.roundId, winnerAgent.agentId, pot, wallet, prizeWei);
+    payout = await payWinner({ ledger: ctx.ledger, bankroll: ctx.bankroll, network: ctx.chain.network, settles: ctx.chain.settles }, plan.roundId, winnerAgent.agentId, pot, wallet, prizeWei);
   } else {
     log.info("house bot won, prize retained in the pot", { roundId: plan.roundId, winner: winnerEntrantId, prizeWei: prizeWei.toString() });
   }

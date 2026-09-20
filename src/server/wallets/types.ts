@@ -10,7 +10,6 @@ export interface Call {
 }
 
 export interface TxReceipt {
-  userOpHash: string;
   txHash: string;
   status: "complete";
 }
@@ -20,13 +19,19 @@ export interface Wallet {
   readonly address: string;
   /** Current on chain balance in wei. */
   getBalance(): Promise<bigint>;
-  /** Sends all calls as one user operation. The backend must dedupe on idempotencyKey. */
+  /**
+   * Sends the calls and resolves once they are on chain. A smart wallet could
+   * batch them; an externally owned account sends them in order. The receipt
+   * describes the last one.
+   */
   send(calls: readonly Call[], idempotencyKey: string): Promise<TxReceipt>;
 }
 
 export interface Chain {
-  readonly kind: "fake" | "cdp";
+  readonly kind: "fake" | "viem";
   readonly network: string;
+  /** True when this is a real chain, so transaction hashes are worth linking. */
+  readonly settles: boolean;
   /** Opens the wallet for an id. With an address, loads that wallet; without, creates one. */
   open(id: string, address?: string): Promise<Wallet>;
 }

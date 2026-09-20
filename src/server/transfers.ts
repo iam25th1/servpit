@@ -13,7 +13,8 @@ export interface TransferContext {
   ledger: TransferLedger;
   bankroll: BankrollCache;
   network: string;
-  chainKind: "fake" | "cdp";
+  /** True when the chain settles for real, so a hash is worth linking. */
+  settles: boolean;
 }
 
 export interface TransferOutcome extends TransferRecord {
@@ -26,7 +27,7 @@ export interface TransferOutcome extends TransferRecord {
 function finish(ctx: TransferContext, record: TransferRecord, from: Wallet, to: Wallet, applied: boolean): TransferOutcome {
   ctx.bankroll.invalidate(from.address);
   ctx.bankroll.invalidate(to.address);
-  return { ...record, link: ctx.chainKind === "cdp" && record.txHash ? basescanTx(ctx.network, record.txHash) : null, applied };
+  return { ...record, link: ctx.settles && record.txHash ? basescanTx(ctx.network, record.txHash) : null, applied };
 }
 
 /** Agent wallet to pot wallet, amount = the round stake. */

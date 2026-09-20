@@ -38,7 +38,9 @@ describe("key material never reaches the repository", () => {
     for (const rel of listed) {
       if (!/\.(ts|tsx|json|md|yml|yaml|env|txt|mjs|js)$/.test(rel)) continue;
       if (rel === "test/env-safety.test.ts" || rel === "test/secrets.test.ts" || rel === "package-lock.json") continue;
-      const body = readFileSync(join(root, rel), "utf8");
+      const path = join(root, rel);
+      if (!existsSync(path)) continue;
+      const body = readFileSync(path, "utf8");
       if (/\b0x[0-9a-fA-F]{64}\b/.test(body)) offenders.push(`${rel}: 32 byte hex literal`);
     }
     expect(offenders).toEqual([]);

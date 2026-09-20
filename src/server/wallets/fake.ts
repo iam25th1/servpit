@@ -14,6 +14,8 @@ export interface FakeChainOptions {
 export class FakeChain implements Chain {
   readonly kind = "fake" as const;
   readonly network = "fake";
+  /** Not a real chain, so nothing here is worth linking to an explorer. */
+  readonly settles = false;
   applied = 0;
   balanceReads = 0;
   private readonly balances = new Map<string, bigint>();
@@ -46,7 +48,7 @@ export class FakeChain implements Chain {
         for (const c of calls) this.balances.set(c.to, (this.balances.get(c.to) ?? 0n) + c.value);
         this.applied++;
         const digest = createHash("sha256").update(`fake-tx/${idempotencyKey}`).digest("hex");
-        const receipt: TxReceipt = { userOpHash: `0x${digest.slice(0, 64)}`, txHash: `0x${digest.slice(0, 64)}`, status: "complete" };
+        const receipt: TxReceipt = { txHash: `0x${digest.slice(0, 64)}`, status: "complete" };
         this.receipts.set(idempotencyKey, receipt);
         return receipt;
       },

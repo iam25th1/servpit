@@ -10,7 +10,7 @@ import { RoundStore } from "./round/store";
 import type { FlowContext } from "./round/flow";
 import { readEnv, type ServerEnv } from "./env";
 import { log } from "./log";
-import { CdpChain } from "./wallets/cdp";
+import { ViemChain } from "./wallets/viem";
 import { FakeChain } from "./wallets/fake";
 import { openWallets, type Wallets } from "./wallets/open";
 import { WalletRegistry } from "./wallets/registry";
@@ -33,7 +33,7 @@ const FAKE_INITIAL_WEI = 1_000_000_000_000_000n;
 
 async function build(): Promise<ServerContext> {
   const env = readEnv();
-  const chain: Chain = env.cdp ? new CdpChain({ ...env.cdp, networkId: "base-sepolia" }) : new FakeChain({ initialBalanceWei: FAKE_INITIAL_WEI });
+  const chain: Chain = env.viem ? new ViemChain(env.viem) : new FakeChain({ initialBalanceWei: FAKE_INITIAL_WEI });
   log.info("wallet backend", { backend: chain.kind, network: chain.network });
   const registry = new WalletRegistry(join(env.dataDir, `wallets-${chain.network}.json`));
   const wallets = await openWallets(chain, registry);

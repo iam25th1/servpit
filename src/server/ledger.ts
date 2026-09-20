@@ -24,6 +24,7 @@ export interface TransferRecord {
   amountWei: bigint;
   network: string;
   status: TransferStatus;
+  /** Only set by records written before the wallet layer moved to plain accounts. */
   userOpHash?: string;
   txHash?: string;
   error?: string;
@@ -117,7 +118,6 @@ export class TransferLedger {
     try {
       const receipt = await input.from.send([{ to: input.to, value: input.amountWei }], input.key);
       record.status = "complete";
-      record.userOpHash = receipt.userOpHash;
       record.txHash = receipt.txHash;
       record.updatedAt = new Date().toISOString();
       this.flush();
