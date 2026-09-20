@@ -1,0 +1,837 @@
+{
+  "source": "ninja-adventure.zip",
+  "pack": "Ninja Adventure - Asset Pack",
+  "frame": {
+    "width": 16,
+    "height": 16
+  },
+  "faceset": {
+    "width": 38,
+    "height": 38
+  },
+  "facingOrder": [
+    "down",
+    "up",
+    "left",
+    "right"
+  ],
+  "entries": [
+    {
+      "id": "NinjaRed",
+      "tier": "common",
+      "sourceFolder": "Actor/Character/NinjaRed",
+      "facesetPath": "/assets/NinjaRed/Faceset.png",
+      "sprites": {
+        "idle": {
+          "path": "/assets/NinjaRed/Idle.png",
+          "frameWidth": 16,
+          "frameHeight": 16,
+          "cols": 4,
+          "rows": 1,
+          "facingColumns": [
+            0,
+            1,
+            2,
+            3
+          ]
+        },
+        "walk": {
+          "path": "/assets/NinjaRed/Walk.png",
+          "frameWidth": 16,
+          "frameHeight": 16,
+          "cols": 4,
+          "rows": 4,
+          "facingColumns": [
+            0,
+            1,
+            2,
+            3
+          ]
+        },
+        "attack": {
+          "path": "/assets/NinjaRed/Attack.png",
+          "frameWidth": 16,
+          "frameHeight": 16,
+          "cols": 4,
+          "rows": 1,
+          "facingColumns": [
+            0,
+            1,
+            2,
+            3
+          ]
+        },
+        "dead": {
+          "path": "/assets/NinjaRed/Dead.png",
+          "frameWidth": 16,
+          "frameHeight": 16,
+          "cols": 1,
+          "rows": 1,
+          "facingColumns": [
+            0,
+            1,
+            2,
+            3
+          ]
+        }
+      }
+    },
+    {
+      "id": "NinjaBlue",
+      "tier": "common",
+      "sourceFolder": "Actor/Character/NinjaBlue",
+      "facesetPath": "/assets/NinjaBlue/Faceset.png",
+      "sprites": {
+        "idle": {
+          "path": "/assets/NinjaBlue/Idle.png",
+          "frameWidth": 16,
+          "frameHeight": 16,
+          "cols": 4,
+          "rows": 1,
+          "facingColumns": [
+            0,
+            1,
+            2,
+            3
+          ]
+        },
+        "walk": {
+          "path": "/assets/NinjaBlue/Walk.png",
+          "frameWidth": 16,
+          "frameHeight": 16,
+          "cols": 4,
+          "rows": 4,
+          "facingColumns": [
+            0,
+            1,
+            2,
+            3
+          ]
+        },
+        "attack": {
+          "path": "/assets/NinjaBlue/Attack.png",
+          "frameWidth": 16,
+          "frameHeight": 16,
+          "cols": 4,
+          "rows": 1,
+          "facingColumns": [
+            0,
+            1,
+            2,
+            3
+          ]
+        },
+        "dead": {
+          "path": "/assets/NinjaBlue/Dead.png",
+          "frameWidth": 16,
+          "frameHeight": 16,
+          "cols": 1,
+          "rows": 1,
+          "facingColumns": [
+            0,
+            1,
+            2,
+            3
+          ]
+        }
+      }
+    },
+    {
+      "id": "Knight",
+      "tier": "common",
+      "sourceFolder": "Actor/Character/Knight",
+      "facesetPath": "/assets/Knight/Faceset.png",
+      "sprites": {
+        "idle": {
+          "path": "/assets/Knight/Idle.png",
+          "frameWidth": 16,
+          "frameHeight": 16,
+          "cols": 4,
+          "rows": 1,
+          "facingColumns": [
+            0,
+            1,
+            2,
+            3
+          ]
+        },
+        "walk": {
+          "path": "/assets/Knight/Walk.png",
+          "frameWidth": 16,
+          "frameHeight": 16,
+          "cols": 4,
+          "rows": 4,
+          "facingColumns": [
+            0,
+            1,
+            2,
+            3
+          ]
+        },
+        "attack": {
+          "path": "/assets/Knight/Attack.png",
+          "frameWidth": 16,
+          "frameHeight": 16,
+          "cols": 4,
+          "rows": 1,
+          "facingColumns": [
+            0,
+            1,
+            2,
+            3
+          ]
+        },
+        "dead": {
+          "path": "/assets/Knight/Dead.png",
+          "frameWidth": 16,
+          "frameHeight": 16,
+          "cols": 1,
+          "rows": 1,
+          "facingColumns": [
+            0,
+            1,
+            2,
+            3
+          ]
+        }
+      }
+    },
+    {
+      "id": "Monk",
+      "tier": "common",
+      "sourceFolder": "Actor/Character/Monk",
+      "facesetPath": "/assets/Monk/Faceset.png",
+      "sprites": {
+        "idle": {
+          "path": "/assets/Monk/Idle.png",
+          "frameWidth": 16,
+          "frameHeight": 16,
+          "cols": 4,
+          "rows": 1,
+          "facingColumns": [
+            0,
+            1,
+            2,
+            3
+          ]
+        },
+        "walk": {
+          "path": "/assets/Monk/Walk.png",
+          "frameWidth": 16,
+          "frameHeight": 16,
+          "cols": 4,
+          "rows": 4,
+          "facingColumns": [
+            0,
+            1,
+            2,
+            3
+          ]
+        },
+        "attack": {
+          "path": "/assets/Monk/Attack.png",
+          "frameWidth": 16,
+          "frameHeight": 16,
+          "cols": 4,
+          "rows": 1,
+          "facingColumns": [
+            0,
+            1,
+            2,
+            3
+          ]
+        },
+        "dead": {
+          "path": "/assets/Monk/Dead.png",
+          "frameWidth": 16,
+          "frameHeight": 16,
+          "cols": 1,
+          "rows": 1,
+          "facingColumns": [
+            0,
+            1,
+            2,
+            3
+          ]
+        }
+      }
+    },
+    {
+      "id": "Hunter",
+      "tier": "common",
+      "sourceFolder": "Actor/Character/Hunter",
+      "facesetPath": "/assets/Hunter/Faceset.png",
+      "sprites": {
+        "idle": {
+          "path": "/assets/Hunter/Idle.png",
+          "frameWidth": 16,
+          "frameHeight": 16,
+          "cols": 4,
+          "rows": 1,
+          "facingColumns": [
+            0,
+            1,
+            2,
+            3
+          ]
+        },
+        "walk": {
+          "path": "/assets/Hunter/Walk.png",
+          "frameWidth": 16,
+          "frameHeight": 16,
+          "cols": 4,
+          "rows": 4,
+          "facingColumns": [
+            0,
+            1,
+            2,
+            3
+          ]
+        },
+        "attack": {
+          "path": "/assets/Hunter/Attack.png",
+          "frameWidth": 16,
+          "frameHeight": 16,
+          "cols": 4,
+          "rows": 1,
+          "facingColumns": [
+            0,
+            1,
+            2,
+            3
+          ]
+        },
+        "dead": {
+          "path": "/assets/Hunter/Dead.png",
+          "frameWidth": 16,
+          "frameHeight": 16,
+          "cols": 1,
+          "rows": 1,
+          "facingColumns": [
+            0,
+            1,
+            2,
+            3
+          ]
+        }
+      }
+    },
+    {
+      "id": "Boy",
+      "tier": "common",
+      "sourceFolder": "Actor/Character/Boy",
+      "facesetPath": "/assets/Boy/Faceset.png",
+      "sprites": {
+        "idle": {
+          "path": "/assets/Boy/Idle.png",
+          "frameWidth": 16,
+          "frameHeight": 16,
+          "cols": 4,
+          "rows": 1,
+          "facingColumns": [
+            0,
+            1,
+            2,
+            3
+          ]
+        },
+        "walk": {
+          "path": "/assets/Boy/Walk.png",
+          "frameWidth": 16,
+          "frameHeight": 16,
+          "cols": 4,
+          "rows": 4,
+          "facingColumns": [
+            0,
+            1,
+            2,
+            3
+          ]
+        },
+        "attack": {
+          "path": "/assets/Boy/Attack.png",
+          "frameWidth": 16,
+          "frameHeight": 16,
+          "cols": 4,
+          "rows": 1,
+          "facingColumns": [
+            0,
+            1,
+            2,
+            3
+          ]
+        },
+        "dead": {
+          "path": "/assets/Boy/Dead.png",
+          "frameWidth": 16,
+          "frameHeight": 16,
+          "cols": 1,
+          "rows": 1,
+          "facingColumns": [
+            0,
+            1,
+            2,
+            3
+          ]
+        }
+      }
+    },
+    {
+      "id": "Eskimo",
+      "tier": "common",
+      "sourceFolder": "Actor/Character/Eskimo",
+      "facesetPath": "/assets/Eskimo/Faceset.png",
+      "sprites": {
+        "idle": {
+          "path": "/assets/Eskimo/Idle.png",
+          "frameWidth": 16,
+          "frameHeight": 16,
+          "cols": 4,
+          "rows": 1,
+          "facingColumns": [
+            0,
+            1,
+            2,
+            3
+          ]
+        },
+        "walk": {
+          "path": "/assets/Eskimo/Walk.png",
+          "frameWidth": 16,
+          "frameHeight": 16,
+          "cols": 4,
+          "rows": 4,
+          "facingColumns": [
+            0,
+            1,
+            2,
+            3
+          ]
+        },
+        "attack": {
+          "path": "/assets/Eskimo/Attack.png",
+          "frameWidth": 16,
+          "frameHeight": 16,
+          "cols": 4,
+          "rows": 1,
+          "facingColumns": [
+            0,
+            1,
+            2,
+            3
+          ]
+        },
+        "dead": {
+          "path": "/assets/Eskimo/Dead.png",
+          "frameWidth": 16,
+          "frameHeight": 16,
+          "cols": 1,
+          "rows": 1,
+          "facingColumns": [
+            0,
+            1,
+            2,
+            3
+          ]
+        }
+      }
+    },
+    {
+      "id": "Caveman",
+      "tier": "common",
+      "sourceFolder": "Actor/Character/Caveman",
+      "facesetPath": "/assets/Caveman/Faceset.png",
+      "sprites": {
+        "idle": {
+          "path": "/assets/Caveman/Idle.png",
+          "frameWidth": 16,
+          "frameHeight": 16,
+          "cols": 4,
+          "rows": 1,
+          "facingColumns": [
+            0,
+            1,
+            2,
+            3
+          ]
+        },
+        "walk": {
+          "path": "/assets/Caveman/Walk.png",
+          "frameWidth": 16,
+          "frameHeight": 16,
+          "cols": 4,
+          "rows": 4,
+          "facingColumns": [
+            0,
+            1,
+            2,
+            3
+          ]
+        },
+        "attack": {
+          "path": "/assets/Caveman/Attack.png",
+          "frameWidth": 16,
+          "frameHeight": 16,
+          "cols": 4,
+          "rows": 1,
+          "facingColumns": [
+            0,
+            1,
+            2,
+            3
+          ]
+        },
+        "dead": {
+          "path": "/assets/Caveman/Dead.png",
+          "frameWidth": 16,
+          "frameHeight": 16,
+          "cols": 1,
+          "rows": 1,
+          "facingColumns": [
+            0,
+            1,
+            2,
+            3
+          ]
+        }
+      }
+    },
+    {
+      "id": "NinjaDark",
+      "tier": "uncommon",
+      "sourceFolder": "Actor/Character/NinjaDark",
+      "facesetPath": "/assets/NinjaDark/Faceset.png",
+      "sprites": {
+        "idle": {
+          "path": "/assets/NinjaDark/Idle.png",
+          "frameWidth": 16,
+          "frameHeight": 16,
+          "cols": 4,
+          "rows": 1,
+          "facingColumns": [
+            0,
+            1,
+            2,
+            3
+          ]
+        },
+        "walk": {
+          "path": "/assets/NinjaDark/Walk.png",
+          "frameWidth": 16,
+          "frameHeight": 16,
+          "cols": 4,
+          "rows": 4,
+          "facingColumns": [
+            0,
+            1,
+            2,
+            3
+          ]
+        },
+        "attack": {
+          "path": "/assets/NinjaDark/Attack.png",
+          "frameWidth": 16,
+          "frameHeight": 16,
+          "cols": 4,
+          "rows": 1,
+          "facingColumns": [
+            0,
+            1,
+            2,
+            3
+          ]
+        },
+        "dead": {
+          "path": "/assets/NinjaDark/Dead.png",
+          "frameWidth": 16,
+          "frameHeight": 16,
+          "cols": 1,
+          "rows": 1,
+          "facingColumns": [
+            0,
+            1,
+            2,
+            3
+          ]
+        }
+      }
+    },
+    {
+      "id": "NinjaFire",
+      "tier": "uncommon",
+      "sourceFolder": "Actor/Character/NinjaFire",
+      "facesetPath": "/assets/NinjaFire/Faceset.png",
+      "sprites": {
+        "walk": {
+          "path": "/assets/NinjaFire/Walk.png",
+          "frameWidth": 16,
+          "frameHeight": 16,
+          "cols": 4,
+          "rows": 4,
+          "facingColumns": [
+            0,
+            1,
+            2,
+            3
+          ]
+        },
+        "attack": {
+          "path": "/assets/NinjaFire/Attack.png",
+          "frameWidth": 16,
+          "frameHeight": 16,
+          "cols": 4,
+          "rows": 1,
+          "facingColumns": [
+            0,
+            1,
+            2,
+            3
+          ]
+        },
+        "dead": {
+          "path": "/assets/NinjaFire/Dead.png",
+          "frameWidth": 16,
+          "frameHeight": 16,
+          "cols": 1,
+          "rows": 1,
+          "facingColumns": [
+            0,
+            1,
+            2,
+            3
+          ]
+        }
+      }
+    },
+    {
+      "id": "NinjaWater",
+      "tier": "uncommon",
+      "sourceFolder": "Actor/Character/NinjaWater",
+      "facesetPath": "/assets/NinjaWater/Faceset.png",
+      "sprites": {
+        "walk": {
+          "path": "/assets/NinjaWater/Walk.png",
+          "frameWidth": 16,
+          "frameHeight": 16,
+          "cols": 4,
+          "rows": 4,
+          "facingColumns": [
+            0,
+            1,
+            2,
+            3
+          ]
+        },
+        "attack": {
+          "path": "/assets/NinjaWater/Attack.png",
+          "frameWidth": 16,
+          "frameHeight": 16,
+          "cols": 4,
+          "rows": 1,
+          "facingColumns": [
+            0,
+            1,
+            2,
+            3
+          ]
+        },
+        "dead": {
+          "path": "/assets/NinjaWater/Dead.png",
+          "frameWidth": 16,
+          "frameHeight": 16,
+          "cols": 1,
+          "rows": 1,
+          "facingColumns": [
+            0,
+            1,
+            2,
+            3
+          ]
+        }
+      }
+    },
+    {
+      "id": "KnightGold",
+      "tier": "uncommon",
+      "sourceFolder": "Actor/Character/KnightGold",
+      "facesetPath": "/assets/KnightGold/Faceset.png",
+      "sprites": {
+        "idle": {
+          "path": "/assets/KnightGold/Idle.png",
+          "frameWidth": 16,
+          "frameHeight": 16,
+          "cols": 4,
+          "rows": 1,
+          "facingColumns": [
+            0,
+            1,
+            2,
+            3
+          ]
+        },
+        "walk": {
+          "path": "/assets/KnightGold/Walk.png",
+          "frameWidth": 16,
+          "frameHeight": 16,
+          "cols": 4,
+          "rows": 4,
+          "facingColumns": [
+            0,
+            1,
+            2,
+            3
+          ]
+        },
+        "attack": {
+          "path": "/assets/KnightGold/Attack.png",
+          "frameWidth": 16,
+          "frameHeight": 16,
+          "cols": 4,
+          "rows": 1,
+          "facingColumns": [
+            0,
+            1,
+            2,
+            3
+          ]
+        },
+        "dead": {
+          "path": "/assets/KnightGold/Dead.png",
+          "frameWidth": 16,
+          "frameHeight": 16,
+          "cols": 1,
+          "rows": 1,
+          "facingColumns": [
+            0,
+            1,
+            2,
+            3
+          ]
+        }
+      }
+    },
+    {
+      "id": "GladiatorBlue",
+      "tier": "uncommon",
+      "sourceFolder": "Actor/Character/GladiatorBlue",
+      "facesetPath": "/assets/GladiatorBlue/Faceset.png",
+      "sprites": {
+        "idle": {
+          "path": "/assets/GladiatorBlue/Idle.png",
+          "frameWidth": 16,
+          "frameHeight": 16,
+          "cols": 4,
+          "rows": 1,
+          "facingColumns": [
+            0,
+            1,
+            2,
+            3
+          ]
+        },
+        "walk": {
+          "path": "/assets/GladiatorBlue/Walk.png",
+          "frameWidth": 16,
+          "frameHeight": 16,
+          "cols": 4,
+          "rows": 4,
+          "facingColumns": [
+            0,
+            1,
+            2,
+            3
+          ]
+        },
+        "attack": {
+          "path": "/assets/GladiatorBlue/Attack.png",
+          "frameWidth": 16,
+          "frameHeight": 16,
+          "cols": 4,
+          "rows": 1,
+          "facingColumns": [
+            0,
+            1,
+            2,
+            3
+          ]
+        },
+        "dead": {
+          "path": "/assets/GladiatorBlue/Dead.png",
+          "frameWidth": 16,
+          "frameHeight": 16,
+          "cols": 1,
+          "rows": 1,
+          "facingColumns": [
+            0,
+            1,
+            2,
+            3
+          ]
+        }
+      }
+    },
+    {
+      "id": "Dragon",
+      "tier": "rare",
+      "sourceFolder": "Actor/Monster/Dragon",
+      "facesetPath": "/assets/Dragon/Faceset.png",
+      "sprites": {
+        "sheet": {
+          "path": "/assets/Dragon/SpriteSheet.png",
+          "frameWidth": 16,
+          "frameHeight": 16,
+          "cols": 4,
+          "rows": 4,
+          "facingColumns": null
+        }
+      }
+    },
+    {
+      "id": "Cyclope",
+      "tier": "rare",
+      "sourceFolder": "Actor/Monster/Cyclope",
+      "facesetPath": "/assets/Cyclope/Faceset.png",
+      "sprites": {
+        "sheet": {
+          "path": "/assets/Cyclope/SpriteSheet.png",
+          "frameWidth": 16,
+          "frameHeight": 16,
+          "cols": 4,
+          "rows": 4,
+          "facingColumns": [
+            0,
+            1,
+            2,
+            3
+          ]
+        }
+      }
+    },
+    {
+      "id": "Bear",
+      "tier": "rare",
+      "sourceFolder": "Actor/Monster/Bear",
+      "facesetPath": "/assets/Bear/Faceset.png",
+      "sprites": {
+        "sheet": {
+          "path": "/assets/Bear/SpriteSheet.png",
+          "frameWidth": 16,
+          "frameHeight": 16,
+          "cols": 4,
+          "rows": 4,
+          "facingColumns": [
+            0,
+            2,
+            1,
+            3
+          ]
+        }
+      }
+    }
+  ],
+  "warnings": [
+    "NinjaFire: SeparateAnim/Idle.png missing in pack, animation omitted",
+    "NinjaWater: SeparateAnim/Idle.png missing in pack, animation omitted",
+    "Dragon: SpriteSheet.png is not a uniform 4 column grid, columns 2 and 3 form one 32 px wide winged frame per row, hand slice before use"
+  ]
+}
