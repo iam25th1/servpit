@@ -47,3 +47,6 @@ __MACOSX/
 # Next.js dev regenerates these agent docs (they contain em dashes); never commit them
 /AGENTS.md
 /CLAUDE.md
+
+# runtime state: wallet address registry, transfer ledger, round records
+/data/

@@ -12,10 +12,14 @@
     "gate": "npm run typecheck && npm run lint && npm run test && npm run build",
     "extract-assets": "tsx scripts/extract-assets.ts",
     "reel-report": "tsx scripts/reel-distribution.ts",
-    "sim": "tsx scripts/sim.ts"
+    "sim": "tsx scripts/sim.ts",
+    "round": "tsx scripts/round.ts"
   },
   "dependencies": {
+    "@coinbase/agentkit": "^0.10.4",
+    "@coinbase/cdp-sdk": "^1.56.0",
     "next": "16.3.5",
+    "openai": "^7.20.0",
     "react": "19.2.8",
     "react-dom": "19.2.8"
   },
