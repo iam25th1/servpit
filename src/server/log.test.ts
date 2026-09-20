@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { redact } from "./log";
+import { redact, registerSecret } from "./log";
 
 describe("redact", () => {
   it("masks hex private keys, mnemonics and api key shaped strings but keeps addresses", () => {
@@ -35,5 +35,36 @@ describe("redact", () => {
   it("masks known secret env names by value", () => {
     expect(redact("x", { secrets: ["hunter2"] })).toBe("x");
     expect(redact("pw hunter2 end", { secrets: ["hunter2"] })).toBe("pw [redacted:secret] end");
+  });
+});
+
+describe("the chain identifier carve out cannot leak a private key", () => {
+  // Chain identifier fields skip shape matching so transaction hashes stay
+  // readable. A private key is the same shape as a hash, so the only thing
+  // standing between it and a log line is registerSecret, which readEnv calls
+  // for every key before anything else reads the environment. This locks that.
+  const CHAIN_FIELDS = ["address", "txHash", "transactionHash", "userOpHash", "hash", "from", "to", "potAddress", "ownerAddress"];
+
+  it("masks a registered key in every field the carve out covers", () => {
+    const key = "0x" + "cd".repeat(32);
+    registerSecret(key);
+    for (const field of CHAIN_FIELDS) {
+      const out = redact({ [field]: key }) as Record<string, string>;
+      expect(out[field], field).toBe("[redacted:secret]");
+    }
+    expect(redact({ nested: { list: [{ from: key }] } })).toEqual({ nested: { list: [{ from: "[redacted:secret]" }] } });
+  });
+
+  it("still lets a genuine transaction hash and address through", () => {
+    const hash = "0x" + "9".repeat(64);
+    const address = "0x4252e0c9A3da5A2700e7d91cb50aEf522D0C6Fe8";
+    expect(redact({ txHash: hash })).toEqual({ txHash: hash });
+    expect(redact({ address })).toEqual({ address });
+  });
+
+  it("masks an unregistered 32 byte value anywhere outside those fields", () => {
+    const key = "0x" + "ef".repeat(32);
+    expect(redact({ privateKey: key })).toEqual({ privateKey: "[redacted:hex64]" });
+    expect(redact(`raw ${key}`)).toBe("raw [redacted:hex64]");
   });
 });
