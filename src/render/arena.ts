@@ -6,6 +6,7 @@
 // Every impact effect is sprite local and arrives through ActorFx (offset,
 // scale, white flash, alpha) computed by the juice system per frame.
 
+import { WALK_FRAME_MS } from "@/config/playback";
 import type { Tier } from "@/config/roster";
 import type { Animation, AssetStore, DecodedImage, Slice } from "./assets";
 import { floorPlan, type FloorCell } from "./floorPlan";
@@ -72,7 +73,11 @@ export interface ArenaOptions {
   tileSize?: number;
   /** Logical pixels of margin around the arena so top row hp bars and offsets stay visible. Default 8. */
   padding?: number;
-  /** Milliseconds per walk frame. Default 100. */
+  /**
+   * Milliseconds per walk frame. Defaults to WALK_FRAME_MS, which is derived
+   * from the tick: an actor crosses one tile per tick, so a fixed gait would
+   * cycle the feet faster than the travel once the tick lengthened.
+   */
   walkFrameMs?: number;
   /** Seeds the floor's tile and scatter variation. One floor per round. */
   floorSeed?: string;
@@ -102,7 +107,7 @@ export class ArenaRenderer {
     this.arena = options.arena;
     this.tile = options.tileSize ?? 16;
     this.padding = options.padding ?? 8;
-    this.walkFrameMs = options.walkFrameMs ?? 100;
+    this.walkFrameMs = options.walkFrameMs ?? WALK_FRAME_MS;
     this.seed = options.floorSeed ?? "servpit";
     this.planSeed = this.seed;
     this.plan = floorPlan(this.arena.width, this.arena.height, this.seed, FLOOR_TILES.length, FLOOR_DETAILS.length);

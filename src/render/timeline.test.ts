@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { TICK_MS } from "@/config/playback";
 import { DEFAULT_ROUND } from "@/config/round";
 import type { Combatant } from "@/engine/combat";
 import type { RoundEvent } from "@/engine/events";
@@ -40,11 +41,12 @@ const synthetic = {
 };
 
 describe("Timeline construction", () => {
-  it("defaults to 200 ms ticks and reports duration from the last tick", () => {
+  it("defaults to the configured tick and reports duration from the last tick", () => {
     const tl = new Timeline(round);
-    expect(tl.tickMs).toBe(200);
+    expect(tl.tickMs).toBe(TICK_MS);
+    expect(TICK_MS).toBe(320);
     expect(tl.lastTick).toBe(round.log[round.log.length - 1].t);
-    expect(tl.durationMs).toBe(tl.lastTick * 200);
+    expect(tl.durationMs).toBe(tl.lastTick * TICK_MS);
     expect(new Timeline(round, { tickMs: 50 }).durationMs).toBe(tl.lastTick * 50);
   });
 
@@ -71,11 +73,11 @@ describe("Timeline batching", () => {
     const seen: TickBatch[] = [];
     tl.onBatch((b) => seen.push(b));
     tl.play();
-    tl.advance(200 * 3 + 50);
+    tl.advance(TICK_MS * 3 + 50);
     expect(seen.map((b) => b.t)).toEqual([1, 2, 3]);
     for (const b of seen) expect(b.events).toEqual(round.log.filter((ev) => ev.t === b.t));
     expect(tl.tick).toBe(3);
-    expect(tl.progress).toBeCloseTo(0.25);
+    expect(tl.progress).toBeCloseTo(50 / TICK_MS);
   });
 
   it("does not advance while paused", () => {
@@ -124,9 +126,11 @@ describe("Timeline actor state", () => {
   });
 
   it("applies post damage hp and death from the batch", () => {
+    // An explicit tick, so the advances here are multiples of that 100 and
+    // not of the configured default.
     const tl = new Timeline(synthetic, { tickMs: 100 });
     tl.play();
-    tl.advance(200);
+    tl.advance(2 * 100);
     expect(tl.actor("b").hp).toBe(8);
     expect(tl.actor("b").alive).toBe(true);
     tl.advance(100);
@@ -164,11 +168,11 @@ describe("Timeline seek and restart", () => {
     sought.seek(37 * 33);
     expect(snapshot(sought)).toEqual(snapshot(stepped));
     expect(loud.every((l) => l === false)).toBe(true);
-    sought.seek(2 * 200 + 10);
+    sought.seek(2 * TICK_MS + 10);
     expect(sought.tick).toBe(2);
     const twice = new Timeline(round);
     twice.play();
-    twice.advance(2 * 200 + 10);
+    twice.advance(2 * TICK_MS + 10);
     expect(snapshot(sought)).toEqual(snapshot(twice));
   });
 

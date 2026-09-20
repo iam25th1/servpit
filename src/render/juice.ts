@@ -6,6 +6,7 @@
 // death events and the round's final blow, capped at one per tick. Ordinary
 // hits never freeze: 23 of them can share a tick.
 
+import { ticksToFrames } from "@/config/playback";
 import type { Tier } from "@/config/roster";
 import type { RoundEvent } from "@/engine/events";
 import type { ActorFx } from "./arena";
@@ -45,16 +46,29 @@ export interface JuiceConfig {
   killSheet: string;
 }
 
+/**
+ * Every frame count here is a fraction of a tick, converted at the nominal
+ * frame rate. They used to be literal frame counts tuned against a 200 ms
+ * tick, which meant lengthening the tick quietly shrank each of them
+ * relative to the beat they punctuate.
+ *
+ * The fractions are the old counts divided by the twelve frames a 200 ms
+ * tick held, so the feel at the old tick is preserved exactly and the new
+ * tick gets the same feel at its own length.
+ */
 export const DEFAULT_JUICE: JuiceConfig = {
-  hitstopFrames: { death: 3, finalBlow: 5 },
-  flashFrames: 2,
+  hitstopFrames: { death: ticksToFrames(1 / 4), finalBlow: ticksToFrames(5 / 12) },
+  flashFrames: ticksToFrames(1 / 6),
   knockbackPx: 3,
-  knockbackFrames: 4,
+  knockbackFrames: ticksToFrames(1 / 3),
   punchScale: 1.15,
-  punchFrames: 5,
-  attackPoseFrames: 6,
-  deadFadeFrames: 40,
+  punchFrames: ticksToFrames(5 / 12),
+  attackPoseFrames: ticksToFrames(1 / 2),
+  deadFadeFrames: ticksToFrames(10 / 3),
   corpseAlpha: 0.35,
+  // Absolute, deliberately. This is the artist's own frame rate for the
+  // sheet; slowing it because the fight slowed plays the artwork back in
+  // slow motion.
   sheetFrameMs: 50,
   impactByTier: {
     common: { sheet: "Cut", sheetScale: 1, sparks: 1 },
