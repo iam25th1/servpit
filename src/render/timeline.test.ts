@@ -203,3 +203,23 @@ describe("render source hygiene", () => {
     expect(offenders).toEqual([]);
   });
 });
+
+describe("slot source hygiene", () => {
+  it("no timers or clocks in the slot code or the play screen either", () => {
+    const banned = [/setTimeout/, /setInterval/, /requestAnimationFrame/, /Date\.now/, /performance\.now/];
+    const offenders: string[] = [];
+    const walk = (dir: string) => {
+      for (const name of readdirSync(dir)) {
+        const p = join(dir, name);
+        if (statSync(p).isDirectory()) walk(p);
+        else if (/\.(ts|tsx)$/.test(p) && !/\.test\.tsx?$/.test(p)) {
+          const body = readFileSync(p, "utf8");
+          if (banned.some((re) => re.test(body))) offenders.push(p);
+        }
+      }
+    };
+    walk(join(process.cwd(), "src/render/slot"));
+    walk(join(process.cwd(), "src/app/play"));
+    expect(offenders).toEqual([]);
+  });
+});

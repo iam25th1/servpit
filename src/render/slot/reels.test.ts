@@ -169,6 +169,34 @@ describe("ReelSet motion", () => {
     expect(snapshot(7)).not.toEqual(snapshot(8));
   });
 
+  it("retargets mid spin so a late answer lands without restarting the reels", () => {
+    const set = new ReelSet(DEFAULT_SLOT, SYMBOLS);
+    set.start(["Knight", "Monk", "Bear"], 0);
+    run(set, 300);
+    const before = set.reelStates().map((r) => r.travelled);
+    expect(set.retarget(["Boy", "Boy", "Eskimo"])).toBe(true);
+    const after = set.reelStates().map((r) => r.travelled);
+    for (let i = 0; i < 3; i++) expect(after[i]).toBeGreaterThanOrEqual(before[i]);
+    run(set, 6_000);
+    expect(set.reelStates().map((r) => r.symbol)).toEqual(["Boy", "Boy", "Eskimo"]);
+  });
+
+  it("recomputes the near miss hold when the retarget creates one", () => {
+    const set = new ReelSet(DEFAULT_SLOT, SYMBOLS);
+    set.start(["Knight", "Monk", "Bear"], 0);
+    expect(set.nearMiss).toBe(false);
+    set.retarget(["Boy", "Boy", "Bear"]);
+    expect(set.nearMiss).toBe(true);
+  });
+
+  it("refuses to retarget a reel that has already begun easing down", () => {
+    const set = new ReelSet(DEFAULT_SLOT, SYMBOLS);
+    set.start(["Knight", "Monk", "Bear"], 0);
+    run(set, 6_000);
+    expect(set.retarget(["Boy", "Boy", "Boy"])).toBe(false);
+    expect(set.reelStates().map((r) => r.symbol)).toEqual(["Knight", "Monk", "Bear"]);
+  });
+
   it("ignores a second start while already spinning", () => {
     const set = new ReelSet(DEFAULT_SLOT, SYMBOLS);
     set.start(["Knight", "Monk", "Bear"], 0);

@@ -137,6 +137,32 @@ export class ReelSet {
     });
   }
 
+  /**
+   * Changes where the reels will land while they are still at full speed. The
+   * machine starts spinning the moment the lever releases, so the answer can
+   * arrive from the server a beat later without restarting anything. Only a
+   * reel that has already begun easing down is out of reach.
+   */
+  retarget(targets: readonly [string, string, string]): boolean {
+    if (this.status !== "spinning") return false;
+    if (this.reels.some((reel) => reel.restOffset !== null || reel.stopped)) return false;
+    const indexes = targets.map((symbol) => {
+      const i = this.symbols.indexOf(symbol);
+      if (i < 0) throw new RangeError(`symbol ${symbol} is not on the reel strip`);
+      return i;
+    });
+    const wasNearMiss = this.nearMissHold;
+    this.nearMissHold = targets[0] === targets[1];
+    this.reels.forEach((reel, i) => {
+      reel.targetIndex = indexes[i];
+    });
+    // Reel 3's stop moment depends on the first two matching, so it moves too.
+    if (this.nearMissHold !== wasNearMiss) {
+      this.reels[2].easeAtMs += (this.nearMissHold ? 1 : -1) * this.config.reels.nearMissHoldMs;
+    }
+    return true;
+  }
+
   reset(): void {
     this.status = "idle";
     this.elapsedMs = 0;
