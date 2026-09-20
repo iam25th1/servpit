@@ -126,3 +126,46 @@ describe("facingColumnsFor", () => {
     expect(SHEET_NOTES.Dragon).toMatch(/32/);
   });
 });
+
+import { DRAGON_FRAME_RECTS, FX_SHEETS, fxFrameGrid } from "./assets";
+
+describe("fxFrameGrid", () => {
+  it("treats a strip as square frames of the sheet height", () => {
+    expect(fxFrameGrid(128, 32)).toEqual({ frameWidth: 32, frameHeight: 32, cols: 4, rows: 1 });
+    expect(fxFrameGrid(160, 32)).toEqual({ frameWidth: 32, frameHeight: 32, cols: 5, rows: 1 });
+    expect(fxFrameGrid(360, 40)).toEqual({ frameWidth: 40, frameHeight: 40, cols: 9, rows: 1 });
+  });
+
+  it("throws when the width is not a whole number of square frames", () => {
+    expect(() => fxFrameGrid(240, 14)).toThrow(/multiple/);
+  });
+});
+
+describe("FX_SHEETS", () => {
+  it("lists the eight attack effects, smoke and explosion, never slash", () => {
+    const ids = FX_SHEETS.map((f) => f.id);
+    expect(ids).toEqual([
+      "Cut", "CutDouble", "CutX", "Claw", "ClawDouble", "SlashCurved", "SlashDoubleCurved", "CircularSlash",
+      "Smoke", "Explosion",
+    ]);
+    expect(FX_SHEETS.filter((f) => f.group === "attack")).toHaveLength(8);
+    for (const f of FX_SHEETS) expect(f.source).not.toMatch(/FX\/Slash\//);
+  });
+});
+
+describe("DRAGON_FRAME_RECTS", () => {
+  it("hand slices four 16x16 frames per facing inside the 64x64 sheet", () => {
+    for (const facing of ["down", "up", "left", "right"] as const) {
+      const rects = DRAGON_FRAME_RECTS[facing];
+      expect(rects).toHaveLength(4);
+      rects.forEach((r, i) => {
+        expect(r).toEqual({ x: r.x, y: i * 16, w: 16, h: 16 });
+        expect(r.x + r.w).toBeLessThanOrEqual(64);
+      });
+    }
+    expect(DRAGON_FRAME_RECTS.down[0].x).toBe(0);
+    expect(DRAGON_FRAME_RECTS.up[0].x).toBe(16);
+    expect(DRAGON_FRAME_RECTS.left[0].x).toBe(32);
+    expect(DRAGON_FRAME_RECTS.right[0].x).toBe(48);
+  });
+});

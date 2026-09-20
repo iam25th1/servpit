@@ -92,7 +92,7 @@ const FACING_COLUMN_OVERRIDES: Record<string, readonly number[] | null> = {
 /** Hand verified layout notes that dimensions alone cannot reveal. Copied into manifest warnings. */
 export const SHEET_NOTES: Record<string, string> = {
   Dragon:
-    "Dragon: SpriteSheet.png is not a uniform 4 column grid, columns 2 and 3 form one 32 px wide winged frame per row, hand slice before use",
+    "Dragon: facingColumns is null on purpose, frames come from the hand sliced frameRects list. A pixel check shows columns 2 and 3 are mirror image 16 px frames (left, right) whose wings meet at the cell boundary, not one 32 px frame as phase 1 first recorded",
 };
 
 export function facingColumnsFor(id: string): number[] | null {
@@ -100,4 +100,63 @@ export function facingColumnsFor(id: string): number[] | null {
     ? FACING_COLUMN_OVERRIDES[id]
     : DEFAULT_FACING_COLUMNS;
   return columns === null ? null : [...columns];
+}
+
+export interface FrameRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export type FacingName = "down" | "up" | "left" | "right";
+export const FACING_NAMES: readonly FacingName[] = ["down", "up", "left", "right"];
+
+const column = (x: number): FrameRect[] => [0, 1, 2, 3].map((row) => ({ x, y: row * 16, w: 16, h: 16 }));
+
+/**
+ * Hand sliced Dragon frames. Verified on the extracted sheet: opaque bounding
+ * boxes fill each 16 px cell (x 0..15, 16..31, 32..47, 48..63), columns 2
+ * and 3 are exact mirror images, rows are animation frames. Column order by
+ * eye: front (down), back (up), wing trailing right (left), wing trailing
+ * left (right).
+ */
+export const DRAGON_FRAME_RECTS: Record<FacingName, FrameRect[]> = {
+  down: column(0),
+  up: column(16),
+  left: column(32),
+  right: column(48),
+};
+
+export const FRAME_RECT_OVERRIDES: Record<string, Record<FacingName, FrameRect[]>> = {
+  Dragon: DRAGON_FRAME_RECTS,
+};
+
+export interface FxSheetSource {
+  id: string;
+  group: "attack" | "smoke" | "explosion";
+  /** Path inside the pack, relative to the pack root. */
+  source: string;
+}
+
+/** FX strips used by the renderer. FX/Slash is left out: its frame widths do not equal the sheet height. */
+export const FX_SHEETS: readonly FxSheetSource[] = [
+  { id: "Cut", group: "attack", source: "FX/Attack/Cut/SpriteSheet.png" },
+  { id: "CutDouble", group: "attack", source: "FX/Attack/CutDouble/SpriteSheet.png" },
+  { id: "CutX", group: "attack", source: "FX/Attack/CutX/SpriteSheet.png" },
+  { id: "Claw", group: "attack", source: "FX/Attack/Claw/SpriteSheet.png" },
+  { id: "ClawDouble", group: "attack", source: "FX/Attack/ClawDouble/SpriteSheet.png" },
+  { id: "SlashCurved", group: "attack", source: "FX/Attack/SlashCurved/SpriteSheet.png" },
+  { id: "SlashDoubleCurved", group: "attack", source: "FX/Attack/SlashDoubleCurved/SpriteSheet.png" },
+  { id: "CircularSlash", group: "attack", source: "FX/Attack/CircularSlash/SpriteSheet.png" },
+  { id: "Smoke", group: "smoke", source: "FX/Smoke/Smoke/SpriteSheet.png" },
+  { id: "Explosion", group: "explosion", source: "FX/Elemental/Explosion/SpriteSheet.png" },
+];
+
+/** FX strips are one row of square frames, frame size equals the sheet height. */
+export function fxFrameGrid(width: number, height: number): { frameWidth: number; frameHeight: number; cols: number; rows: number } {
+  if (height < 1 || width % height !== 0) {
+    throw new Error(`${width}x${height} is not a whole multiple of square ${height}x${height} frames`);
+  }
+  return { frameWidth: height, frameHeight: height, cols: width / height, rows: 1 };
 }
