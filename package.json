@@ -12,7 +12,8 @@
     "gate": "npm run typecheck && npm run lint && npm run test && npm run build",
     "extract-assets": "tsx scripts/extract-assets.ts",
     "reel-report": "tsx scripts/reel-distribution.ts",
-    "sim": "tsx scripts/sim.ts"
+    "sim": "tsx scripts/sim.ts",
+    "round": "tsx scripts/round.ts"
   },
   "dependencies": {
     "@coinbase/agentkit": "^0.10.4",

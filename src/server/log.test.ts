@@ -19,6 +19,19 @@ describe("redact", () => {
     expect(out).toEqual({ a: ["[redacted:hex64]"], b: { c: "fine" } });
   });
 
+  it("keeps chain identifiers readable: a transaction hash is 64 hex like a private key, and it is the evidence", () => {
+    const txHash = "0x" + "9".repeat(64);
+    expect(redact({ txHash })).toEqual({ txHash });
+    expect(redact({ userOpHash: txHash, transactionHash: txHash })).toEqual({ userOpHash: txHash, transactionHash: txHash });
+    // Same shape under any other field name is still masked.
+    expect(redact({ walletSecret: txHash })).toEqual({ walletSecret: "[redacted:hex64]" });
+    expect(redact({ txHash: ["sk", "live", "abcdefghijklmnop1234"].join("-") })).toEqual({ txHash: "[redacted:key]" });
+  });
+
+  it("still masks a registered secret even under a chain identifier field name", () => {
+    expect(redact({ txHash: "0x" + "a".repeat(64) }, { secrets: ["0x" + "a".repeat(64)] })).toEqual({ txHash: "[redacted:secret]" });
+  });
+
   it("masks known secret env names by value", () => {
     expect(redact("x", { secrets: ["hunter2"] })).toBe("x");
     expect(redact("pw hunter2 end", { secrets: ["hunter2"] })).toBe("pw [redacted:secret] end");

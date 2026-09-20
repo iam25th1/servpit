@@ -2,7 +2,7 @@
 
 [![ci](https://github.com/iam25th1/servpit/actions/workflows/ci.yml/badge.svg)](https://github.com/iam25th1/servpit/actions/workflows/ci.yml)
 
-Slot reel battle royale. One pure function, `resolveRound(seed, entrants, config)`, spins three reels per entrant, runs the fight, and pays the pot, emitting a replayable event log. The client rendering core plays that log back on a fixed camera canvas with sprite local impact feedback. No chain, no agents yet.
+Slot reel battle royale where the entrants are autonomous agents holding real testnet balances. One pure function, `resolveRound(seed, entrants, config)`, spins three reels per entrant, runs the fight, and pays the pot, emitting a replayable event log. Six named agents reason about whether to commit their own funds, pay their own entry, and claim their own payouts through smart wallets on Base Sepolia.
 
 ![Arena replay of round demo, 24 entrants, captured headlessly from /arena](docs/media/arena-demo.gif)
 
@@ -11,6 +11,7 @@ Slot reel battle royale. One pure function, `resolveRound(seed, entrants, config
 ```bash
 npm ci --ignore-scripts
 npm run dev                     # then open http://localhost:3000/arena?seed=demo&entrants=24
+npm run round -- --seed demo    # one full agent round end to end, on the command line
 npm run sim                     # 1000 headless rounds with a report
 npm run sim -- --rounds 5000 --entrants 32 --seed night --tier high
 npm run gate                    # typecheck, lint, test, build (what CI runs)
@@ -19,6 +20,19 @@ npm run extract-assets          # rebuild public/assets from ninja-adventure.zip
 ```
 
 Node 24 or newer. The lockfile is committed and CI installs with `npm ci --ignore-scripts`.
+
+With no credentials set, everything runs against an in memory chain and the deterministic heuristic, so the whole flow is exercisable offline. Set the variables below to put it on Base Sepolia with real reasoning.
+
+| Variable | Purpose |
+| --- | --- |
+| `CDP_API_KEY_ID`, `CDP_API_KEY_SECRET`, `CDP_WALLET_SECRET` | Coinbase Developer Platform credentials for the smart wallets |
+| `PAYMASTER_URL` | CDP paymaster endpoint, so no wallet needs gas |
+| `SERV_API_KEY` | SERV Reasoning key. Server side only |
+| `SERV_MODEL` | Overrides the default `claude-haiku-4.5`, for a demo recording on a larger model |
+| `WALLET_BACKEND` | `cdp` or `fake`. Defaults to `cdp` when every CDP variable is present |
+| `SERVPIT_DATA_DIR` | Where wallet addresses, the transfer ledger and round history are written. Defaults to `data`, which is gitignored |
+
+All four CDP variables must be present together; `WALLET_BACKEND=cdp` without them fails at startup rather than silently running on the fake chain.
 
 ## Round pipeline
 
@@ -120,6 +134,84 @@ Every event has the shape `{ t, type, actor, target, value, facing }` plus the o
 `y` grows downward as on screen. A `move` faces the direction stepped. An `attack` faces the victim. `hit`, `death` and `storm` carry the victim's current facing. `spawn` faces down. Ties between axes resolve horizontal.
 
 The arena is a `width x height` tile grid (24 x 24 by default); positions are integer tile coordinates, `0 <= x < width`, `0 <= y < height`. The renderer should not compute anything: hp bars come from `spawn.value` and `hit.hp` / `storm.hp`, positions from `spawn` and `move`.
+
+</details>
+
+## Agents
+
+Six named agents hold their own smart wallets and decide for themselves. Each has a strategy descriptor in `src/config/agents.ts` (cautious, aggressive, streak-chaser, contrarian, steady, opportunist) that shapes both the prompt it receives and the heuristic that covers for it. Remaining seats are filled by house bots, which make no reasoning call.
+
+```mermaid
+%%{init: {"theme": "neutral"}}%%
+sequenceDiagram
+    autonumber
+    participant UI as /arena
+    participant API as Round flow
+    participant Chain as Base Sepolia
+    participant SERV as SERV Reasoning
+    participant Engine as resolveRound
+
+    UI->>API: plan(seed, entrants)
+    API->>Chain: read balance per agent
+    Chain-->>API: balances in wei
+    loop once per named agent
+        API->>SERV: allocation prompt, strict JSON schema
+        SERV-->>API: enter, stake, reason
+        API->>API: parse, schema check, clamp to on chain balance
+    end
+    API->>API: exclude anyone the chain cannot cover, fill seats with bots
+    API-->>UI: decisions and reasons, no money moved
+    UI->>API: run(seed, entrants)
+    loop each entering agent
+        API->>Chain: entry transfer, keyed by round and agent
+    end
+    API->>Engine: resolveRound(seed, entrants, config)
+    Engine-->>API: log, placements, payouts
+    API->>Chain: payout transfer to the winner
+    API->>Chain: read balances again
+    API->>API: reconcile deltas against transfers
+    API-->>UI: event log, transfer hashes, reconciliation
+```
+
+The decision and its reason string are shown for every agent before the round runs, because that is the visible evidence the reasoning happened. Bankroll and its change after settling sit beside them, with Basescan links when the CDP backend is active.
+
+<details>
+<summary>SERV features enabled, and why</summary>
+
+Toggles live in `src/config/serv.ts` with the reason next to each one. Prompt Guard and Shadow Agent are declared as tools; Multipath and Kronos are model id suffixes.
+
+| Feature | State | Why |
+| --- | --- | --- |
+| `serv_prompt_guard` | on | This loop feeds agent state into a prompt whose output influences money. The guard screens inbound requests for injection and outbound text for system prompt leakage. No parameters: declaring the tool enables it. |
+| `serv_shadow_agent` | on, `max_iterations` 3 | A second model validates the draft against a natural language hint naming our schema rules (exact key set, integer stake, stake never above the stated balance) and regenerates when it fails. It is a net, not the only one. |
+| Multipath | on, `-serv-multipath` | The prompt is a branching allocation policy over balance bands, participation counts and recent results, which is what Multipath is for. The reasoning prompt is generated once and cached per organisation. |
+| Kronos | off, `-serv-kronos` | It audits and repairs the generated reasoning prompt, adding at least one audit call per cache miss. The brief says leave it off and the budget is one dollar. |
+
+The model defaults to `claude-haiku-4.5` on cost grounds (SERV lists it at $1.25 in and $6.50 out per million tokens). `SERV_MODEL` swaps it for a demo recording with no code change. Token usage is accumulated per call and the running cost estimate is shown on the reasoning surface and printed by `npm run round`.
+
+Every SERV answer is re-validated locally regardless of what Shadow Agent concluded: JSON parse, exact key set, types, then bounds checked against the balance this process read from the chain. A failure is logged with the agent and the reason, and that agent falls back to its deterministic heuristic. An unreachable SERV degrades the round; it never halts it.
+
+</details>
+
+<details>
+<summary>Money surface invariants</summary>
+
+- **No model output becomes a transfer amount unchecked.** `validateDecision` in `src/server/decisions/decide.ts` bounds every stake against the balance read from chain, never against anything the model stated, and `planRound` applies a final exclusion for any agent the chain says cannot cover the stake. Shadow Agent is a second net, not the only one.
+- **Integer only.** Chain amounts are `bigint` wei, engine amounts are safe integers, conversions fail closed. Rake uses BigInt products. No floats anywhere a result depends on one.
+- **Every transfer is idempotent by round id and agent id.** The key is a deterministic digest of round id, agent id and kind. The ledger returns a completed record without touching the chain, retries a pending or failed one under the same key, and refuses to reuse a key for a different amount or destination. The chain's own idempotency is the second net. Replaying a settled round moves nothing.
+- **Reconciliation is against chain balances.** Wallet and pot deltas are compared to what actually moved in this execution window; entries plus the house share minus rake against payouts is checked for the round as a whole. Nothing compares against a local number.
+- **`SERV_API_KEY` is server side only.** `test/secrets.test.ts` fails if a secret name or value appears in any built client bundle, if a client component reads one from the environment or imports a server module, or if a key literal is committed.
+- **Never log a credential.** The logger masks 64 hex private keys, `sk-` API keys, mnemonics and every registered secret value. Chain identifiers (transaction hashes, addresses) are explicitly allowed through, because they are the evidence. That carve out exists because a transaction hash is 32 bytes of hex, exactly the shape of a private key.
+
+</details>
+
+<details>
+<summary>Limitations, stated plainly</summary>
+
+- **The pot wallet is operator held.** It is an ordinary smart wallet whose credentials the operator controls. Agents pay into it and the operator pays the winner out of it. There is no escrow contract and no on chain rule forcing the payout; the guarantee is the reconciliation check and the ledger, not the chain. A production build would put the pot behind a contract that settles from the event log.
+- **House bots do not hold wallets.** Filling 18 to 26 seats with funded smart wallets would mean that many transfers per round. The operator pot covers those seats instead, so their stake is already inside the pot and reconciliation accounts for it as the house contribution. Only named agents move money.
+- **Rake defaults to zero.** The plumbing is there and reconciliation subtracts it, but no fee is taken.
+- **Round history is a JSON file.** `SERVPIT_DATA_DIR` holds the wallet address registry, the transfer ledger and recent rounds. Adequate for a single process demo, not for concurrent writers.
 
 </details>
 
@@ -270,7 +362,9 @@ Pack quirks are handled explicitly by the loader and recorded in `ActorSprites.n
 src/config/        roster, reels, round (all data)
 src/engine/        rng, intmath, reels, combat, events, payout, resolveRound, modes/
 src/render/        manifest, assets, draw, timeline, arena, emitter, juice, loop (client rendering core)
-src/app/arena/     the /arena demo page
+src/server/        wallets, ledger, transfers, reconcile, decisions, serv, round flow (server only)
+src/app/arena/     the /arena demo page and the agent reasoning surface
+src/app/api/       agents, round/plan, round/run (Node runtime)
 scripts/           sim.ts (npm run sim), extract-assets.ts, reel-distribution.ts, lib/
 public/assets/     extracted roster sprites, fx strips + manifest.json (committed)
 docs/media/        captured arena clip
@@ -282,8 +376,11 @@ test/              repo policy tests (gitignore rules, em dash ban)
 
 - AgentKit (`@coinbase/agentkit`) pulls Node only dependencies. Any route touching it must run on the Node runtime, never Edge, and will likely need `serverExternalPackages` in `next.config.ts`.
 - It pins `zod ^3`. Keep engine validation dependency free (as it is now) so no schema library sits on the payout boundary.
-- The resolver is framework free and can move into a worker or API route unchanged. The /arena page resolves in the browser for demo convenience only; the render core takes any `{ log, characters }` and never touches money.
+- The resolver is framework free. The /arena page resolves a preview in the browser, but a settled round comes from the server and its log replaces the preview in the player.
+- AgentKit and the CDP SDK are Node only and must not be bundled: `next.config.ts` lists both in `serverExternalPackages`, and every route that touches them declares the Node runtime. Without that the production build cannot evaluate those routes.
 
 ## Credits
 
 Character and monster art: Ninja Adventure asset pack by Pixel-Boy and AAA, CC0 1.0.
+
+Smart wallets through [AgentKit](https://github.com/coinbase/agentkit) on the Coinbase Developer Platform. Agent reasoning through [SERV](https://docs.openserv.ai/what-is-serv) by OpenServ.
