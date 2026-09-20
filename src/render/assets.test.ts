@@ -1,34 +1,9 @@
 import { describe, expect, it } from "vitest";
-import manifestJson from "../../public/assets/manifest.json";
 import { FACING } from "@/engine/events";
-import { loadAssets, type DecodedImage, type ImageLoader } from "./assets";
-import { parseManifest } from "./manifest";
+import { loadAssets } from "./assets";
+import { createFakeLoader, testManifest as manifest } from "./testing";
 
-const manifest = parseManifest(manifestJson);
-
-/** Fake decoder: sizes come from the manifest grid, or an override table. */
-function fakeLoader(overrides: Record<string, { width: number; height: number } | "missing"> = {}) {
-  const loads: string[] = [];
-  const sizes = new Map<string, { width: number; height: number }>();
-  for (const e of manifest.entries) {
-    for (const s of Object.values(e.sprites)) sizes.set(s.path, { width: s.cols * s.frameWidth, height: s.rows * s.frameHeight });
-  }
-  for (const f of manifest.fx) sizes.set(f.path, { width: f.cols * f.frameWidth, height: f.rows * f.frameHeight });
-  const loader: ImageLoader = {
-    async load(path) {
-      loads.push(path);
-      const o = overrides[path];
-      if (o === "missing") throw new Error(`404 ${path}`);
-      const size = o ?? sizes.get(path);
-      if (!size) throw new Error(`no fake size for ${path}`);
-      return { width: size.width, height: size.height, source: { path } };
-    },
-    whiten(image: DecodedImage) {
-      return { width: image.width, height: image.height, source: { white: image.source } };
-    },
-  };
-  return { loader, loads };
-}
+const fakeLoader = createFakeLoader;
 
 describe("loadAssets", () => {
   it("decodes every sheet exactly once", async () => {
