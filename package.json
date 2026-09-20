@@ -10,7 +10,8 @@
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run",
     "gate": "npm run typecheck && npm run lint && npm run test && npm run build",
-    "extract-assets": "tsx scripts/extract-assets.ts"
+    "extract-assets": "tsx scripts/extract-assets.ts",
+    "reel-report": "tsx scripts/reel-distribution.ts"
   },
   "dependencies": {
     "next": "16.3.5",
