@@ -4,13 +4,16 @@
 
 Slot reel battle royale where the entrants are autonomous agents holding real testnet balances. One pure function, `resolveRound(seed, entrants, config)`, spins three reels per entrant, runs the fight, and pays the pot, emitting a replayable event log. Six named agents reason about whether to commit their own funds, pay their own entry, and claim their own payouts through smart wallets on Base Sepolia.
 
-![Arena replay of round demo, 24 entrants, captured headlessly from /arena](docs/media/arena-demo.gif)
+![The full player flow: lever, reels, handoff to the arena, result](docs/media/slot-flow.gif)
+
+_Captured headlessly from the running app: connect, mode select, lever pull, reel stops, arena handoff and result._
 
 ## Quick start
 
 ```bash
 npm ci --ignore-scripts
-npm run dev                     # then open http://localhost:3000/arena?seed=demo&entrants=24
+npm run dev                     # then open http://localhost:3000 for the full flow
+                                # or http://localhost:3000/arena?seed=demo&entrants=24 for the player alone
 npm run round -- --seed demo    # one full agent round end to end, on the command line
 npm run sim                     # 1000 headless rounds with a report
 npm run sim -- --rounds 5000 --entrants 32 --seed night --tier high
@@ -134,6 +137,88 @@ Every event has the shape `{ t, type, actor, target, value, facing }` plus the o
 `y` grows downward as on screen. A `move` faces the direction stepped. An `attack` faces the victim. `hit`, `death` and `storm` carry the victim's current facing. `spawn` faces down. Ties between axes resolve horizontal.
 
 The arena is a `width x height` tile grid (24 x 24 by default); positions are integer tile coordinates, `0 <= x < width`, `0 <= y < height`. The renderer should not compute anything: hp bars come from `spawn.value` and `hit.hp` / `storm.hp`, positions from `spawn` and `move`.
+
+</details>
+
+## The machine
+
+`/` is the whole player flow: connect, pick a pit, watch the agents decide, pull the lever, watch the fight, collect. One state machine owns every transition and one animation loop drives every moving thing on the page.
+
+```mermaid
+%%{init: {"theme": "neutral"}}%%
+stateDiagram-v2
+    [*] --> connect
+    connect --> modeSelect: session started
+    modeSelect --> modeSelect: locked mode refused
+    modeSelect --> lobby: Battle Royale, stake chosen
+    lobby --> slot: agent decisions loaded, lever goes live
+    slot --> spinning: lever pulled, lever dies
+    spinning --> spinning: reels settled, waiting on the round
+    spinning --> spinning: round ready, waiting on the reels
+    spinning --> arena: both in
+    arena --> result: playback finished
+    result --> modeSelect: another round
+    spinning --> slot: failure, lever live again
+```
+
+**One clock.** `startLoop` from `src/render/loop.ts` is started once for the session and never restarted. It advances the lever, the reels, the effects and the arena timeline with the same delta, and it draws whichever surface is showing. Both canvases stay mounted, so moving from the slot to the arena resets no clock, reloads nothing and creates no second loop. The hygiene test that bans `setTimeout`, `setInterval`, `requestAnimationFrame`, `Date.now` and `performance.now` outside `loop.ts` now walks `src/render/slot` and `src/app/play` too.
+
+**Vestibular safety.** Same rule as the arena, and the reel smear is the only thing that could have broken it: it is a sprite offset, several copies of the symbol along the direction of travel at falling alpha, never a blur or a canvas filter. Nothing here shakes, zooms, blurs or moves a camera.
+
+<details>
+<summary>Slot timing parameters and their defaults</summary>
+
+Every number a player can feel lives in `src/config/slot.ts`.
+
+| Parameter | Default | What it does |
+| --- | --- | --- |
+| `lever.travelMs` | 133 | Lever travel down, about eight frames at 60, eased not snapped |
+| `lever.commitAt` | 0.55 | Fraction of travel after which the pull is locked and input stops mattering |
+| `lever.deadAirMs` | 380 | Quiet between commit and reel 1 starting. The pressure lives here |
+| `lever.returnMs` | 260 | Travel back up once the round is handed off |
+| `reels.spinUpMs` | 220 | Acceleration to full speed |
+| `reels.spinSymbolsPerSecond` | 22 | Full speed, which also drives how much the smear spreads |
+| `reels.firstStopMs` | 900 | When reel 1 comes to rest, from the moment the reels start |
+| `reels.gapBeforeReel2Ms` | 420 | Beat between reel 1 and reel 2 stopping |
+| `reels.gapBeforeReel3Ms` | 700 | Beat between reel 2 and reel 3. Deliberately longer than the second gap |
+| `reels.nearMissHoldMs` | 400 | Extra hold on reel 3 when reels 1 and 2 landed on the same symbol |
+| `reels.settleMs` | 260 | Ease from full speed onto the target symbol |
+| `reels.stripRadius` | 2 | Rows drawn above and below the payline, masked to the window |
+
+The near miss hold is the one rule that makes this read as a slot rather than three timers. When reels 1 and 2 target the same symbol, the two matching faces are already sitting on the payline while reel 3 keeps going for another 400 ms, so the player does the arithmetic before the machine does. Tests measure the interval between stop events and assert both that reel 3's gap is longer than reel 2's and that the near miss adds exactly the configured hold.
+
+Reels start spinning the instant the lever releases, on a provisional landing, and `ReelSet.retarget` swaps in the round's real draw mid spin. The player never waits on the network to see motion, and nothing jumps when the answer lands. Retarget also shifts reel 3's stop moment when the new symbols create or remove a near miss.
+
+</details>
+
+<details>
+<summary>VFX configs</summary>
+
+Particles go through the phase 2 `ParticleEmitter`. There is no second particle system; the coin burst is an `EmitterConfig` like the arena's presets.
+
+| Effect | Shape | Notes |
+| --- | --- | --- |
+| Flash ring | Squares stepped around a circumference | Radius grows, stroke thins as it grows, alpha falls with it, so it reads as one impulse spreading rather than a filling disc. Starts at a visible radius so a reel stop rings on the frame it happens |
+| Coin burst | `EmitterConfig`, gravity 520, spread 0.7pi | Parabolic arcs with horizontal spread, two flat golds, full brightness until the last fifth of life then out |
+| Shine sweep | Scanlines offset by tan(20 degrees) | White at 0.16 alpha, clipped to the reel window, travels from fully off one edge to fully off the other |
+| Bulb chase | Circles around the cabinet edge | Phase offset sine on alpha only. Nothing moves; the light travels. Reverses direction on a win |
+
+All four draw through `fillRect`, so `DrawTarget` is unchanged and no canvas filter is involved anywhere.
+
+The payoff is tiered by what landed. `TIER_PAYOFF` scores rarity times combination: a common single gets one ring and a small burst, a rare lands wider and louder, and a three of a kind gets three rings, the largest burst, the shine sweep and the bulb chase reversed.
+
+The hue test that rejects the purple range covers every colour the cabinet, the effects and the emitter presets paint.
+
+</details>
+
+<details>
+<summary>Audio</summary>
+
+Ten samples from the pack's 132 effects and 15 jingles, extracted into `public/assets/audio` with an audio section in the manifest. Only what is played is committed, about 800 KB rather than all 147.
+
+Audio starts muted, because a browser blocks it before a user gesture, and unlocks on the first real interaction. A deliberate mute after that is never overridden by a later gesture, and the choice persists in `localStorage`.
+
+Two things are deliberate. The payout fires two samples together, a sharp transient at 1.12 rate over a low body at 0.82, because either alone reads thin. The three reel stops are one sample at rising pitch, so the stops read as a sequence closing rather than three identical clicks.
 
 </details>
 
@@ -363,6 +448,8 @@ src/config/        roster, reels, round (all data)
 src/engine/        rng, intmath, reels, combat, events, payout, resolveRound, modes/
 src/render/        manifest, assets, draw, timeline, arena, emitter, juice, loop (client rendering core)
 src/server/        wallets, ledger, transfers, reconcile, decisions, serv, round flow (server only)
+src/render/slot/   reels, lever, cabinet drawing, VFX and audio for the machine
+src/app/play/      the player flow state machine and screen
 src/app/arena/     the /arena demo page and the agent reasoning surface
 src/app/api/       agents, round/plan, round/run (Node runtime)
 scripts/           sim.ts (npm run sim), extract-assets.ts, reel-distribution.ts, lib/
