@@ -252,8 +252,7 @@ export function PlayClient() {
           const screen = stateRef.current.screen;
           if (screen === "arena" && engine.timeline) {
             if (!engine.juice.frozen) engine.timeline.advance(deltaMs);
-            engine.juice.update(deltaMs);
-            engine.juice.frame();
+            engine.juice.advance(deltaMs);
             const actors = engine.timeline.actors();
             arenaTarget.beginFrame();
             arenaRenderer.draw(arenaTarget, { actors, timeMs: engine.timeline.timeMs, fx: engine.juice.actorFx(actors), drawEffects: (t) => engine.juice.drawEffects(t) });

@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { ticksToFrames } from "@/config/playback";
+import { FRAME_MS, ticksToMs } from "@/config/playback";
 import type { RoundEvent } from "@/engine/events";
 import { createRng } from "@/engine/rng";
 import type { AssetStore, Slice } from "./assets";
@@ -55,17 +55,20 @@ class RecordingTarget implements DrawTarget {
 }
 
 describe("DEFAULT_JUICE", () => {
-  it("locks the documented parameters, as fractions of a tick", () => {
-    // These are beat relative now. The literals are what the documented
-    // fractions come to at the current tick, so a change to either the tick
-    // or a fraction shows up here.
-    expect(DEFAULT_JUICE.hitstopFrames).toEqual({ death: ticksToFrames(1 / 4), finalBlow: ticksToFrames(5 / 12) });
-    expect(DEFAULT_JUICE.flashFrames).toBe(ticksToFrames(1 / 6));
+  it("locks the documented parameters, as fractions of a tick in milliseconds", () => {
+    // Beat relative and in wall time. The literals below are what the
+    // documented fractions come to at the current tick, so a change to the
+    // tick, a fraction or the unit shows up here.
+    expect(DEFAULT_JUICE.hitstopMs).toEqual({ death: ticksToMs(1 / 4), finalBlow: ticksToMs(5 / 12) });
+    expect(DEFAULT_JUICE.flashMs).toBe(ticksToMs(1 / 6));
     expect(DEFAULT_JUICE.knockbackPx).toBe(3);
-    expect(DEFAULT_JUICE.knockbackFrames).toBe(ticksToFrames(1 / 3));
+    expect(DEFAULT_JUICE.knockbackMs).toBe(ticksToMs(1 / 3));
     expect(DEFAULT_JUICE.punchScale).toBe(1.15);
-    expect(DEFAULT_JUICE.punchFrames).toBe(ticksToFrames(5 / 12));
-    expect([DEFAULT_JUICE.hitstopFrames.death, DEFAULT_JUICE.flashFrames, DEFAULT_JUICE.knockbackFrames]).toEqual([5, 3, 6]);
+    expect(DEFAULT_JUICE.punchMs).toBe(ticksToMs(5 / 12));
+    // The same wall times the frame counted version drew at 60 Hz.
+    expect(DEFAULT_JUICE.hitstopMs.death / FRAME_MS).toBeCloseTo(5, 6);
+    expect(DEFAULT_JUICE.flashMs / FRAME_MS).toBeCloseTo(3, 6);
+    expect(DEFAULT_JUICE.knockbackMs / FRAME_MS).toBeCloseTo(6, 6);
     expect(DEFAULT_JUICE.impactByTier.rare.sheetScale).toBeGreaterThan(DEFAULT_JUICE.impactByTier.common.sheetScale);
     expect(DEFAULT_JUICE.impactByTier.rare.sparks).toBeGreaterThan(DEFAULT_JUICE.impactByTier.common.sparks);
   });
@@ -73,8 +76,8 @@ describe("DEFAULT_JUICE", () => {
 
 describe("ordinary hit", () => {
   it("flashes the victim white for the flash window and knocks it 3 px away, easing back over the knockback window", () => {
-    const flash = DEFAULT_JUICE.flashFrames;
-    const knock = DEFAULT_JUICE.knockbackFrames;
+    const flash = DEFAULT_JUICE.flashMs;
+    const knock = DEFAULT_JUICE.knockbackMs;
     const attacker = state("a", { x: 2, y: 4, tileX: 2, tileY: 4 });
     const victim = state("v", { x: 3, y: 4, tileX: 3, tileY: 4 });
     const { juice, feed } = make([attacker, victim]);
@@ -83,15 +86,15 @@ describe("ordinary hit", () => {
     expect(fx0.white).toBe(true);
     expect(fx0.offsetX).toBeCloseTo(3);
     expect(fx0.offsetY).toBeCloseTo(0);
-    for (let i = 1; i < flash; i++) {
-      juice.frame();
-      expect(juice.actorFx().get("v")!.white, `frame ${i}`).toBe(true);
+    for (let ms = FRAME_MS; ms < flash; ms += FRAME_MS) {
+      juice.advance(FRAME_MS);
+      expect(juice.actorFx().get("v")!.white, `at ${ms} ms`).toBe(true);
     }
-    juice.frame();
+    juice.advance(FRAME_MS);
     const after = juice.actorFx().get("v")!;
     expect(after.white).toBe(false);
     expect(after.offsetX).toBeCloseTo(3 * (1 - flash / knock));
-    for (let i = flash; i < knock; i++) juice.frame();
+    juice.advance(knock - flash);
     expect(juice.actorFx().get("v")?.offsetX ?? 0).toBeCloseTo(0);
   });
 
@@ -110,7 +113,7 @@ describe("ordinary hit", () => {
     feed(hit("a", "v"));
     expect(juice.actorFx().get("a")!.scale).toBeCloseTo(1.15);
     expect(juice.actorFx().get("a")!.attacking).toBe(true);
-    for (let i = 0; i < DEFAULT_JUICE.punchFrames; i++) juice.frame();
+    juice.advance(DEFAULT_JUICE.punchMs);
     expect(juice.actorFx().get("a")?.scale ?? 1).toBeCloseTo(1);
   });
 
@@ -145,15 +148,15 @@ describe("death and final blow", () => {
   ];
 
   it("hitstops for the death window on a death, and only actors freeze", () => {
-    const stop = DEFAULT_JUICE.hitstopFrames.death;
+    const stop = DEFAULT_JUICE.hitstopMs.death;
     const { juice, feed } = make([state("a", { x: 2, y: 4 }), state("v", { x: 3, y: 4 })]);
     feed(death("a", "v"));
     expect(juice.frozen).toBe(true);
-    for (let i = 1; i < stop; i++) {
-      juice.frame();
-      expect(juice.frozen, `frame ${i}`).toBe(true);
+    for (let ms = FRAME_MS; ms < stop; ms += FRAME_MS) {
+      juice.advance(FRAME_MS);
+      expect(juice.frozen, `at ${ms} ms`).toBe(true);
     }
-    juice.frame();
+    juice.advance(FRAME_MS);
     expect(juice.frozen).toBe(false);
   });
 
@@ -161,7 +164,7 @@ describe("death and final blow", () => {
     const { juice, feed } = make([state("a", { x: 2, y: 4 }), state("v", { x: 3, y: 4 })]);
     feed(death("a", "v"));
     const before = juice.activeSheets().map((s) => s.frame);
-    juice.update(120);
+    juice.advance(120);
     const after = juice.activeSheets().map((s) => s.frame);
     expect(after.some((f, i) => f > before[i])).toBe(true);
   });
@@ -170,25 +173,24 @@ describe("death and final blow", () => {
     const actors = ["a", "b", "c", "d"].map((id, i) => state(id, { x: i, y: 0 }));
     const { juice, feed } = make(actors);
     feed([...death("a", "b"), ...death("c", "d"), ...death("a", "c")]);
-    let frames = 0;
-    while (juice.frozen) {
-      juice.frame();
-      frames++;
-      if (frames > 40) break;
+    let elapsed = 0;
+    while (juice.frozen && elapsed < 2000) {
+      juice.advance(FRAME_MS);
+      elapsed += FRAME_MS;
     }
-    expect(frames).toBe(DEFAULT_JUICE.hitstopFrames.death);
+    expect(elapsed).toBeCloseTo(DEFAULT_JUICE.hitstopMs.death, 6);
   });
 
   it("hitstops for longer on the final blow of the round than on an ordinary death", () => {
     const { juice, feed } = make([state("a", { x: 2, y: 4 }), state("v", { x: 3, y: 4 })]);
     feed([...death("a", "v"), { t: 5, type: "win", actor: "a", target: null, value: 0, facing: 3 }]);
-    let frames = 0;
-    while (juice.frozen && frames < 40) {
-      juice.frame();
-      frames++;
+    let elapsed = 0;
+    while (juice.frozen && elapsed < 2000) {
+      juice.advance(FRAME_MS);
+      elapsed += FRAME_MS;
     }
-    expect(frames).toBe(DEFAULT_JUICE.hitstopFrames.finalBlow);
-    expect(DEFAULT_JUICE.hitstopFrames.finalBlow).toBeGreaterThan(DEFAULT_JUICE.hitstopFrames.death);
+    expect(elapsed).toBeCloseTo(DEFAULT_JUICE.hitstopMs.finalBlow, 6);
+    expect(DEFAULT_JUICE.hitstopMs.finalBlow).toBeGreaterThan(DEFAULT_JUICE.hitstopMs.death);
   });
 
   it("adds smoke on the victim for a death and an explosion at the midpoint for the killing blow", () => {
@@ -201,13 +203,13 @@ describe("death and final blow", () => {
     expect(smoke.x).toBeCloseTo(tileToPixel(3.5, 4.5).px);
   });
 
-  it("fades a dead actor toward the corpse alpha over frames", () => {
+  it("fades a dead actor toward the corpse alpha over time", () => {
     const { juice, feed, lookup } = make([state("a", { x: 2, y: 4 }), state("v", { x: 3, y: 4 })]);
     feed(death("a", "v"));
     lookup.set("v", state("v", { x: 3, y: 4, alive: false, hp: 0, diedAtTick: 5 }));
-    for (let i = 0; i < 6; i++) juice.frame();
+    juice.advance(6 * FRAME_MS);
     const early = juice.actorFx().get("v")!.alpha;
-    for (let i = 0; i < 60; i++) juice.frame();
+    juice.advance(60 * FRAME_MS);
     const late = juice.actorFx().get("v")!.alpha;
     expect(early).toBeLessThan(1);
     expect(late).toBeLessThan(early);
@@ -241,7 +243,7 @@ describe("silence, reset and drawing", () => {
     expect(s.x + s.slice.sw / 2).toBeCloseTo(sheet.x);
     expect(s.y + s.slice.sh / 2).toBeCloseTo(sheet.y);
     expect(target.fills).toBeGreaterThan(0);
-    juice.update(5000);
+    juice.advance(5000);
     expect(juice.activeSheets()).toHaveLength(0);
   });
 });
