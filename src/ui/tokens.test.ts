@@ -115,3 +115,89 @@ describe("no serif is reachable anywhere in the app", () => {
     expect(offenders).toEqual([]);
   });
 });
+
+describe("anime.js and the canvas Timeline never animate the same element", () => {
+  const sources = (): string[] => {
+    const out: string[] = [];
+    const walk = (dir: string) => {
+      for (const name of readdirSync(dir)) {
+        const p = join(dir, name);
+        if (statSync(p).isDirectory()) walk(p);
+        else if (/\.(ts|tsx)$/.test(p) && !/\.test\.tsx?$/.test(p)) out.push(p);
+      }
+    };
+    walk(join(process.cwd(), "src"));
+    return out;
+  };
+
+  it("nothing outside src/render imports the canvas render loop or a canvas renderer for animation", () => {
+    // The canvas side owns reels and arena playback and only ever draws to a
+    // CanvasDrawTarget. The DOM side owns chrome and only ever targets an
+    // HTMLElement. The separation is enforced by where each import may appear.
+    const offenders: string[] = [];
+    for (const file of sources()) {
+      if (file.includes("/src/render/")) continue;
+      const body = readFileSync(file, "utf8");
+      const usesAnime = /from "animejs/.test(body);
+      const drawsCanvas = /CanvasDrawTarget|\.beginFrame\(|drawSlice\(/.test(body);
+      // A file may wire both, as the client does, but it must not hand a
+      // canvas to anime.js.
+      if (usesAnime && /animate\(\s*\w*[Cc]anvas/.test(body)) offenders.push(`${file}: animates a canvas element`);
+      if (drawsCanvas && /animate\(.*canvasRef/.test(body)) offenders.push(`${file}: anime.js targets a canvas ref`);
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it("no anime.js call targets a canvas selector", () => {
+    const offenders: string[] = [];
+    for (const file of sources()) {
+      const body = readFileSync(file, "utf8");
+      if (!/from "animejs/.test(body)) continue;
+      if (/animate\(\s*["'`][^"'`]*canvas/i.test(body)) offenders.push(file);
+      if (/querySelectorAll?\(\s*["'`]canvas/i.test(body) && /animate\(/.test(body)) offenders.push(`${file}: selects canvases near an animate call`);
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it("the canvas renderers never import anime.js", () => {
+    const offenders = sources()
+      .filter((f) => f.includes("/src/render/"))
+      .filter((f) => /from "animejs/.test(readFileSync(f, "utf8")));
+    expect(offenders).toEqual([]);
+  });
+});
+
+describe("vestibular safety in the animation layer", () => {
+  const animFiles = (): string[] => {
+    const out: string[] = [];
+    const walk = (dir: string) => {
+      for (const name of readdirSync(dir)) {
+        const p = join(dir, name);
+        if (statSync(p).isDirectory()) walk(p);
+        else if (/\.(ts|tsx)$/.test(p) && !/\.test\.tsx?$/.test(p) && /from "animejs/.test(readFileSync(p, "utf8"))) out.push(p);
+      }
+    };
+    walk(join(process.cwd(), "src"));
+    return out;
+  };
+
+  it("no animation touches rotation, blur, or any full screen container", () => {
+    const banned = [/rotate\s*:/, /rotateX|rotateY|rotateZ/, /filter\s*:\s*["'`]?blur/, /blur\(/, /skew/, /perspective/];
+    const offenders: string[] = [];
+    for (const file of animFiles()) {
+      const body = readFileSync(file, "utf8");
+      for (const re of banned) if (re.test(body)) offenders.push(`${file}: ${re}`);
+      // Nothing may animate the document scroller or the page body.
+      if (/animate\(\s*(document\.body|document\.documentElement|window)/.test(body)) offenders.push(`${file}: animates the page itself`);
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it("no pointer driven parallax anywhere", () => {
+    const offenders = animFiles().filter((f) => {
+      const body = readFileSync(f, "utf8");
+      return /pointermove|mousemove/i.test(body) && /animate\(|utils\.set\(/.test(body);
+    });
+    expect(offenders).toEqual([]);
+  });
+});
