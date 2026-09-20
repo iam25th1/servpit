@@ -187,3 +187,103 @@ export const AUDIO_SOURCES: readonly AudioSource[] = [
   { id: "uiSelect", source: "Audio/Sounds/Menu/Accept4.wav", loop: false },
   { id: "uiLocked", source: "Audio/Sounds/Menu/Cancel.wav", loop: false },
 ];
+
+export type UiKind = "ninePatch" | "sprite" | "tileset" | "font";
+
+export interface UiSource {
+  id: string;
+  /** Path inside the pack, relative to the pack root. */
+  source: string;
+  kind: UiKind;
+  /**
+   * Nine patch slice inset in pixels, measured from the sprite rather than
+   * guessed: the corner artwork spans this many pixels before the edge starts
+   * repeating. Corners draw untouched, edges and centre tile in whole pixels.
+   */
+  slice?: number | { x: number; y: number };
+  /** Tile size for a tileset, so the renderer can pick cells. */
+  tile?: number;
+}
+
+/**
+ * UI art from the pack. The nine patch slices were read off the pixels:
+ * the 16x16 panels carry 6 px corners, the 8x8 focus ring 3 px, and the
+ * 16x8 button 6 px across and 3 down.
+ */
+export const UI_SOURCES: readonly UiSource[] = [
+  // Nine patch containers: every panel, card and dialog in the app is one of these.
+  { id: "panel", source: "Ui/Theme/Theme Wood/nine_path_panel.png", kind: "ninePatch", slice: 6 },
+  { id: "panelAlt", source: "Ui/Theme/Theme Wood/nine_path_panel_2.png", kind: "ninePatch", slice: 6 },
+  { id: "panelInterior", source: "Ui/Theme/Theme Wood/nine_path_panel_interior.png", kind: "ninePatch", slice: 6 },
+  { id: "panelDisabled", source: "Ui/Theme/Theme Wood/nine_path_panel_disabled.png", kind: "ninePatch", slice: 6 },
+  { id: "bg", source: "Ui/Theme/Theme Wood/nine_path_bg.png", kind: "ninePatch", slice: 6 },
+  { id: "bgAlt", source: "Ui/Theme/Theme Wood/nine_path_bg_2.png", kind: "ninePatch", slice: 6 },
+  { id: "focus", source: "Ui/Theme/Theme Wood/nine_path_focus.png", kind: "ninePatch", slice: 3 },
+
+  // Buttons and tabs, every state, so a pressed button is a different sprite
+  // rather than a filter.
+  { id: "button", source: "Ui/Theme/Theme Wood/button_normal.png", kind: "ninePatch", slice: { x: 6, y: 3 } },
+  { id: "buttonHover", source: "Ui/Theme/Theme Wood/button_hover.png", kind: "ninePatch", slice: { x: 6, y: 3 } },
+  { id: "buttonPressed", source: "Ui/Theme/Theme Wood/button_pressed.png", kind: "ninePatch", slice: { x: 6, y: 3 } },
+  { id: "buttonDisabled", source: "Ui/Theme/Theme Wood/button_disabled.png", kind: "ninePatch", slice: { x: 6, y: 3 } },
+  { id: "tab", source: "Ui/Theme/Theme Wood/tab.png", kind: "ninePatch", slice: { x: 6, y: 4 } },
+  { id: "tabSelected", source: "Ui/Theme/Theme Wood/tab_selected.png", kind: "ninePatch", slice: { x: 6, y: 4 } },
+  { id: "tabHover", source: "Ui/Theme/Theme Wood/tab_hover.png", kind: "ninePatch", slice: { x: 6, y: 4 } },
+  { id: "tabDisabled", source: "Ui/Theme/Theme Wood/tab_disabled.png", kind: "ninePatch", slice: { x: 6, y: 4 } },
+  { id: "inventoryCell", source: "Ui/Theme/Theme Wood/inventory_cell.png", kind: "ninePatch", slice: 6 },
+
+  // Dialog frames: the SERV reason strings render in a real dialog box,
+  // which is what the asset is for.
+  { id: "dialogBox", source: "Ui/Dialog/DialogBox.png", kind: "sprite" },
+  { id: "dialogSimple", source: "Ui/Dialog/DialogueBoxSimple.png", kind: "sprite" },
+  { id: "dialogFaceset", source: "Ui/Dialog/DialogBoxFaceset.png", kind: "sprite" },
+  { id: "facesetBox", source: "Ui/Dialog/FacesetBox.png", kind: "sprite" },
+  { id: "dialogInfo", source: "Ui/Dialog/DialogInfo.png", kind: "sprite" },
+
+  // Meters: bankroll and load progress are drawn, not printed as numbers.
+  { id: "lifeBarUnder", source: "Ui/Receptacle/LifeBarMiniUnder.png", kind: "sprite" },
+  { id: "lifeBarProgress", source: "Ui/Receptacle/LifeBarMiniProgress.png", kind: "sprite" },
+  { id: "meterBack", source: "Ui/Receptacle/Receptacle Rectangle/BackgroundWood.png", kind: "sprite" },
+  { id: "meterFill", source: "Ui/Receptacle/Receptacle Rectangle/ProgressWhite.png", kind: "sprite" },
+  { id: "meterHealth", source: "Ui/Receptacle/Receptacle Rectangle/ProgressHealth.png", kind: "sprite" },
+  { id: "heart", source: "Ui/Receptacle/IconHeart.png", kind: "sprite" },
+
+  // Fonts. NormalFont.ttf is the interface face; the bitmap sheets are for
+  // numerals and headings.
+  { id: "fontNormal", source: "Ui/Font/NormalFont.ttf", kind: "font" },
+  { id: "fontBitmapSmall", source: "Ui/Font/font8x8.png", kind: "font" },
+  { id: "fontBitmapLarge", source: "Ui/Font/font24x30.png", kind: "font" },
+
+  // Backdrop and arena floor.
+  { id: "tilesetDungeon", source: "Backgrounds/Tilesets/TilesetDungeon.png", kind: "tileset", tile: 16 },
+  { id: "tilesetFloor", source: "Backgrounds/Tilesets/TilesetFloor.png", kind: "tileset", tile: 16 },
+  { id: "tilesetFloorDetail", source: "Backgrounds/Tilesets/TilesetFloorDetail.png", kind: "tileset", tile: 16 },
+  { id: "tilesetRelief", source: "Backgrounds/Tilesets/TilesetRelief.png", kind: "tileset", tile: 16 },
+];
+
+/**
+ * Emote bubbles conveying agent state. The pack names them emote1 to emote30
+ * with no semantics, so the meaning is assigned here and the numbers were
+ * picked by looking at the sprites.
+ */
+export const UI_EMOTES: Record<string, string> = {
+  committed: "emote1",
+  holding: "emote4",
+  thinking: "emote2",
+  broke: "emote10",
+  won: "emote7",
+  lost: "emote6",
+};
+
+/**
+ * Skill icons used as mode identities on the select screen. Names are the
+ * pack's own; each mode gets one that reads as its character.
+ */
+export const UI_SKILL_ICONS: Record<string, string> = {
+  battleRoyale: "Spell/Cut",
+  gauntlet: "Items & Weapon/Guard",
+  duel: "Spell/Counter",
+  placement: "Spell/Permutation",
+  highRoller: "Items & Weapon/Money",
+  locked: "Job & Action/Mine",
+};
