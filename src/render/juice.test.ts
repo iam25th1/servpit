@@ -22,6 +22,7 @@ const unit = (seed: string) => {
 const state = (id: string, patch: Partial<ActorState> = {}): ActorState => ({
   id,
   characterId: "Knight",
+  name: null,
   tier: "common",
   x: 0, y: 0, tileX: 0, tileY: 0,
   facing: 0, hp: 100, maxHp: 100, alive: true, moving: false, diedAtTick: null,

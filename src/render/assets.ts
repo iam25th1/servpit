@@ -62,6 +62,8 @@ export interface AssetStore {
   fx: Map<string, FxSprites>;
   /** Tileset sheets by manifest id, for the arena floor. */
   tilesets: Map<string, DecodedImage>;
+  /** Bitmap font sheets by manifest id, for canvas text. */
+  fonts: Map<string, DecodedImage>;
   whiteOf(image: DecodedImage): DecodedImage;
 }
 
@@ -182,15 +184,26 @@ export async function loadAssets(manifest: Manifest, loader: ImageLoader): Promi
   // The floor sheets. Two small images, decoded once, so the arena can tile
   // the pack's own floor instead of drawing a one pixel grid.
   const tilesetDefs = manifest.ui.filter((u) => u.kind === "tileset");
-  const [actorList, fxList, tilesetList] = await Promise.all([
+  // The bitmap font sheets. The ttf is a DOM face and cannot be drawn to a
+  // canvas without antialiasing, so canvas text comes from these.
+  const fontDefs = manifest.ui.filter((u) => u.kind === "font" && u.path.endsWith(".png"));
+  const [actorList, fxList, tilesetList, fontList] = await Promise.all([
     Promise.all(manifest.entries.map((e) => loadActor(e, loader, remember))),
     Promise.all(manifest.fx.map((f) => loadFx(f, loader, remember))),
     Promise.all(tilesetDefs.map(async (u) => [u.id, await decode(loader, u.path, `tileset ${u.id}`)] as const)),
+    Promise.all(fontDefs.map(async (u) => {
+      const image = await decode(loader, u.path, `font ${u.id}`);
+      // Whitened once here, because a nameplate draws every glyph twice: the
+      // sheet's own near black ink as a shadow and a white copy as the ink.
+      remember(image);
+      return [u.id, image] as const;
+    })),
   ]);
   return {
     actors: new Map(actorList.map((a) => [a.id, a])),
     fx: new Map(fxList.map((f) => [f.id, f])),
     tilesets: new Map(tilesetList),
+    fonts: new Map(fontList),
     whiteOf(image) {
       let w = whites.get(image);
       if (!w) {

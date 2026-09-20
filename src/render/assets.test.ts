@@ -28,8 +28,20 @@ describe("loadAssets", () => {
     await loadAssets(manifest, loader);
     expect(new Set(loads).size).toBe(loads.length);
     const tilesets = manifest.ui.filter((u) => u.kind === "tileset").length;
-    const expected = manifest.entries.reduce((n, e) => n + Object.keys(e.sprites).length + 1, 0) + manifest.fx.length + tilesets;
+    const fonts = manifest.ui.filter((u) => u.kind === "font" && u.path.endsWith(".png")).length;
+    const expected = manifest.entries.reduce((n, e) => n + Object.keys(e.sprites).length + 1, 0) + manifest.fx.length + tilesets + fonts;
     expect(loads).toHaveLength(expected);
+  });
+
+  it("keeps the bitmap font sheets, which the arena draws nameplates from", async () => {
+    const store = await loadAssets(manifest, fakeLoader().loader);
+    const small = store.fonts.get("fontBitmapSmall");
+    expect(small).toBeDefined();
+    // Fifteen columns of eight pixel cells, eight rows.
+    expect(small?.width).toBe(120);
+    expect(small?.height).toBe(64);
+    // The ttf is a DOM face and is deliberately not decoded here.
+    expect(store.fonts.has("fontNormal")).toBe(false);
   });
 
   it("keeps the tileset sheets, which the arena tiles its floor from", async () => {

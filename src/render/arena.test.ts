@@ -23,6 +23,7 @@ class RecordingTarget implements DrawTarget {
 }
 
 const actor = (patch: Partial<ActorState> & { id: string; characterId: string }): ActorState => ({
+  name: null,
   tier: "common",
   x: 0, y: 0, tileX: 0, tileY: 0,
   facing: 0, hp: 100, maxHp: 100, alive: true, moving: false, diedAtTick: null,
@@ -174,5 +175,117 @@ describe("the arena floor", () => {
     const t = new RecordingTarget(r.width, r.height);
     r.draw(t, { actors: [], timeMs: 0 });
     expect(t.calls.some((c) => c.kind === "fill" && c.color === PALETTE.border)).toBe(true);
+  });
+});
+
+describe("nameplates", () => {
+  const named = (id: string, name: string | null, patch: Partial<ActorState> = {}): ActorState =>
+    actor({ id, characterId: "Knight", name, ...patch });
+
+  it("draws a glyph per character of the display name, from the font sheet", () => {
+    const r = new ArenaRenderer(store, { arena });
+    const t = new RecordingTarget(r.width, r.height);
+    r.draw(t, { timeMs: 0, actors: [named("agent-delta", "Delta", { x: 4, y: 4 })] });
+    const font = store.fonts.get("fontBitmapSmall")!;
+    const glyphs = t.slices().filter((s) => s.slice.image === font);
+    // Five characters, drawn twice each: a shadow and the ink over it.
+    expect(glyphs).toHaveLength(10);
+    expect(glyphs.every((g) => g.slice.sw === 8 && g.slice.sh === 8)).toBe(true);
+  });
+
+  it("draws the shadow in the sheet's own ink and the name white over it", () => {
+    const r = new ArenaRenderer(store, { arena });
+    const t = new RecordingTarget(r.width, r.height);
+    r.draw(t, { timeMs: 0, actors: [named("agent-delta", "D", { x: 4, y: 4 })] });
+    const font = store.fonts.get("fontBitmapSmall")!;
+    const [shadow, ink] = t.slices().filter((s) => s.slice.image === font);
+    expect(shadow.options.white ?? false).toBe(false);
+    expect(ink.options.white).toBe(true);
+    // One pixel down and right, so the glyph reads over floor detail.
+    expect(shadow.x - ink.x).toBe(1);
+    expect(shadow.y - ink.y).toBe(1);
+  });
+
+  it("sits above the health bar, on whole pixels, centred on the sprite", () => {
+    const r = new ArenaRenderer(store, { arena });
+    const t = new RecordingTarget(r.width, r.height);
+    r.draw(t, { timeMs: 0, actors: [named("agent-delta", "Delta", { x: 4, y: 4 })] });
+    const font = store.fonts.get("fontBitmapSmall")!;
+    const ink = t.slices().filter((s) => s.slice.image === font && s.options.white === true);
+    const { px, py } = r.tileToPixel(4, 4);
+    // The bar occupies py - 3 to py - 1, so the plate has to clear it.
+    expect(ink[0].y).toBeLessThan(py - 3);
+    for (const g of ink) {
+      expect(Number.isInteger(g.x)).toBe(true);
+      expect(Number.isInteger(g.y)).toBe(true);
+    }
+    // Five glyphs of eight over a sixteen wide sprite, centred.
+    expect(ink[0].x).toBe(px + Math.round((16 - 40) / 2));
+  });
+
+  it("draws nothing for an actor with no name, so house bots stay unlabelled", () => {
+    const r = new ArenaRenderer(store, { arena });
+    const t = new RecordingTarget(r.width, r.height);
+    r.draw(t, { timeMs: 0, actors: [named("bot-07", null, { x: 4, y: 4 })] });
+    const font = store.fonts.get("fontBitmapSmall")!;
+    expect(t.slices().filter((s) => s.slice.image === font)).toEqual([]);
+  });
+
+  it("moves and fades with the actor, including on death", () => {
+    const font = store.fonts.get("fontBitmapSmall")!;
+    const plate = (fx?: Map<string, ActorFx>) => {
+      const r = new ArenaRenderer(store, { arena });
+      const t = new RecordingTarget(r.width, r.height);
+      r.draw(t, { timeMs: 0, actors: [named("agent-delta", "Delta", { x: 4, y: 4, alive: false, hp: 0 })], fx });
+      return t.slices().filter((s) => s.slice.image === font);
+    };
+    const still = plate();
+    const shoved = plate(new Map([["agent-delta", { offsetX: 5, offsetY: -2, scale: 1, white: false, alpha: 0.4, attacking: false }]]));
+    // The knockback offset carries the plate with the sprite, by the same
+    // amount and in the same direction.
+    expect(shoved[0].x - still[0].x).toBe(5);
+    expect(shoved[0].y - still[0].y).toBe(-2);
+    // And it fades with it, so a corpse's name goes as quiet as the corpse.
+    expect(shoved.every((g) => g.options.alpha === 0.4)).toBe(true);
+    expect(still.every((g) => (g.options.alpha ?? 1) === 1)).toBe(true);
+  });
+
+  it("draws the plate after the sprite, so a fighter behind cannot cover a name", () => {
+    const r = new ArenaRenderer(store, { arena });
+    const t = new RecordingTarget(r.width, r.height);
+    r.draw(t, { timeMs: 0, actors: [named("agent-delta", "Delta", { x: 4, y: 4 })] });
+    const font = store.fonts.get("fontBitmapSmall")!;
+    const first = t.slices().findIndex((s) => s.slice.image === font);
+    const sprite = t.actorSlices().findIndex((s) => s.slice.image !== font);
+    expect(first).toBeGreaterThan(sprite);
+  });
+});
+
+describe("a nameplate against the arena edge", () => {
+  const named = (id: string, name: string | null, patch: Partial<ActorState> = {}): ActorState =>
+    actor({ id, characterId: "Knight", name, ...patch });
+
+  const plateXs = (a: ActorState) => {
+    const r = new ArenaRenderer(store, { arena });
+    const t = new RecordingTarget(r.width, r.height);
+    r.draw(t, { timeMs: 0, actors: [a] });
+    const font = store.fonts.get("fontBitmapSmall")!;
+    return { r, glyphs: t.slices().filter((s) => s.slice.image === font && s.options.white === true) };
+  };
+
+  it("stays inside the right edge for a fighter against the wall", () => {
+    const { r, glyphs } = plateXs(named("agent-blaze", "Blaze", { x: arena.width - 1, y: 5 }));
+    const lastRight = glyphs[glyphs.length - 1].x + 8;
+    expect(lastRight).toBeLessThanOrEqual(r.width);
+  });
+
+  it("stays inside the left edge for a fighter in the corner", () => {
+    const { glyphs } = plateXs(named("agent-blaze", "Blaze", { x: 0, y: 0 }));
+    expect(glyphs[0].x).toBeGreaterThanOrEqual(0);
+  });
+
+  it("stays inside the top edge for a fighter on the first row", () => {
+    const { glyphs } = plateXs(named("agent-blaze", "Blaze", { x: 5, y: 0 }));
+    expect(glyphs.every((g) => g.y >= 0)).toBe(true);
   });
 });

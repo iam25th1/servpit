@@ -58,3 +58,36 @@ export function inkFor(sprite: string): { color: string; dim: string } {
   if (sprite in midSurfaces) return { color: "var(--bone-bright)", dim: "var(--bone-bright)" };
   return { color: "var(--bone)", dim: "var(--bone-dim)" };
 }
+
+/**
+ * Every colour the tiled arena floor can present under a nameplate: the four
+ * base tiles of tilesetFloor the pit is laid from, plus the six scatter
+ * sprites of tilesetFloorDetail drawn over them. Sampled the same way as the
+ * panels above.
+ *
+ * A single tone of text cannot clear a threshold against all of these. The
+ * floor runs from a near black crack at #141b1b to a near white bone at
+ * #f2eaf1, so white text vanishes on the bone and dark text vanishes in the
+ * crack. That is why a nameplate is drawn twice.
+ */
+export const arenaFloorColours = [
+  "#141b1b",
+  "#681f14",
+  "#816855",
+  "#8e7c73",
+  "#90775e",
+  "#965340",
+  "#965746",
+  "#9e2919",
+  "#b3957f",
+  "#bd7959",
+  "#d2b37d",
+  "#e46d3a",
+  "#eecf9b",
+  "#f2eaf1",
+  "#ffad5d",
+] as const;
+
+/** The nameplate's two tones: a whitened glyph over the sheet's own ink. */
+export const nameplateInk = "#ffffff";
+export const nameplateShadow = "#0b001e";

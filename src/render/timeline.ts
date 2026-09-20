@@ -21,6 +21,12 @@ export interface TimelineOptions {
 
 export interface ActorState {
   id: string;
+  /**
+   * What to call this fighter on screen, or null for one that has no name of
+   * its own. The engine works in entrant ids and knows nothing about agents,
+   * so the mapping arrives with the replay from the server that does.
+   */
+  name: string | null;
   characterId: string;
   tier: Tier;
   /** Interpolated tile position for the current time. */
@@ -52,6 +58,7 @@ interface PathPoint {
 
 interface Internal {
   id: string;
+  name: string | null;
   characterId: string;
   tier: Tier;
   tileX: number;
@@ -75,17 +82,27 @@ export class Timeline {
 
   private readonly batches: RoundEvent[][] = [];
   private readonly characters: readonly Combatant[];
+  private readonly names: Readonly<Record<string, string>>;
   private readonly state = new Map<string, Internal>();
   private readonly order: string[];
   private readonly listeners: BatchListener[] = [];
   private time = 0;
   private applied = 0;
 
-  constructor(round: { log: readonly RoundEvent[]; characters: readonly Combatant[] }, options: TimelineOptions = {}) {
+  constructor(
+    round: {
+      log: readonly RoundEvent[];
+      characters: readonly Combatant[];
+      /** Display name by entrant id. Absent for an entrant with no name. */
+      names?: Readonly<Record<string, string>>;
+    },
+    options: TimelineOptions = {},
+  ) {
     const tickMs = options.tickMs ?? TICK_MS;
     if (!Number.isFinite(tickMs) || tickMs <= 0) throw new RangeError(`tickMs must be a positive number, got ${tickMs}`);
     this.tickMs = tickMs;
     this.characters = round.characters;
+    this.names = round.names ?? {};
     this.order = round.characters.map((c) => c.entrantId);
     let last = 0;
     for (const ev of round.log) {
@@ -176,6 +193,7 @@ export class Timeline {
     for (const c of this.characters) {
       this.state.set(c.entrantId, {
         id: c.entrantId,
+        name: this.names[c.entrantId] ?? null,
         characterId: c.characterId,
         tier: c.tier,
         tileX: 0,
@@ -257,6 +275,7 @@ export class Timeline {
     }
     return {
       id: s.id,
+      name: s.name,
       characterId: s.characterId,
       tier: s.tier,
       x,
