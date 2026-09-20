@@ -34,6 +34,9 @@ export async function POST(request: Request): Promise<NextResponse> {
     seed: plan.seed,
     network: ctx.chain.network,
     backend: ctx.chain.kind,
+    // The interface asks the chain whether a hash is worth linking rather
+    // than matching on a backend name that can change under it.
+    settles: ctx.chain.settles,
     entrants: plan.entrants.map((e) => e.id),
     winner: run.round.placements[0],
     potWei: run.round.pot.toString(),
