@@ -7,7 +7,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { DEFAULT_ROUND } from "@/config/round";
-import { resolveRound } from "@/engine/resolveRound";
+import { resolveRound, type RoundResult } from "@/engine/resolveRound";
 import { createRng } from "@/engine/rng";
 import { ArenaRenderer } from "@/render/arena";
 import { loadAssets, type AssetStore } from "@/render/assets";
@@ -18,6 +18,7 @@ import { Juice } from "@/render/juice";
 import { startLoop } from "@/render/loop";
 import { parseManifest } from "@/render/manifest";
 import { Timeline } from "@/render/timeline";
+import { AgentRoster, type RunResponse } from "./AgentRoster";
 import styles from "./arena.module.css";
 
 type Status = { kind: "loading" } | { kind: "error"; message: string } | { kind: "ready" };
@@ -37,10 +38,15 @@ const MAX_SCALE = 3;
 
 export function ArenaClient({ seed, entrants }: { seed: string; entrants: number }) {
   const router = useRouter();
-  const round = useMemo(
+  const localRound = useMemo(
     () => resolveRound(seed, Array.from({ length: entrants }, (_, i) => ({ id: `p${i}` })), DEFAULT_ROUND),
     [seed, entrants],
   );
+  // A settled agent round replaces the locally resolved preview: same engine,
+  // same log shape, but the one the server actually paid out on.
+  const [agentRound, setAgentRound] = useState<Pick<RoundResult, "characters" | "log" | "placements"> | null>(null);
+  const round = agentRound ?? localRound;
+  const settled = agentRound !== null;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const frameRef = useRef<HTMLDivElement>(null);
   const timelineRef = useRef<Timeline | null>(null);
@@ -158,7 +164,7 @@ export function ArenaClient({ seed, entrants }: { seed: string; entrants: number
 
   const winnerId = round.placements[0];
   const winner = round.characters.find((c) => c.entrantId === winnerId);
-  const prize = round.payouts.find((p) => p.entrantId === winnerId)?.amount ?? 0;
+  const prize = settled ? null : (localRound.payouts.find((p) => p.entrantId === winnerId)?.amount ?? 0);
   const lastTick = round.log[round.log.length - 1].t;
 
   return (
@@ -167,6 +173,7 @@ export function ArenaClient({ seed, entrants }: { seed: string; entrants: number
         <h1 className={styles.title}>servpit</h1>
         <p className={styles.facts}>
           Round {seed}, {entrants} entrants, {round.log.length} events over {lastTick} ticks.
+          {settled ? " Settled on chain." : " Preview, not settled."}
         </p>
       </header>
 
@@ -203,7 +210,9 @@ export function ArenaClient({ seed, entrants }: { seed: string; entrants: number
         </label>
         <p className={styles.status} aria-live="polite">
           Tick {view.tick} of {view.lastTick}, {view.alive} standing.
-          {view.finished && winner ? ` ${winnerId} wins as ${winner.characterId} (${winner.tier}) and takes ${prize} of the ${round.pot} pot.` : ""}
+          {view.finished && winner
+            ? ` ${winnerId} wins as ${winner.characterId} (${winner.tier})${prize === null ? "." : ` and takes ${prize} of the ${localRound.pot} pot.`}`
+            : ""}
         </p>
       </section>
 
@@ -219,8 +228,11 @@ export function ArenaClient({ seed, entrants }: { seed: string; entrants: number
         <button type="submit">Load round</button>
       </form>
 
+      <AgentRoster seed={seed} entrants={entrants} onReplay={(run: RunResponse) => setAgentRound(run.replay as Pick<RoundResult, "characters" | "log" | "placements">)} />
+
       <p className={styles.footnote}>
-        Demo only. This page resolves the round in the browser so it can be replayed from any seed. In production the server resolves the round and the client only replays the log it is given.
+        The preview above is resolved in the browser so any seed can be replayed. Running a round resolves it on the server, moves the entry and payout
+        transfers, and returns that log to play here. The pot wallet is operator held for this build.
       </p>
     </main>
   );

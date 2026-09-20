@@ -14,8 +14,16 @@ export interface ReconcileInput {
   potAddress: string;
   before: Record<string, bigint>;
   after: Record<string, bigint>;
+  /** The round's full movement set. Used for the conservation check. */
   entries: Movement[];
   payouts: Movement[];
+  /**
+   * What actually moved during this execution window. Defaults to the full
+   * set. A replay of an already settled round applies nothing, so its wallet
+   * deltas are zero while the round's conservation still holds.
+   */
+  appliedEntries?: Movement[];
+  appliedPayouts?: Movement[];
   /** Stake the operator pot covers for house bots, already held in the pot. */
   houseContributionWei: bigint;
   rakeWei: bigint;
@@ -48,19 +56,21 @@ export function reconcile(input: ReconcileInput): ReconcileResult {
     checks.push({ name, ok: expected === actual, expected: expected.toString(), actual: actual.toString() });
   };
 
+  const appliedEntries = input.appliedEntries ?? input.entries;
+  const appliedPayouts = input.appliedPayouts ?? input.payouts;
   const wallets = new Set<string>([...input.entries, ...input.payouts].map((m) => m.address));
   wallets.delete(input.potAddress);
   for (const address of [...wallets].sort()) {
     const delta = balance(input.after, address, "after") - balance(input.before, address, "before");
-    const paidIn = sumWei(input.entries.filter((m) => m.address === address).map((m) => m.amountWei));
-    const paidOut = sumWei(input.payouts.filter((m) => m.address === address).map((m) => m.amountWei));
+    const paidIn = sumWei(appliedEntries.filter((m) => m.address === address).map((m) => m.amountWei));
+    const paidOut = sumWei(appliedPayouts.filter((m) => m.address === address).map((m) => m.amountWei));
     check(`wallet ${address} delta`, paidOut - paidIn, delta);
   }
 
   const entriesTotal = sumWei(input.entries.map((m) => m.amountWei));
   const payoutsTotal = sumWei(input.payouts.map((m) => m.amountWei));
   const potDelta = balance(input.after, input.potAddress, "after") - balance(input.before, input.potAddress, "before");
-  check("pot delta", entriesTotal - payoutsTotal, potDelta);
+  check("pot delta", sumWei(appliedEntries.map((m) => m.amountWei)) - sumWei(appliedPayouts.map((m) => m.amountWei)), potDelta);
 
   // Entries plus the house share minus rake is the prize. A winning agent
   // takes all of it; a house win retains all of it. Anything else is wrong.

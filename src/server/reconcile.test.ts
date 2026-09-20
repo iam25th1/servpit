@@ -53,6 +53,16 @@ describe("reconcile", () => {
     expect(reconcile(input).ok).toBe(true);
   });
 
+  it("holds for a replay that applied nothing: zero deltas, conservation unchanged", () => {
+    const input = base();
+    input.after = { ...input.before };
+    input.appliedEntries = [];
+    input.appliedPayouts = [];
+    const r = reconcile(input);
+    expect(r.ok).toBe(true);
+    expect(r.checks.find((c) => c.name === "pot delta")?.expected).toBe("0");
+  });
+
   it("uses bigint only and refuses a missing balance", () => {
     const input = base();
     delete input.after["0xb"];

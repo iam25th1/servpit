@@ -1,0 +1,168 @@
+.panel {
+  margin-top: 28px;
+}
+
+.head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  margin-bottom: 4px;
+}
+
+.title {
+  font-family: var(--display);
+  font-size: 1.4rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+
+.meta {
+  color: var(--sage);
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.intro {
+  color: var(--ash-light);
+  max-width: 76ch;
+  margin: 0 0 16px;
+  font-size: 0.92rem;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 12px;
+}
+
+.card {
+  border: 1px solid var(--ash);
+  padding: 12px 14px;
+  background: var(--pit);
+}
+
+.cardHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.name {
+  font-family: var(--display);
+  font-size: 1.15rem;
+  margin: 0;
+}
+
+.strategy {
+  color: var(--sage);
+  font-size: 0.85rem;
+}
+
+.verdict {
+  margin: 8px 0 6px;
+  font-size: 0.95rem;
+}
+
+.in {
+  color: var(--amber);
+}
+
+.out {
+  color: var(--ash-light);
+}
+
+.reason {
+  margin: 0;
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
+.foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--ash);
+  font-size: 0.82rem;
+  color: var(--ash-light);
+}
+
+.foot a {
+  color: var(--sage);
+}
+
+.up {
+  color: var(--amber);
+}
+
+.down {
+  color: var(--ash-light);
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin: 16px 0;
+}
+
+.controls button {
+  background: transparent;
+  color: var(--bone);
+  border: 1px solid var(--ash);
+  padding: 6px 14px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.controls button:hover:enabled {
+  border-color: var(--amber);
+}
+
+.controls button:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 2px;
+}
+
+.controls button:disabled {
+  color: var(--ash-light);
+  cursor: default;
+}
+
+.status {
+  color: var(--sage);
+  margin: 0;
+}
+
+.error {
+  color: var(--amber);
+  margin: 0;
+}
+
+.ledger {
+  margin-top: 16px;
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.88rem;
+}
+
+.ledger th,
+.ledger td {
+  text-align: left;
+  padding: 5px 12px 5px 0;
+  border-bottom: 1px solid var(--ash);
+}
+
+.ledger th {
+  color: var(--sage);
+  font-weight: 400;
+}
+
+.ledger a {
+  color: var(--sage);
+}

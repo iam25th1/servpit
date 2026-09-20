@@ -2,6 +2,12 @@
 
 import { join } from "node:path";
 import { BankrollCache } from "./bankroll";
+import { TransferLedger } from "./ledger";
+import { DEFAULT_SERV } from "@/config/serv";
+import { CostMeter, ServClient } from "./serv/client";
+import { createServTransport } from "./serv/transport";
+import { RoundStore } from "./round/store";
+import type { FlowContext } from "./round/flow";
 import { readEnv, type ServerEnv } from "./env";
 import { log } from "./log";
 import { CdpChain } from "./wallets/cdp";
@@ -16,6 +22,8 @@ export interface ServerContext {
   registry: WalletRegistry;
   wallets: Wallets;
   bankroll: BankrollCache;
+  /** Everything the round flow needs. entrants is overridden per request. */
+  flow: FlowContext;
 }
 
 let pending: Promise<ServerContext> | undefined;
@@ -30,7 +38,14 @@ async function build(): Promise<ServerContext> {
   const registry = new WalletRegistry(join(env.dataDir, `wallets-${chain.network}.json`));
   const wallets = await openWallets(chain, registry);
   const bankroll = new BankrollCache({ ttlMs: 5_000, now: () => Date.now() });
-  return { env, chain, registry, wallets, bankroll };
+  const ledger = new TransferLedger(join(env.dataDir, `ledger-${chain.network}.json`));
+  const store = new RoundStore(join(env.dataDir, `rounds-${chain.network}.json`));
+  const meter = new CostMeter(DEFAULT_SERV.pricing);
+  const servConfig = { ...DEFAULT_SERV, model: env.serv?.model ?? DEFAULT_SERV.model };
+  const serv = env.serv ? new ServClient(servConfig, createServTransport(env.serv.apiKey, servConfig)) : undefined;
+  log.info("serv backend", { configured: Boolean(serv), model: serv ? servConfig.model : null });
+  const flow: FlowContext = { chain, wallets, ledger, store, bankroll, meter, serv, entrants: 24 };
+  return { env, chain, registry, wallets, bankroll, flow };
 }
 
 export function getServerContext(): Promise<ServerContext> {
