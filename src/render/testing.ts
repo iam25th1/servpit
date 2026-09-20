@@ -17,6 +17,7 @@ export function createFakeLoader(overrides: Record<string, SizeOverride> = {}): 
     for (const s of Object.values(e.sprites)) sizes.set(s.path, { width: s.cols * s.frameWidth, height: s.rows * s.frameHeight });
   }
   for (const f of testManifest.fx) sizes.set(f.path, { width: f.cols * f.frameWidth, height: f.rows * f.frameHeight });
+  for (const e of testManifest.entries) sizes.set(e.facesetPath, { width: testManifest.faceset.width, height: testManifest.faceset.height });
   const loader: ImageLoader = {
     async load(path) {
       loads.push(path);
