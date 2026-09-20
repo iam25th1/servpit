@@ -344,6 +344,9 @@ export function PlayClient() {
         }
         engine.bulbsReversed = TIER_PAYOFF({ tier: draw.tier, combo: draw.combo }).reverseBulbs;
       }
+      // One floor per round: the tile and scatter variation is seeded from
+      // the round, so two rounds do not run on the same pit floor.
+      engine.arenaRenderer.floorSeed = settled.roundId;
       engine.timeline = new Timeline(settled.replay as never);
       engine.timeline.onBatch((batch, silent) => engine.juice.onBatch(batch, silent, (id) => engine.timeline!.actor(id)));
       // The HUD reads the tick that has already been applied, so the standing

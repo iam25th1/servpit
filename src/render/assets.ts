@@ -60,6 +60,8 @@ export interface FxSprites {
 export interface AssetStore {
   actors: Map<string, ActorSprites>;
   fx: Map<string, FxSprites>;
+  /** Tileset sheets by manifest id, for the arena floor. */
+  tilesets: Map<string, DecodedImage>;
   whiteOf(image: DecodedImage): DecodedImage;
 }
 
@@ -177,13 +179,18 @@ export async function loadAssets(manifest: Manifest, loader: ImageLoader): Promi
   const remember = (img: DecodedImage): void => {
     if (!whites.has(img)) whites.set(img, loader.whiten(img));
   };
-  const [actorList, fxList] = await Promise.all([
+  // The floor sheets. Two small images, decoded once, so the arena can tile
+  // the pack's own floor instead of drawing a one pixel grid.
+  const tilesetDefs = manifest.ui.filter((u) => u.kind === "tileset");
+  const [actorList, fxList, tilesetList] = await Promise.all([
     Promise.all(manifest.entries.map((e) => loadActor(e, loader, remember))),
     Promise.all(manifest.fx.map((f) => loadFx(f, loader, remember))),
+    Promise.all(tilesetDefs.map(async (u) => [u.id, await decode(loader, u.path, `tileset ${u.id}`)] as const)),
   ]);
   return {
     actors: new Map(actorList.map((a) => [a.id, a])),
     fx: new Map(fxList.map((f) => [f.id, f])),
+    tilesets: new Map(tilesetList),
     whiteOf(image) {
       let w = whites.get(image);
       if (!w) {

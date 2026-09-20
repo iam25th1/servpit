@@ -18,6 +18,8 @@ export function createFakeLoader(overrides: Record<string, SizeOverride> = {}): 
   }
   for (const f of testManifest.fx) sizes.set(f.path, { width: f.cols * f.frameWidth, height: f.rows * f.frameHeight });
   for (const e of testManifest.entries) sizes.set(e.facesetPath, { width: testManifest.faceset.width, height: testManifest.faceset.height });
+  // The arena tiles its floor from these, so they are decoded at boot too.
+  for (const u of testManifest.ui) if (u.kind === "tileset") sizes.set(u.path, { width: u.width, height: u.height });
   const loader: ImageLoader = {
     async load(path) {
       loads.push(path);

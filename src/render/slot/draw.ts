@@ -11,6 +11,7 @@
 import type { AssetStore } from "../assets";
 import type { DrawTarget } from "../draw";
 import { SLOT_LAYOUT, paylineY, reelX, type SlotLayout } from "./layout";
+import { knobRows, rodColumns } from "./leverSprite";
 import type { ReelState } from "./reels";
 
 /** Flat colours only. No purple, no gradients. */
@@ -22,8 +23,16 @@ export const SLOT_PALETTE = {
   divider: "#262a24",
   bulbOn: "#ffd54f",
   bulbOff: "#4a4f44",
+  /* The rod, shaded so it reads as a cylinder at the cabinet's density. */
   lever: "#8a8f88",
-  leverKnob: "#e53935",
+  leverLight: "#c2c6bd",
+  leverDark: "#5a5f57",
+  /* The ball. Four flat bands, no gradient, with the dark outline every
+     sprite in this pack has. */
+  leverKnob: "#e05a3a",
+  leverKnobLight: "#f2a07a",
+  leverKnobDark: "#b2402a",
+  leverKnobRim: "#6b2418",
 } as const;
 
 export interface SlotFrame {
@@ -129,15 +138,41 @@ export class SlotRenderer {
     target.fillRect(w.x + w.width - 3, y, 3, 1, SLOT_PALETTE.payline, 0.8);
   }
 
+  /**
+   * The lever, in the cabinet's own coordinate space at the pack's pixel
+   * density. A symbol cell here is 38 logical pixels, so the old two pixel
+   * rod and flat disc read as a scratch with a dot on it.
+   */
   private drawLever(target: DrawTarget, progress: number): void {
     const l = this.layout.lever;
-    const travel = Math.max(0, Math.min(1, progress)) * l.travel;
-    target.fillRect(l.x - 1, l.y, 2, l.travel + l.knobRadius, SLOT_PALETTE.frame);
-    target.fillRect(l.x - 1, l.y + travel, 2, l.travel - travel, SLOT_PALETTE.lever);
-    const knobY = l.y + travel;
-    for (let dy = -l.knobRadius; dy <= l.knobRadius; dy++) {
-      const half = Math.floor(Math.sqrt(l.knobRadius * l.knobRadius - dy * dy));
-      target.fillRect(l.x - half, knobY + dy, half * 2 + 1, 1, SLOT_PALETTE.leverKnob);
+    const travel = Math.round(Math.max(0, Math.min(1, progress)) * l.travel);
+    const width = l.rodWidth;
+
+    // The slot the rod runs in, so the cabinet does not show through behind
+    // a lever that is part way down.
+    target.fillRect(l.x - Math.floor(width / 2) - 1, l.y - 1, width + 2, l.travel + l.knobRadius + 2, SLOT_PALETTE.frame);
+
+    const rodTop = l.y + travel;
+    const rodHeight = l.travel - travel + l.knobRadius;
+    for (const col of rodColumns(width)) {
+      const colour = col.tone === "highlight" ? SLOT_PALETTE.leverLight : col.tone === "shadow" ? SLOT_PALETTE.leverDark : SLOT_PALETTE.lever;
+      target.fillRect(l.x + col.dx, rodTop, 1, rodHeight, colour);
+    }
+
+    // The mount the rod comes out of, at the bottom of its travel.
+    target.fillRect(l.x - l.knobRadius, l.y + l.travel + l.knobRadius - 3, l.knobRadius * 2 + 1, 4, SLOT_PALETTE.leverDark);
+
+    const knobY = rodTop;
+    for (const run of knobRows(l.knobRadius)) {
+      const colour =
+        run.tone === "rim"
+          ? SLOT_PALETTE.leverKnobRim
+          : run.tone === "highlight"
+            ? SLOT_PALETTE.leverKnobLight
+            : run.tone === "shadow"
+              ? SLOT_PALETTE.leverKnobDark
+              : SLOT_PALETTE.leverKnob;
+      target.fillRect(l.x + run.dx, knobY + run.dy, run.width, 1, colour);
     }
   }
 

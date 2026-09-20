@@ -27,8 +27,16 @@ describe("loadAssets", () => {
     const { loader, loads } = fakeLoader();
     await loadAssets(manifest, loader);
     expect(new Set(loads).size).toBe(loads.length);
-    const expected = manifest.entries.reduce((n, e) => n + Object.keys(e.sprites).length + 1, 0) + manifest.fx.length;
+    const tilesets = manifest.ui.filter((u) => u.kind === "tileset").length;
+    const expected = manifest.entries.reduce((n, e) => n + Object.keys(e.sprites).length + 1, 0) + manifest.fx.length + tilesets;
     expect(loads).toHaveLength(expected);
+  });
+
+  it("keeps the tileset sheets, which the arena tiles its floor from", async () => {
+    const store = await loadAssets(manifest, fakeLoader().loader);
+    expect(store.tilesets.get("tilesetFloor")).toBeDefined();
+    expect(store.tilesets.get("tilesetFloorDetail")).toBeDefined();
+    expect(store.tilesets.size).toBe(manifest.ui.filter((u) => u.kind === "tileset").length);
   });
 
   it("slices character animations by facing column and frame row", async () => {
