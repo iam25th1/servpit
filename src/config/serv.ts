@@ -1,0 +1,74 @@
+// SERV Reasoning configuration. Feature toggles live here with the reason
+// for each choice so they can be changed without touching code.
+//
+// Enabled:
+//   promptGuard   Screens inbound requests for injection and outbound text
+//                 for system prompt leakage. This loop feeds agent supplied
+//                 state into a prompt whose output influences money, so the
+//                 guard stays on. Declared as a tool, no parameters.
+//   shadowAgent   A second model validates the draft against our criteria
+//                 and regenerates when it fails. It is a net, never the
+//                 only one: every field is re-validated locally afterwards.
+//                 Declared as a tool with a natural language hint and
+//                 max_iterations.
+//   multipath     Model id suffix -serv-multipath. The prompt is a branching
+//                 policy (balance bands, participation thresholds, recent
+//                 outcomes), which is what Multipath is for. The reasoning
+//                 prompt is generated once and cached per organisation.
+//
+// Disabled:
+//   kronos        Model id suffix -serv-kronos. It audits and repairs the
+//                 generated reasoning prompt, adding at least one extra
+//                 audit call per cache miss. The brief says leave it off and
+//                 the budget is one dollar, so it stays off.
+
+export interface ServFeatures {
+  promptGuard: boolean;
+  shadowAgent: boolean;
+  multipath: boolean;
+  kronos: boolean;
+}
+
+export interface ServConfig {
+  baseUrl: string;
+  /** Base model id. Suffixes for enabled model features are appended at call time. */
+  model: string;
+  features: ServFeatures;
+  /** Extra criteria for the Shadow Agent judge, in plain language. */
+  shadowHint: string;
+  /** Judge and revision cycles, 1 to 10. */
+  shadowMaxIterations: number;
+  temperature: number;
+  maxCompletionTokens: number;
+  timeoutMs: number;
+  /** Attempts in total, including the first. */
+  attempts: number;
+  backoffMs: number;
+  /** Price per million tokens in US cents, for the running cost estimate. */
+  pricing: { inputCentsPerMillion: number; outputCentsPerMillion: number };
+}
+
+export const DEFAULT_SERV: ServConfig = {
+  baseUrl: "https://inference-api.openserv.ai/v1",
+  // Cheapest Claude on SERV: 1.25 dollars in, 6.50 dollars out per million.
+  // Swap through SERV_MODEL for a demo recording, no code change.
+  model: "claude-haiku-4.5",
+  features: { promptGuard: true, shadowAgent: true, multipath: true, kronos: false },
+  shadowHint:
+    "The reply must be a single JSON object with exactly the keys enter, stake and reason. stake must be an integer number of minor units, zero when enter is false, and never greater than the stated balance. reason must name the balance figure or the participation count it relied on.",
+  shadowMaxIterations: 3,
+  temperature: 0.2,
+  maxCompletionTokens: 400,
+  timeoutMs: 20_000,
+  attempts: 3,
+  backoffMs: 400,
+  pricing: { inputCentsPerMillion: 125, outputCentsPerMillion: 650 },
+};
+
+/** Model id with the suffixes for the enabled model level features. */
+export function servModelId(config: ServConfig): string {
+  let model = config.model;
+  if (config.features.multipath) model += "-serv-multipath";
+  if (config.features.kronos) model += "-serv-kronos";
+  return model;
+}

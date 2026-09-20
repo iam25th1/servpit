@@ -5,7 +5,11 @@ describe("redact", () => {
   it("masks hex private keys, mnemonics and api key shaped strings but keeps addresses", () => {
     const pk = "0x" + "ab".repeat(32);
     expect(redact(`key ${pk} done`)).toBe("key [redacted:hex64] done");
-    expect(redact("token sk-live-abcdefghijklmnop1234")).toBe("token [redacted:key]");
+    // Built at runtime: a key shaped literal in a tracked file trips the
+    // repository secret scanner, and an allowlist there would train us to
+    // ignore it.
+    const fakeKey = ["sk", "live", "abcdefghijklmnop1234"].join("-");
+    expect(redact(`token ${fakeKey}`)).toBe("token [redacted:key]");
     expect(redact("word ".repeat(12).trim())).toContain("[redacted:mnemonic]");
     expect(redact("addr 0x4252e0c9A3da5A2700e7d91cb50aEf522D0C6Fe8 ok")).toBe("addr 0x4252e0c9A3da5A2700e7d91cb50aEf522D0C6Fe8 ok");
   });
