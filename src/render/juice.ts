@@ -6,7 +6,7 @@
 // death events and the round's final blow, capped at one per tick. Ordinary
 // hits never freeze: 23 of them can share a tick.
 
-import { ticksToFrames } from "@/config/playback";
+import { ticksToMs } from "@/config/playback";
 import type { Tier } from "@/config/roster";
 import type { RoundEvent } from "@/engine/events";
 import type { ActorFx } from "./arena";
@@ -24,20 +24,20 @@ export interface TierImpact {
 }
 
 export interface JuiceConfig {
-  /** Render frames actors stay frozen. Only deaths and the final blow trigger it. */
-  hitstopFrames: { death: number; finalBlow: number };
-  /** Frames the victim is drawn as a white silhouette. */
-  flashFrames: number;
-  /** Victim offset away from the attacker on the contact frame, easing back over knockbackFrames. */
+  /** Milliseconds actors stay frozen. Only deaths and the final blow trigger it. */
+  hitstopMs: { death: number; finalBlow: number };
+  /** Milliseconds the victim is drawn as a white silhouette. */
+  flashMs: number;
+  /** Victim offset away from the attacker on contact, easing back over knockbackMs. */
   knockbackPx: number;
-  knockbackFrames: number;
-  /** Attacker sprite local scale on the contact frame, settling over punchFrames. */
+  knockbackMs: number;
+  /** Attacker sprite local scale on contact, settling over punchMs. */
   punchScale: number;
-  punchFrames: number;
-  /** Frames the attacker holds the attack pose. */
-  attackPoseFrames: number;
-  /** Frames over which a corpse fades from 1 to corpseAlpha. */
-  deadFadeFrames: number;
+  punchMs: number;
+  /** Milliseconds the attacker holds the attack pose. */
+  attackPoseMs: number;
+  /** Milliseconds over which a corpse fades from 1 to corpseAlpha. */
+  deadFadeMs: number;
   corpseAlpha: number;
   /** Milliseconds per FX sheet frame. */
   sheetFrameMs: number;
@@ -47,24 +47,26 @@ export interface JuiceConfig {
 }
 
 /**
- * Every frame count here is a fraction of a tick, converted at the nominal
- * frame rate. They used to be literal frame counts tuned against a 200 ms
- * tick, which meant lengthening the tick quietly shrank each of them
- * relative to the beat they punctuate.
+ * Every duration here is a fraction of a tick, in milliseconds.
  *
- * The fractions are the old counts divided by the twelve frames a 200 ms
- * tick held, so the feel at the old tick is preserved exactly and the new
- * tick gets the same feel at its own length.
+ * They were render frame counts until phase 9. A frame is not a unit of
+ * time: it is 16.7 ms on a 60 Hz display and 8.3 ms on a 120 Hz one, so a
+ * five frame hitstop held for 83 ms on one machine and 42 ms on another.
+ * Every impact ran at half length on a fast display and nothing said so.
+ *
+ * The fractions are unchanged, and ticksToMs keeps the rounding to whole
+ * 60 Hz frames that the previous build shipped, so the look at 60 Hz is
+ * identical and only the faster displays change.
  */
 export const DEFAULT_JUICE: JuiceConfig = {
-  hitstopFrames: { death: ticksToFrames(1 / 4), finalBlow: ticksToFrames(5 / 12) },
-  flashFrames: ticksToFrames(1 / 6),
+  hitstopMs: { death: ticksToMs(1 / 4), finalBlow: ticksToMs(5 / 12) },
+  flashMs: ticksToMs(1 / 6),
   knockbackPx: 3,
-  knockbackFrames: ticksToFrames(1 / 3),
+  knockbackMs: ticksToMs(1 / 3),
   punchScale: 1.15,
-  punchFrames: ticksToFrames(5 / 12),
-  attackPoseFrames: ticksToFrames(1 / 2),
-  deadFadeFrames: ticksToFrames(10 / 3),
+  punchMs: ticksToMs(5 / 12),
+  attackPoseMs: ticksToMs(1 / 2),
+  deadFadeMs: ticksToMs(10 / 3),
   corpseAlpha: 0.35,
   // Absolute, deliberately. This is the artist's own frame rate for the
   // sheet; slowing it because the fight slowed plays the artwork back in
@@ -79,6 +81,7 @@ export const DEFAULT_JUICE: JuiceConfig = {
   killSheet: "Explosion",
 };
 
+/** Milliseconds remaining on each effect, counting down. */
 interface ActorTimers {
   flash: number;
   knock: number;
@@ -86,7 +89,7 @@ interface ActorTimers {
   knockDirY: number;
   punch: number;
   attackPose: number;
-  /** Frames since the death started fading, or null while alive. */
+  /** Milliseconds since the death started fading, or null while alive. */
   dying: number | null;
 }
 
@@ -110,11 +113,26 @@ type Point = { x: number; y: number };
 type TileToPixel = (x: number, y: number) => { px: number; py: number };
 type Lookup = (id: string) => ActorState | undefined;
 
+/**
+ * Milliseconds below which a timer is finished. A duration divided into
+ * equal deltas does not land on zero in binary floating point: ten steps of
+ * 1000/60 leave about 1e-14 ms on the clock, which is enough to hold a pose
+ * for one more frame than it should.
+ */
+const EPSILON_MS = 1e-9;
+
+/** Take deltaMs off a countdown, snapping float dust to a finished timer. */
+function drain(remaining: number, deltaMs: number): number {
+  const next = remaining - deltaMs;
+  return next > EPSILON_MS ? next : 0;
+}
+
 const freshTimers = (): ActorTimers => ({ flash: 0, knock: 0, knockDirX: 0, knockDirY: 0, punch: 0, attackPose: 0, dying: null });
 
 export class Juice {
   private readonly timers = new Map<string, ActorTimers>();
   private sheets: SheetInstance[] = [];
+  /** Milliseconds of freeze left. */
   private hitstop = 0;
 
   constructor(
@@ -124,7 +142,7 @@ export class Juice {
     private readonly config: JuiceConfig = DEFAULT_JUICE,
   ) {}
 
-  /** True while actors are frozen. The loop skips the timeline but still updates effects. */
+  /** True while actors are frozen. The loop skips the timeline but still advances effects. */
   get frozen(): boolean {
     return this.hitstop > 0;
   }
@@ -140,7 +158,7 @@ export class Juice {
           this.onHit(ev, lookup, deaths);
           break;
         case "storm":
-          this.timersFor(ev.actor).flash = c.flashFrames;
+          this.timersFor(ev.actor).flash = c.flashMs;
           break;
         case "death": {
           const victim = lookup(ev.actor);
@@ -150,7 +168,7 @@ export class Juice {
             this.emitter.emit(at.x, at.y, PRESETS.smoke(1));
           }
           this.timersFor(ev.actor).dying = 0;
-          stop = Math.max(stop, c.hitstopFrames.death);
+          stop = Math.max(stop, c.hitstopMs.death);
           break;
         }
         case "win": {
@@ -160,7 +178,7 @@ export class Juice {
             this.emitter.emit(at.x, at.y, PRESETS.confetti(2));
             this.emitter.emit(at.x, at.y, PRESETS.coins(2));
           }
-          stop = Math.max(stop, c.hitstopFrames.finalBlow);
+          stop = Math.max(stop, c.hitstopMs.finalBlow);
           break;
         }
         default:
@@ -170,30 +188,43 @@ export class Juice {
     this.hitstop = stop;
   }
 
-  /** Advance one render frame. Actor timers hold still during hitstop. */
-  frame(): void {
-    if (this.hitstop > 0) {
-      this.hitstop--;
-      return;
-    }
-    for (const [id, t] of this.timers) {
-      if (t.flash > 0) t.flash--;
-      if (t.knock > 0) t.knock--;
-      if (t.punch > 0) t.punch--;
-      if (t.attackPose > 0) t.attackPose--;
-      if (t.dying !== null) t.dying++;
-      if (t.flash === 0 && t.knock === 0 && t.punch === 0 && t.attackPose === 0 && t.dying === null) this.timers.delete(id);
-    }
-  }
-
-  /** Advance effects by wall time. Runs during hitstop too, so FX keep moving while actors freeze. */
-  update(deltaMs: number): void {
+  /**
+   * Advance everything by wall time, on the same delta the Timeline is given.
+   * This is the only clock the juice layer has.
+   *
+   * Effects run first and run unconditionally, because hitstop freezes the
+   * actors and not the world: sparks and smoke keep moving while the fight
+   * holds still. Actor timers then advance only when the freeze is over, so
+   * the frame that empties the hitstop leaves them untouched, exactly as the
+   * frame counted version did.
+   */
+  advance(deltaMs: number): void {
     if (!(deltaMs > 0)) return;
     this.sheets = this.sheets.filter((s) => {
       s.elapsedMs += deltaMs;
       return Math.floor(s.elapsedMs / this.config.sheetFrameMs) < s.sprites.frames.length;
     });
     this.emitter.update(deltaMs);
+
+    // A delta longer than the freeze spends what the freeze is owed and
+    // carries the rest into the actor timers. Dropping the remainder would
+    // make the layer sensitive to how big a step it is handed, which is the
+    // fault this whole conversion exists to remove.
+    let remaining = deltaMs;
+    if (this.hitstop > 0) {
+      const spent = Math.min(this.hitstop, remaining);
+      this.hitstop = drain(this.hitstop, spent);
+      remaining -= spent;
+      if (remaining <= EPSILON_MS) return;
+    }
+    for (const [id, t] of this.timers) {
+      t.flash = drain(t.flash, remaining);
+      t.knock = drain(t.knock, remaining);
+      t.punch = drain(t.punch, remaining);
+      t.attackPose = drain(t.attackPose, remaining);
+      if (t.dying !== null) t.dying += remaining;
+      if (t.flash === 0 && t.knock === 0 && t.punch === 0 && t.attackPose === 0 && t.dying === null) this.timers.delete(id);
+    }
   }
 
   /** Per actor sprite local modifiers for this frame. Pass the current actors so seeked in corpses get corpse alpha. */
@@ -201,13 +232,13 @@ export class Juice {
     const c = this.config;
     const out = new Map<string, ActorFx>();
     for (const [id, t] of this.timers) {
-      const knockT = t.knock / c.knockbackFrames;
+      const knockT = t.knock / c.knockbackMs;
       out.set(id, {
         offsetX: t.knock > 0 ? t.knockDirX * c.knockbackPx * knockT : 0,
         offsetY: t.knock > 0 ? t.knockDirY * c.knockbackPx * knockT : 0,
-        scale: t.punch > 0 ? 1 + (c.punchScale - 1) * (t.punch / c.punchFrames) : 1,
+        scale: t.punch > 0 ? 1 + (c.punchScale - 1) * (t.punch / c.punchMs) : 1,
         white: t.flash > 0,
-        alpha: t.dying === null ? 1 : Math.max(c.corpseAlpha, 1 - (t.dying / c.deadFadeFrames) * (1 - c.corpseAlpha)),
+        alpha: t.dying === null ? 1 : Math.max(c.corpseAlpha, 1 - (t.dying / c.deadFadeMs) * (1 - c.corpseAlpha)),
         attacking: t.attackPose > 0,
       });
     }
@@ -251,14 +282,14 @@ export class Juice {
     const dy = victim.y - attacker.y;
     const len = Math.hypot(dx, dy);
     const v = this.timersFor(victim.id);
-    v.flash = c.flashFrames;
-    v.knock = c.knockbackFrames;
+    v.flash = c.flashMs;
+    v.knock = c.knockbackMs;
     v.knockDirX = len > 0 ? dx / len : 0;
     v.knockDirY = len > 0 ? dy / len : 0;
 
     const a = this.timersFor(attacker.id);
-    a.punch = c.punchFrames;
-    a.attackPose = c.attackPoseFrames;
+    a.punch = c.punchMs;
+    a.attackPose = c.attackPoseMs;
 
     const from = this.centre(attacker);
     const to = this.centre(victim);

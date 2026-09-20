@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FRAMES_PER_TICK, FRAME_MS, TICK_MS, WALK_FRAME_MS, WALK_FRAMES_PER_TICK, ticksToFrames } from "./playback";
+import { FRAMES_PER_TICK, FRAME_MS, TICK_MS, WALK_FRAME_MS, WALK_FRAMES_PER_TICK, ticksToFrames, ticksToMs } from "./playback";
 
 describe("the tick duration", () => {
   it("is 320 ms", () => {
@@ -39,5 +39,25 @@ describe("ticksToFrames", () => {
     expect(() => ticksToFrames(0)).toThrow(RangeError);
     expect(() => ticksToFrames(-1)).toThrow(RangeError);
     expect(() => ticksToFrames(Number.NaN)).toThrow(RangeError);
+  });
+});
+
+describe("ticksToMs", () => {
+  it("is the whole frame count in milliseconds, so the 60 Hz look is unchanged", () => {
+    expect(ticksToMs(1 / 4)).toBeCloseTo(5 * FRAME_MS, 6);
+    expect(ticksToMs(1 / 6)).toBeCloseTo(3 * FRAME_MS, 6);
+    expect(ticksToMs(5 / 12)).toBeCloseTo(8 * FRAME_MS, 6);
+  });
+
+  it("stays within one 60 Hz frame of the exact fraction", () => {
+    // The rounding is deliberate but it must not drift far from what the
+    // fraction actually means.
+    for (const ticks of [1 / 6, 1 / 4, 1 / 3, 5 / 12, 1 / 2, 10 / 3]) {
+      expect(Math.abs(ticksToMs(ticks) - ticks * TICK_MS)).toBeLessThan(FRAME_MS);
+    }
+  });
+
+  it("refuses a duration that is not a positive number of ticks", () => {
+    expect(() => ticksToMs(0)).toThrow(RangeError);
   });
 });

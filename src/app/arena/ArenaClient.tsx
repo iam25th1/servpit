@@ -112,8 +112,7 @@ export function ArenaClient({ seed, entrants }: { seed: string; entrants: number
     const loop = startLoop((deltaMs) => {
       const dt = deltaMs * speedRef.current;
       if (!juice.frozen) timeline.advance(dt);
-      juice.update(dt);
-      juice.frame();
+      juice.advance(dt);
       const actors = timeline.actors();
       target.beginFrame();
       renderer.draw(target, { actors, timeMs: timeline.timeMs, fx: juice.actorFx(actors), drawEffects: (t) => juice.drawEffects(t) });

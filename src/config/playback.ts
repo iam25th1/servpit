@@ -44,6 +44,21 @@ export function ticksToFrames(ticks: number): number {
 }
 
 /**
+ * A duration given in ticks, in milliseconds.
+ *
+ * It goes through ticksToFrames on the way, which looks redundant and is
+ * deliberate. Those roundings are what the build currently ships: a sixth of
+ * a tick is 53.3 ms exactly but has been drawing as three whole frames at
+ * 60 Hz. Rounding once here keeps the 60 Hz look identical to the frame
+ * counted version it replaces, while making the duration mean the same wall
+ * time on a display of any refresh rate. Drop the rounding and every value
+ * moves by less than one 60 Hz frame.
+ */
+export function ticksToMs(ticks: number): number {
+  return ticksToFrames(ticks) * FRAME_MS;
+}
+
+/**
  * Walk frames the arena plays per tick. An actor crosses one tile per tick,
  * so the gait has to slow with the tick or the feet cycle faster than the
  * travel and the character moonwalks.
