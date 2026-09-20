@@ -1,0 +1,56 @@
+.boot {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: var(--space-loose);
+}
+
+.inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-wide);
+  min-width: min(420px, 90vw);
+  text-align: center;
+}
+
+.wordmark {
+  font-family: var(--font-ui);
+  font-size: var(--text-title);
+  letter-spacing: 0.22em;
+  margin: 0;
+  color: var(--amber);
+}
+
+.line {
+  font-family: var(--font-ui);
+  font-size: var(--text-small);
+  color: var(--bone-dim);
+  margin: 0;
+  min-height: 1.4em;
+  /* Fixed width so a longer filename cannot reflow the panel mid load. */
+  max-width: 34ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.barHolder {
+  display: flex;
+  align-items: center;
+  gap: var(--space-snug);
+}
+
+.count {
+  font-family: var(--font-ui);
+  font-size: var(--text-micro);
+  color: var(--bone-dim);
+  min-width: 7ch;
+  text-align: right;
+}
+
+.error {
+  color: var(--bad);
+  font-size: var(--text-small);
+  margin: 0;
+}

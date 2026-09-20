@@ -5,7 +5,7 @@
 
 import type { CSSProperties, ElementType, ReactNode } from "react";
 import { uiScale } from "./tokens";
-import { ninePatchStyle } from "./ninePatch";
+import { ninePatchStyle } from "./ninePatchGeometry";
 import { useUiKit } from "./UiKit";
 import styles from "./ui.module.css";
 

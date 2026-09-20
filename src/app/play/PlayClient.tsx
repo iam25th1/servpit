@@ -26,7 +26,12 @@ import { ReelSet } from "@/render/slot/reels";
 import { SlotVfx, TIER_PAYOFF } from "@/render/slot/vfx";
 import { createWebAudioSink } from "@/render/slot/webAudio";
 import { Timeline } from "@/render/timeline";
-import { initialState, reduce, type FlowState } from "./machine";
+import { initialState, reduce, type FlowState, type Screen } from "./machine";
+import { BootScreen } from "./screens/BootScreen";
+import { TitleScreen } from "./screens/TitleScreen";
+import { GameShell } from "./screens/GameShell";
+import { UiKitProvider } from "@/ui/UiKit";
+import { playTransition } from "@/ui/transitions";
 import { pickPlayerDraw, type RunReel } from "./reelPick";
 import styles from "./play.module.css";
 
@@ -101,7 +106,6 @@ const MAX_SCALE = 3;
 /** Short unique token. Not a clock: this screen may not read time outside the loop. */
 const token = (): string => crypto.randomUUID().replace(/-/g, "").slice(0, 10);
 
-const short = (s: string): string => `${s.slice(0, 6)}...${s.slice(-4)}`;
 
 async function postJson<T>(path: string, body: unknown): Promise<T> {
   const response = await fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
@@ -112,7 +116,7 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
 
 export function PlayClient() {
   const [state, dispatch] = useReducer(reduce, undefined, initialState);
-  const [assetsReady, setAssetsReady] = useState(false);
+  const [manifest, setManifest] = useState<Manifest | null>(null);
   const [assetError, setAssetError] = useState<string | null>(null);
   const [muted, setMuted] = useState(true);
   const [leverNote, setLeverNote] = useState("");
@@ -129,16 +133,33 @@ export function PlayClient() {
   /** Provisional reel targets, replaced by the real draw when the round lands. */
   const pendingDrawRef = useRef<[string, string, string] | null>(null);
 
-  // Assets, engine and the single loop. Built once, torn down once.
+  // The manifest first and on its own, because the boot screen draws itself
+  // from the ui kit it describes and reports progress against its contents.
   useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await fetch("/assets/manifest.json");
+        if (!response.ok) throw new Error(`manifest HTTP ${response.status}`);
+        const parsed = parseManifest(await response.json());
+        if (!cancelled) setManifest(parsed);
+      } catch (e) {
+        if (!cancelled) setAssetError(e instanceof Error ? e.message : String(e));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Engine and the single loop. Built once the manifest is in, torn down once.
+  useEffect(() => {
+    if (!manifest) return;
     let cancelled = false;
     let stop: (() => void) | undefined;
 
     void (async () => {
       try {
-        const response = await fetch("/assets/manifest.json");
-        if (!response.ok) throw new Error(`manifest HTTP ${response.status}`);
-        const manifest = parseManifest(await response.json());
         const store = await loadAssets(manifest, createBrowserImageLoader());
         const sink = await createWebAudioSink(manifest.audio);
         if (cancelled) return;
@@ -243,7 +264,6 @@ export function PlayClient() {
           window.removeEventListener("resize", fit);
           sink.close();
         };
-        setAssetsReady(true);
       } catch (e) {
         if (!cancelled) setAssetError(e instanceof Error ? e.message : String(e));
       }
@@ -254,7 +274,7 @@ export function PlayClient() {
       stop?.();
       engineRef.current = null;
     };
-  }, []);
+  }, [manifest]);
 
   const unlockAudio = useCallback(() => {
     const engine = engineRef.current;
@@ -263,10 +283,9 @@ export function PlayClient() {
     setMuted(engine.audio.muted);
   }, []);
 
-  const connect = (): void => {
+  const startSession = (): void => {
     unlockAudio();
-    const id = `player-${token()}`;
-    dispatch({ type: "connected", player: { id, label: "Guest session" } });
+    dispatch({ type: "connected", player: { id: `player-${token()}`, label: "Guest session" } });
   };
 
   const chooseMode = async (modeId: string, stake: StakeTierId): Promise<void> => {
@@ -366,196 +385,61 @@ export function PlayClient() {
     setMuted(engine.audio.muted);
   };
 
-  const winnerAgent = run?.agents.find((a) => `agent-${a.agentId}` === run.winner);
-  const prize = run ? BigInt(run.potWei) - BigInt(run.rakeWei) : 0n;
 
-  return (
-    <main className={styles.shell} onPointerDown={unlockAudio}>
-      <header className={styles.topbar}>
-        <h1 className={styles.wordmark}>servpit</h1>
-        <div className={styles.topmeta}>
-          {state.player && <span>{state.player.label}</span>}
-          <button type="button" className={styles.ghost} onClick={toggleMute} aria-pressed={!muted}>
-            {muted ? "Sound off" : "Sound on"}
-          </button>
-        </div>
-      </header>
+  // Screen transitions: one timeline per change, driven from the machine's
+  // screen value. anime.js owns DOM chrome; the canvas Timeline owns the reels
+  // and the arena, and they never target the same element.
+  const screenRef = useRef<HTMLDivElement>(null);
+  const previousScreen = useRef<Screen | null>(null);
+  useEffect(() => {
+    const node = screenRef.current;
+    if (!node || previousScreen.current === state.screen) return;
+    const from = previousScreen.current;
+    previousScreen.current = state.screen;
+    if (from === null) return;
+    void playTransition(null, node, { grid: state.screen === "modeSelect" ? [3, 2] : undefined });
+  }, [state.screen]);
 
-      {assetError && (
+  if (assetError) {
+    return (
+      <main className={styles.shell}>
         <p className={styles.error} role="alert">
           Assets failed to load. {assetError}
         </p>
-      )}
+      </main>
+    );
+  }
 
-      {state.screen === "connect" && (
-        <section>
-          <p className={styles.lede}>Six agents hold their own wallets and decide for themselves whether to enter.</p>
-          <p className={styles.sub}>
-            You pull the lever. They reason about their own balance first, and you see who is in and why before you commit. Rounds resolve on a seeded engine and
-            settle through smart wallets.
-          </p>
-          <button type="button" className={styles.primary} onClick={connect} disabled={!assetsReady}>
-            {assetsReady ? "Start a session" : "Loading the cabinet"}
-          </button>
-        </section>
-      )}
+  if (!manifest) {
+    return (
+      <main className={styles.shell}>
+        <p className={styles.dim}>Reading the manifest</p>
+      </main>
+    );
+  }
 
-      {state.screen === "modeSelect" && (
-        <section>
-          <p className={styles.lede}>Pick a pit.</p>
-          <p className={styles.sub}>One mode is open. The rest are on the roadmap and are not playable yet.</p>
-          <div className={styles.modes}>
-            {GAME_MODES.map((mode) => (
-              <div key={mode.id} className={`${styles.card} ${mode.locked ? styles.cardLocked : styles.cardOpen}`} aria-disabled={mode.locked}>
-                <h2 className={styles.cardName}>{mode.name}</h2>
-                <p className={styles.cardBlurb}>{mode.blurb}</p>
-                {mode.locked ? (
-                  <span className={styles.roadmap}>{mode.roadmap}</span>
-                ) : (
-                  <div className={styles.stakes}>
-                    {mode.stakes?.map((stake) => (
-                      <button key={stake.id} type="button" onClick={() => void chooseMode(mode.id, stake.id)}>
-                        {stake.label} · {stake.minorUnits}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-          {state.error && <p className={styles.error}>{state.error}</p>}
-        </section>
-      )}
+  return (
+    <UiKitProvider manifest={manifest}>
+      <div onPointerDown={unlockAudio}>
+        {state.screen === "boot" && <BootScreen manifest={manifest} onReady={() => dispatch({ type: "assetsReady" })} />}
+        {state.screen === "title" && <TitleScreen onStart={startSession} />}
 
-      <div className={state.screen === "lobby" || state.screen === "slot" || state.screen === "spinning" || state.screen === "arena" ? undefined : styles.hidden}>
-        <div className={styles.stage}>
-          <div className={styles.cabinet}>
-            <canvas ref={slotCanvasRef} className={`${styles.canvas} ${state.screen === "arena" ? styles.hidden : ""}`} role="img" aria-label="Slot machine" />
-            <canvas ref={arenaCanvasRef} className={`${styles.canvas} ${state.screen === "arena" ? "" : styles.hidden}`} role="img" aria-label="Arena replay" />
-            {state.screen !== "arena" && (
-              <>
-                <button type="button" className={styles.lever} onClick={() => void pullLever()} disabled={!state.leverLive}>
-                  {state.screen === "lobby" ? "Agents deciding" : state.leverLive ? "Pull the lever" : "Locked in"}
-                </button>
-                <p className={styles.leverNote}>{leverNote}</p>
-              </>
-            )}
-          </div>
-
-          {state.screen !== "arena" && (
-            <div className={styles.side}>
-              <h2 className={styles.sideHead}>Who is in</h2>
-              <p className={styles.sideNote}>
-                {plan
-                  ? `${plan.decisions.filter((d) => d.enter).length} of ${plan.decisions.length} agents committed, ${plan.bots} house bots fill the rest. ${plan.costSummary}.`
-                  : "Asking each agent about its own balance."}
-              </p>
-              <ul className={styles.agents}>
-                {plan?.decisions.map((d) => (
-                  <li key={d.agentId} className={styles.agent}>
-                    <div className={styles.agentTop}>
-                      <span className={styles.agentName}>{d.name}</span>
-                      <span className={d.enter ? styles.in : styles.out}>{d.enter ? `In for ${d.stake}` : "Holding"}</span>
-                    </div>
-                    <p className={styles.reason}>{d.reason}</p>
-                    <p className={styles.source}>{d.source === "serv" ? "reasoned" : "heuristic fallback"}</p>
-                  </li>
-                ))}
-              </ul>
-              {state.error && <p className={styles.error}>{state.error}</p>}
-            </div>
-          )}
+        <div ref={screenRef} className={state.screen === "boot" || state.screen === "title" ? styles.hidden : undefined}>
+          <GameShell
+            state={state}
+            plan={plan}
+            run={run}
+            muted={muted}
+            leverNote={leverNote}
+            slotCanvasRef={slotCanvasRef}
+            arenaCanvasRef={arenaCanvasRef}
+            onChooseMode={(modeId, stake) => void chooseMode(modeId, stake)}
+            onPull={() => void pullLever()}
+            onPlayAgain={playAgain}
+            onToggleMute={toggleMute}
+          />
         </div>
       </div>
-
-      {state.screen === "result" && run && (
-        <section>
-          <p className={styles.lede}>{winnerAgent ? `${winnerAgent.name} took the pot.` : `${run.winner} took the pot.`}</p>
-          <div className={styles.result}>
-            <div className={styles.stat}>
-              <p className={styles.statLabel}>Winner</p>
-              <p className={styles.statValue}>{run.winner}</p>
-            </div>
-            <div className={styles.stat}>
-              <p className={styles.statLabel}>Payout, minor units</p>
-              <p className={styles.statValue}>{prize.toString()}</p>
-            </div>
-            <div className={styles.stat}>
-              <p className={styles.statLabel}>Reconciliation</p>
-              <p className={styles.statValue}>{run.reconciled ? "Held" : "Failed"}</p>
-            </div>
-          </div>
-
-          <table className={styles.ledger}>
-            <caption className={styles.statLabel}>Agent bankrolls</caption>
-            <thead>
-              <tr>
-                <th scope="col">Agent</th>
-                <th scope="col">Before</th>
-                <th scope="col">After</th>
-                <th scope="col">Change</th>
-              </tr>
-            </thead>
-            <tbody>
-              {run.agents.map((a) => {
-                const change = BigInt(a.balanceAfterWei) - BigInt(a.balanceBeforeWei);
-                return (
-                  <tr key={a.agentId}>
-                    <td>{a.name}</td>
-                    <td>{a.balanceBeforeWei}</td>
-                    <td>{a.balanceAfterWei}</td>
-                    <td>{change >= 0n ? `+${change}` : change.toString()}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-
-          {run.transfers.length > 0 && (
-            <table className={styles.ledger}>
-              <caption className={styles.statLabel}>Transfers</caption>
-              <thead>
-                <tr>
-                  <th scope="col">Kind</th>
-                  <th scope="col">Agent</th>
-                  <th scope="col">Amount, wei</th>
-                  <th scope="col">Transaction</th>
-                </tr>
-              </thead>
-              <tbody>
-                {run.transfers.map((t) => (
-                  <tr key={`${t.kind}-${t.agentId}`}>
-                    <td>{t.kind}</td>
-                    <td>{t.agentId}</td>
-                    <td>{t.amountWei}</td>
-                    <td>
-                      {t.link ? (
-                        <a href={t.link} target="_blank" rel="noreferrer">
-                          {t.txHash ? short(t.txHash) : "view"}
-                        </a>
-                      ) : (
-                        <span>{t.txHash ? short(t.txHash) : "none"}</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-
-          <p className={styles.chain}>
-            {run.backend === "cdp"
-              ? `Settled on ${run.network}. The transaction links above are the record.`
-              : "This round ran off chain against the local test chain, so the hashes above are local and there is nothing to look up on a block explorer. Set the CDP credentials to settle on Base Sepolia."}
-          </p>
-
-          <div className={styles.row}>
-            <button type="button" className={styles.primary} onClick={playAgain}>
-              Another round
-            </button>
-          </div>
-        </section>
-      )}
-    </main>
+    </UiKitProvider>
   );
 }

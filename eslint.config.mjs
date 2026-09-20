@@ -24,6 +24,14 @@ const eslintConfig = defineConfig([
       ],
     },
   },
+  {
+    // Every image in this app is pixel art from the asset pack, served at an
+    // integer scale with image-rendering: pixelated. next/image would resample
+    // and reroute it through an optimizer, which is exactly what must not
+    // happen to a 16 px sprite.
+    files: ["src/ui/**/*.tsx", "src/app/**/*.tsx"],
+    rules: { "@next/next/no-img-element": "off" },
+  },
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:

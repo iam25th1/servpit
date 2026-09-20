@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import manifestJson from "../../public/assets/manifest.json";
 import { parseManifest, type UiDef } from "@/render/manifest";
-import { minimumSize, ninePatchStyle } from "./ninePatch";
+import { minimumSize, ninePatchStyle } from "./ninePatchGeometry";
 
 const manifest = parseManifest(manifestJson);
 const find = (id: string): UiDef => manifest.ui.find((u) => u.id === id)!;

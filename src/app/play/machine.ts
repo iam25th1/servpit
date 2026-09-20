@@ -3,9 +3,13 @@
 // allowed to be showing. A pure function, so the whole flow is testable
 // without a browser.
 //
-//   connect -> modeSelect -> lobby -> slot -> spinning -> arena -> result
-//                  ^                                                 |
-//                  +-------------------- playAgain ------------------+
+//   boot -> title -> modeSelect -> lobby -> slot -> spinning -> arena -> result
+//                        ^                                                 |
+//                        +-------------------- playAgain ------------------+
+//
+// boot is real: it holds until the asset manifest and every sprite have
+// decoded. title is the attract screen and the only way past it is the
+// player asking to start.
 //
 // spinning waits on two independent things: the reels finishing their stop
 // sequence, and the server returning the settled round. They can land in
@@ -13,7 +17,7 @@
 
 import { GAME_MODES, type GameMode, type StakeTierId } from "@/config/modes";
 
-export type Screen = "connect" | "modeSelect" | "lobby" | "slot" | "spinning" | "arena" | "result";
+export type Screen = "boot" | "title" | "modeSelect" | "lobby" | "slot" | "spinning" | "arena" | "result";
 
 export interface Player {
   id: string;
@@ -36,6 +40,7 @@ export interface FlowState {
 }
 
 export type FlowEvent =
+  | { type: "assetsReady" }
   | { type: "connected"; player: Player }
   | { type: "modeChosen"; modeId: string; stake: StakeTierId }
   | { type: "planLoaded"; plan: unknown }
@@ -47,7 +52,7 @@ export type FlowEvent =
   | { type: "failed"; message: string };
 
 export function initialState(): FlowState {
-  return { screen: "connect", player: null, mode: null, stake: null, plan: null, run: null, leverLive: false, reelsSettled: false, error: null };
+  return { screen: "boot", player: null, mode: null, stake: null, plan: null, run: null, leverLive: false, reelsSettled: false, error: null };
 }
 
 /** Both halves of the handoff are in, so the arena can take over. */
@@ -60,8 +65,12 @@ function maybeHandoff(state: FlowState): FlowState {
 
 export function reduce(state: FlowState, event: FlowEvent): FlowState {
   switch (event.type) {
+    case "assetsReady":
+      if (state.screen !== "boot") return state;
+      return { ...state, screen: "title", error: null };
+
     case "connected":
-      if (state.screen !== "connect") return state;
+      if (state.screen !== "title") return state;
       return { ...state, screen: "modeSelect", player: event.player, error: null };
 
     case "modeChosen": {
@@ -102,7 +111,7 @@ export function reduce(state: FlowState, event: FlowEvent): FlowState {
     case "failed":
       // A failure must never strand the player: it drops back to the slot with
       // the lever live so they can pull again.
-      if (state.screen === "connect" || state.screen === "modeSelect") return { ...state, error: event.message };
+      if (state.screen === "boot" || state.screen === "title" || state.screen === "modeSelect") return { ...state, error: event.message };
       return { ...state, screen: "slot", leverLive: true, reelsSettled: false, error: event.message };
 
     default:
