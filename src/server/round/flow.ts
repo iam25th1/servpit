@@ -96,13 +96,18 @@ export async function planRound(ctx: FlowContext, seed: string): Promise<RoundPl
   const context: RoundContext = { roundId, participants: ctx.entrants, poolWei: stakeWei * BigInt(ctx.entrants), stakeWei };
   const run = await decideForAgents({ client: ctx.serv, meter: ctx.meter }, snapshots, context);
 
-  // Final gate before money moves: the chain, not the model, decides who can enter.
+  // Final gate before money moves: the chain, not the model, decides who can
+  // enter. Gas is no longer sponsored, so the bar is the stake plus whatever
+  // the chain says to keep back; an agent that can cover only the stake would
+  // revert part way through the round.
+  const required = stakeWei + ctx.chain.gasReserveWei;
   const decisions: AgentDecision[] = [];
   const entering: EnteringAgent[] = [];
   for (const decision of run.decisions) {
     const snapshot = snapshots.find((s) => s.profile.id === decision.agentId)!;
-    if (decision.decision.enter && snapshot.balanceWei < stakeWei) {
-      const reason = `balance ${snapshot.balanceWei} wei cannot cover the ${stakeWei} wei allocation`;
+    if (decision.decision.enter && snapshot.balanceWei < required) {
+      const shortfall = ctx.chain.gasReserveWei > 0n && snapshot.balanceWei >= stakeWei ? "gas" : "stake";
+      const reason = `balance ${snapshot.balanceWei} wei cannot cover the ${stakeWei} wei allocation plus ${ctx.chain.gasReserveWei} wei of gas (short on ${shortfall})`;
       log.warn("entry blocked by on chain balance", { agentId: decision.agentId, reason });
       decisions.push({ ...decision, decision: { enter: false, stake: 0, reason: `excluded: ${reason}` }, rejection: decision.rejection ? `${decision.rejection}; ${reason}` : reason });
       continue;

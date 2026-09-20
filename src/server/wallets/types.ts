@@ -32,6 +32,12 @@ export interface Chain {
   readonly network: string;
   /** True when this is a real chain, so transaction hashes are worth linking. */
   readonly settles: boolean;
+  /**
+   * Wei to keep back for gas. Zero where gas is free or sponsored; on a real
+   * chain with plain accounts the agent pays its own, so a wallet that can
+   * cover only the stake cannot actually enter.
+   */
+  readonly gasReserveWei: bigint;
   /** Opens the wallet for an id. With an address, loads that wallet; without, creates one. */
   open(id: string, address?: string): Promise<Wallet>;
 }

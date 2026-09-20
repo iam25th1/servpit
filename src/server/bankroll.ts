@@ -31,9 +31,14 @@ export class BankrollCache {
 
 export type Eligibility = { eligible: true; balance: bigint } | { eligible: false; balance: bigint; reason: string };
 
-/** A broke agent never enters. Reads the chain through the cache. */
-export async function eligibleForEntry(wallet: Wallet, stakeWei: bigint, cache: BankrollCache): Promise<Eligibility> {
+/**
+ * A broke agent never enters, and since gas is no longer sponsored a
+ * gas exhausted one is the same case: it cannot cover what the round costs it.
+ * Both exclusions go through here, and the balance always comes from the chain.
+ */
+export async function eligibleForEntry(wallet: Wallet, stakeWei: bigint, cache: BankrollCache, gasReserveWei = 0n): Promise<Eligibility> {
   const balance = await cache.get(wallet);
-  if (balance < stakeWei) return { eligible: false, balance, reason: `balance ${balance} wei below stake ${stakeWei} wei` };
+  const needed = stakeWei + gasReserveWei;
+  if (balance < needed) return { eligible: false, balance, reason: `balance ${balance} wei below the ${needed} wei needed` };
   return { eligible: true, balance };
 }

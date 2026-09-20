@@ -19,6 +19,9 @@ import { ADDRESS, WALLET_ID, type Call, type Chain, type TxReceipt, type Wallet 
 
 type Hex = `0x${string}`;
 
+/** 0.0002 ETH, comfortably more than a handful of Base Sepolia transfers. */
+export const DEFAULT_GAS_RESERVE_WEI = 200_000_000_000_000n;
+
 /** The slice of ViemWalletProvider this module uses, so tests can stub it. */
 export interface WalletProviderLike {
   getAddress(): string;
@@ -48,6 +51,13 @@ export class ViemChain implements Chain {
   readonly network = "base-sepolia";
   /** A real chain, so transaction hashes are worth linking. */
   readonly settles = true;
+  /**
+   * Held back for gas. A plain transfer on Base Sepolia is around 21,000 gas
+   * and fees are in the low gwei, so this is generous by orders of magnitude
+   * and still far below a sensible funding amount. An agent that cannot cover
+   * its stake plus this is excluded rather than left to revert mid round.
+   */
+  readonly gasReserveWei = DEFAULT_GAS_RESERVE_WEI;
   private readonly providers = new Map<string, WalletProviderLike>();
 
   constructor(

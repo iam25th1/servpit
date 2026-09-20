@@ -9,6 +9,8 @@ import { ADDRESS, WALLET_ID, type Chain, type TxReceipt, type Wallet } from "./t
 
 export interface FakeChainOptions {
   initialBalanceWei?: bigint;
+  /** Lets a test exercise the gas reserve path without a real chain. */
+  gasReserveWei?: bigint;
 }
 
 export class FakeChain implements Chain {
@@ -16,6 +18,8 @@ export class FakeChain implements Chain {
   readonly network = "fake";
   /** Not a real chain, so nothing here is worth linking to an explorer. */
   readonly settles = false;
+  /** Free by default; a test can charge gas to exercise that exclusion. */
+  readonly gasReserveWei: bigint;
   applied = 0;
   balanceReads = 0;
   private readonly balances = new Map<string, bigint>();
@@ -24,6 +28,7 @@ export class FakeChain implements Chain {
 
   constructor(options: FakeChainOptions = {}) {
     this.initial = options.initialBalanceWei ?? 0n;
+    this.gasReserveWei = options.gasReserveWei ?? 0n;
   }
 
   async open(id: string, address?: string): Promise<Wallet> {
