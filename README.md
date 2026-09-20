@@ -44,7 +44,7 @@ Everything downstream of `createRng` draws from one seeded stream in a fixed ord
 
 - **Deterministic.** sfc32 seeded from the seed string. `src/engine` may not touch `Math.random`, `Date.now`, `performance.now` or `new Date`. An ESLint block and a source scan test both enforce it.
 - **Integer only.** Stats use exact integer percent math (`idiv`, `applyPct`). Money uses BigInt products and integer minor units. Nothing a result depends on passes through a float.
-- **Hostile inputs.** Seed, entrants, config and everything the mode strategy returns are validated before use. Bad shape, bad range, duplicate or prototype polluting ids, a mode that misreports placements or breaks conservation: the round throws instead of paying.
+- **Hostile inputs.** Seed, entrants, config and everything the mode strategy returns are read exactly once into plain copies, then validated before use. Getters, proxies and extra fields never reach the result. Bad shape, bad range, duplicate or prototype polluting ids, a function hidden in config, a mode that misreports placements or breaks conservation: the round throws instead of paying.
 - **Conservation.** Payouts must cover every entrant exactly once and sum exactly to `pot - rake`. The sim harness re-checks this per round and exits non zero on any miss.
 - **Renderer needs nothing else.** Spawn and move events carry tile positions, hit and storm events carry remaining hp, every event carries facing.
 
@@ -136,6 +136,7 @@ The locked roster is extracted from the Ninja Adventure pack into `public/assets
   "pack": "Ninja Adventure - Asset Pack",
   "frame": { "width": 16, "height": 16 },
   "faceset": { "width": 38, "height": 38 },
+  "facingOrder": ["down", "up", "left", "right"],
   "entries": [
     {
       "id": "Knight",
@@ -143,10 +144,10 @@ The locked roster is extracted from the Ninja Adventure pack into `public/assets
       "sourceFolder": "Actor/Character/Knight",
       "facesetPath": "/assets/Knight/Faceset.png",
       "sprites": {
-        "idle":   { "path": "/assets/Knight/Idle.png",   "frameWidth": 16, "frameHeight": 16, "cols": 4, "rows": 1 },
-        "walk":   { "path": "/assets/Knight/Walk.png",   "frameWidth": 16, "frameHeight": 16, "cols": 4, "rows": 4 },
-        "attack": { "path": "/assets/Knight/Attack.png", "frameWidth": 16, "frameHeight": 16, "cols": 4, "rows": 1 },
-        "dead":   { "path": "/assets/Knight/Dead.png",   "frameWidth": 16, "frameHeight": 16, "cols": 1, "rows": 1 }
+        "idle":   { "path": "/assets/Knight/Idle.png",   "frameWidth": 16, "frameHeight": 16, "cols": 4, "rows": 1, "facingColumns": [0, 1, 2, 3] },
+        "walk":   { "path": "/assets/Knight/Walk.png",   "frameWidth": 16, "frameHeight": 16, "cols": 4, "rows": 4, "facingColumns": [0, 1, 2, 3] },
+        "attack": { "path": "/assets/Knight/Attack.png", "frameWidth": 16, "frameHeight": 16, "cols": 4, "rows": 1, "facingColumns": [0, 1, 2, 3] },
+        "dead":   { "path": "/assets/Knight/Dead.png",   "frameWidth": 16, "frameHeight": 16, "cols": 1, "rows": 1, "facingColumns": [0, 1, 2, 3] }
       }
     },
     {
@@ -155,18 +156,29 @@ The locked roster is extracted from the Ninja Adventure pack into `public/assets
       "sourceFolder": "Actor/Monster/Bear",
       "facesetPath": "/assets/Bear/Faceset.png",
       "sprites": {
-        "sheet": { "path": "/assets/Bear/SpriteSheet.png", "frameWidth": 16, "frameHeight": 16, "cols": 4, "rows": 4 }
+        "sheet": { "path": "/assets/Bear/SpriteSheet.png", "frameWidth": 16, "frameHeight": 16, "cols": 4, "rows": 4, "facingColumns": [0, 2, 1, 3] }
       }
     }
   ],
   "warnings": [
     "NinjaFire: SeparateAnim/Idle.png missing in pack, animation omitted",
-    "NinjaWater: SeparateAnim/Idle.png missing in pack, animation omitted"
+    "NinjaWater: SeparateAnim/Idle.png missing in pack, animation omitted",
+    "Dragon: SpriteSheet.png is not a uniform 4 column grid, columns 2 and 3 form one 32 px wide winged frame per row, hand slice before use"
   ]
 }
 ```
 
-Characters (common and uncommon) have `idle`, `walk`, `attack`, `dead` sheets of 16 x 16 frames; the four columns are the four facings in the order above. Monsters (rare) have one `sheet` of 4 x 4 frames. Facesets are 38 x 38. Two pack quirks are recorded rather than patched: `NinjaFire` and `NinjaWater` ship no `Idle.png` (use walk frame 0 in the renderer), and the monster sheet filename varies across the pack so the script globs for the single non Faceset png.
+Characters (common and uncommon) have `idle`, `walk`, `attack`, `dead` sheets of 16 x 16 frames. Monsters (rare) have one `sheet` of 4 x 4 frames. Facesets are 38 x 38.
+
+`facingColumns` maps each facing value (index 0 down, 1 up, 2 left, 3 right, the same encoding as the event log) to the sheet column holding that direction. The renderer should index through it rather than assume column equals facing, because the pack is not consistent. Verified by eye at 16x zoom on the extracted sheets:
+
+| Sheets | Column order in the pack | `facingColumns` |
+| --- | --- | --- |
+| every character sheet, Cyclope | down, up, left, right | `[0, 1, 2, 3]` |
+| Bear | down, left, up, right | `[0, 2, 1, 3]` |
+| Dragon | not a uniform grid: columns 2 and 3 form one 32 px winged frame | `null`, see warnings |
+
+Pack quirks are recorded rather than patched: `NinjaFire` and `NinjaWater` ship no `Idle.png` (use walk frame 0 in the renderer), the monster sheet filename varies across the pack so the script globs for the single non Faceset png, and the Dragon sheet needs hand slicing before it can animate.
 
 </details>
 

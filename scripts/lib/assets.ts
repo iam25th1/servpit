@@ -75,3 +75,29 @@ export function dimensionWarnings(r: DimensionReport): string[] {
   }
   return out;
 }
+
+/**
+ * Which sheet column holds each facing, indexed by facing value
+ * (0 down, 1 up, 2 left, 3 right). Verified by eye on the extracted sheets
+ * at 16x zoom: every character and Cyclope use the pack's default order,
+ * Bear stores left before up, Dragon has no uniform columns at all.
+ */
+const DEFAULT_FACING_COLUMNS: readonly number[] = [0, 1, 2, 3];
+
+const FACING_COLUMN_OVERRIDES: Record<string, readonly number[] | null> = {
+  Bear: [0, 2, 1, 3],
+  Dragon: null,
+};
+
+/** Hand verified layout notes that dimensions alone cannot reveal. Copied into manifest warnings. */
+export const SHEET_NOTES: Record<string, string> = {
+  Dragon:
+    "Dragon: SpriteSheet.png is not a uniform 4 column grid, columns 2 and 3 form one 32 px wide winged frame per row, hand slice before use",
+};
+
+export function facingColumnsFor(id: string): number[] | null {
+  const columns = Object.prototype.hasOwnProperty.call(FACING_COLUMN_OVERRIDES, id)
+    ? FACING_COLUMN_OVERRIDES[id]
+    : DEFAULT_FACING_COLUMNS;
+  return columns === null ? null : [...columns];
+}

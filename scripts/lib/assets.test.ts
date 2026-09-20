@@ -107,3 +107,22 @@ describe("dimensionWarnings", () => {
     expect(w[1]).toMatch(/Dragon.*sheet.*96x64/);
   });
 });
+
+import { SHEET_NOTES, facingColumnsFor } from "./assets";
+
+describe("facingColumnsFor", () => {
+  it("maps facing 0 to 3 onto sheet columns in pack order for characters and Cyclope", () => {
+    expect(facingColumnsFor("Knight")).toEqual([0, 1, 2, 3]);
+    expect(facingColumnsFor("NinjaFire")).toEqual([0, 1, 2, 3]);
+    expect(facingColumnsFor("Cyclope")).toEqual([0, 1, 2, 3]);
+  });
+
+  it("Bear stores left before up", () => {
+    expect(facingColumnsFor("Bear")).toEqual([0, 2, 1, 3]);
+  });
+
+  it("Dragon has no uniform columns and carries a note", () => {
+    expect(facingColumnsFor("Dragon")).toBeNull();
+    expect(SHEET_NOTES.Dragon).toMatch(/32/);
+  });
+});

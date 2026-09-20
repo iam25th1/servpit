@@ -22,7 +22,17 @@ import {
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { CHARACTER_ANIMATIONS, ROSTER, type RosterEntry, type Tier } from "../src/config/roster";
-import { EXPECTED, dimensionWarnings, frameGrid, isMacosxPath, pickMonsterSheet, readPngSize, type PngSize } from "./lib/assets";
+import {
+  EXPECTED,
+  SHEET_NOTES,
+  dimensionWarnings,
+  facingColumnsFor,
+  frameGrid,
+  isMacosxPath,
+  pickMonsterSheet,
+  readPngSize,
+  type PngSize,
+} from "./lib/assets";
 
 interface SpriteSheet {
   path: string;
@@ -30,6 +40,8 @@ interface SpriteSheet {
   frameHeight: number;
   cols: number;
   rows: number;
+  /** Sheet column for each facing value (0 down, 1 up, 2 left, 3 right), or null when the sheet has no uniform columns. */
+  facingColumns: number[] | null;
 }
 
 interface ManifestEntry {
@@ -45,6 +57,8 @@ interface Manifest {
   pack: string;
   frame: PngSize;
   faceset: PngSize;
+  /** Meaning of facing values 0 to 3 in the event log and in facingColumns. */
+  facingOrder: string[];
   entries: ManifestEntry[];
   warnings: string[];
 }
@@ -81,7 +95,7 @@ function sizeOf(file: string): PngSize {
   return readPngSize(readFileSync(file));
 }
 
-function sheetFor(file: string, publicPath: string, warnings: string[], label: string): { sheet: SpriteSheet; size: PngSize } {
+function sheetFor(file: string, publicPath: string, warnings: string[], label: string, facingColumns: number[] | null): { sheet: SpriteSheet; size: PngSize } {
   const size = sizeOf(file);
   let cols = 1;
   let rows = 1;
@@ -94,7 +108,7 @@ function sheetFor(file: string, publicPath: string, warnings: string[], label: s
   } catch (e) {
     warnings.push(`${label}: ${(e as Error).message}, recorded as a single frame`);
   }
-  return { sheet: { path: publicPath, frameWidth, frameHeight, cols, rows }, size };
+  return { sheet: { path: publicPath, frameWidth, frameHeight, cols, rows, facingColumns }, size };
 }
 
 function buildEntry(entry: RosterEntry, staging: string, packRoot: string, warnings: string[]): ManifestEntry {
@@ -109,11 +123,13 @@ function buildEntry(entry: RosterEntry, staging: string, packRoot: string, warni
 
   const sprites: Record<string, SpriteSheet> = {};
   const sheets: Record<string, PngSize> = {};
+  const facingColumns = facingColumnsFor(entry.id);
+  if (Object.prototype.hasOwnProperty.call(SHEET_NOTES, entry.id)) warnings.push(SHEET_NOTES[entry.id]);
 
   if (entry.tier === "rare") {
     const name = pickMonsterSheet(readdirSync(srcDir));
     copyFileSync(join(srcDir, name), join(destDir, name));
-    const { sheet, size } = sheetFor(join(srcDir, name), `/assets/${entry.id}/${name}`, warnings, `${entry.id}: ${name}`);
+    const { sheet, size } = sheetFor(join(srcDir, name), `/assets/${entry.id}/${name}`, warnings, `${entry.id}: ${name}`, facingColumns);
     sprites.sheet = sheet;
     sheets.sheet = size;
   } else {
@@ -125,7 +141,7 @@ function buildEntry(entry: RosterEntry, staging: string, packRoot: string, warni
       }
       copyFileSync(src, join(destDir, `${anim}.png`));
       const key = anim.toLowerCase();
-      const { sheet, size } = sheetFor(src, `/assets/${entry.id}/${anim}.png`, warnings, `${entry.id}: ${anim}.png`);
+      const { sheet, size } = sheetFor(src, `/assets/${entry.id}/${anim}.png`, warnings, `${entry.id}: ${anim}.png`, facingColumns);
       sprites[key] = sheet;
       sheets[key] = size;
     }
@@ -175,6 +191,7 @@ function main(): void {
       pack: packRoot,
       frame: { width: EXPECTED.frame, height: EXPECTED.frame },
       faceset: { width: EXPECTED.faceset, height: EXPECTED.faceset },
+      facingOrder: ["down", "up", "left", "right"],
       entries,
       warnings,
     };
