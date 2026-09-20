@@ -1109,9 +1109,464 @@
       "bytes": 83606
     }
   ],
+  "ui": [
+    {
+      "id": "panel",
+      "kind": "ninePatch",
+      "source": "Ui/Theme/Theme Wood/nine_path_panel.png",
+      "path": "/assets/ui/panel.png",
+      "width": 16,
+      "height": 16,
+      "slice": {
+        "x": 6,
+        "y": 6
+      }
+    },
+    {
+      "id": "panelAlt",
+      "kind": "ninePatch",
+      "source": "Ui/Theme/Theme Wood/nine_path_panel_2.png",
+      "path": "/assets/ui/panelAlt.png",
+      "width": 16,
+      "height": 16,
+      "slice": {
+        "x": 6,
+        "y": 6
+      }
+    },
+    {
+      "id": "panelInterior",
+      "kind": "ninePatch",
+      "source": "Ui/Theme/Theme Wood/nine_path_panel_interior.png",
+      "path": "/assets/ui/panelInterior.png",
+      "width": 16,
+      "height": 16,
+      "slice": {
+        "x": 6,
+        "y": 6
+      }
+    },
+    {
+      "id": "panelDisabled",
+      "kind": "ninePatch",
+      "source": "Ui/Theme/Theme Wood/nine_path_panel_disabled.png",
+      "path": "/assets/ui/panelDisabled.png",
+      "width": 16,
+      "height": 16,
+      "slice": {
+        "x": 6,
+        "y": 6
+      }
+    },
+    {
+      "id": "bg",
+      "kind": "ninePatch",
+      "source": "Ui/Theme/Theme Wood/nine_path_bg.png",
+      "path": "/assets/ui/bg.png",
+      "width": 16,
+      "height": 16,
+      "slice": {
+        "x": 6,
+        "y": 6
+      }
+    },
+    {
+      "id": "bgAlt",
+      "kind": "ninePatch",
+      "source": "Ui/Theme/Theme Wood/nine_path_bg_2.png",
+      "path": "/assets/ui/bgAlt.png",
+      "width": 16,
+      "height": 16,
+      "slice": {
+        "x": 6,
+        "y": 6
+      }
+    },
+    {
+      "id": "focus",
+      "kind": "ninePatch",
+      "source": "Ui/Theme/Theme Wood/nine_path_focus.png",
+      "path": "/assets/ui/focus.png",
+      "width": 8,
+      "height": 8,
+      "slice": {
+        "x": 3,
+        "y": 3
+      }
+    },
+    {
+      "id": "button",
+      "kind": "ninePatch",
+      "source": "Ui/Theme/Theme Wood/button_normal.png",
+      "path": "/assets/ui/button.png",
+      "width": 16,
+      "height": 8,
+      "slice": {
+        "x": 6,
+        "y": 3
+      }
+    },
+    {
+      "id": "buttonHover",
+      "kind": "ninePatch",
+      "source": "Ui/Theme/Theme Wood/button_hover.png",
+      "path": "/assets/ui/buttonHover.png",
+      "width": 16,
+      "height": 8,
+      "slice": {
+        "x": 6,
+        "y": 3
+      }
+    },
+    {
+      "id": "buttonPressed",
+      "kind": "ninePatch",
+      "source": "Ui/Theme/Theme Wood/button_pressed.png",
+      "path": "/assets/ui/buttonPressed.png",
+      "width": 16,
+      "height": 8,
+      "slice": {
+        "x": 6,
+        "y": 3
+      }
+    },
+    {
+      "id": "buttonDisabled",
+      "kind": "ninePatch",
+      "source": "Ui/Theme/Theme Wood/button_disabled.png",
+      "path": "/assets/ui/buttonDisabled.png",
+      "width": 16,
+      "height": 8,
+      "slice": {
+        "x": 6,
+        "y": 3
+      }
+    },
+    {
+      "id": "tab",
+      "kind": "ninePatch",
+      "source": "Ui/Theme/Theme Wood/tab.png",
+      "path": "/assets/ui/tab.png",
+      "width": 16,
+      "height": 12,
+      "slice": {
+        "x": 6,
+        "y": 4
+      }
+    },
+    {
+      "id": "tabSelected",
+      "kind": "ninePatch",
+      "source": "Ui/Theme/Theme Wood/tab_selected.png",
+      "path": "/assets/ui/tabSelected.png",
+      "width": 16,
+      "height": 12,
+      "slice": {
+        "x": 6,
+        "y": 4
+      }
+    },
+    {
+      "id": "tabHover",
+      "kind": "ninePatch",
+      "source": "Ui/Theme/Theme Wood/tab_hover.png",
+      "path": "/assets/ui/tabHover.png",
+      "width": 16,
+      "height": 12,
+      "slice": {
+        "x": 6,
+        "y": 4
+      }
+    },
+    {
+      "id": "tabDisabled",
+      "kind": "ninePatch",
+      "source": "Ui/Theme/Theme Wood/tab_disabled.png",
+      "path": "/assets/ui/tabDisabled.png",
+      "width": 16,
+      "height": 12,
+      "slice": {
+        "x": 6,
+        "y": 4
+      }
+    },
+    {
+      "id": "inventoryCell",
+      "kind": "ninePatch",
+      "source": "Ui/Theme/Theme Wood/inventory_cell.png",
+      "path": "/assets/ui/inventoryCell.png",
+      "width": 16,
+      "height": 16,
+      "slice": {
+        "x": 6,
+        "y": 6
+      }
+    },
+    {
+      "id": "dialogBox",
+      "kind": "sprite",
+      "source": "Ui/Dialog/DialogBox.png",
+      "path": "/assets/ui/dialogBox.png",
+      "width": 300,
+      "height": 58
+    },
+    {
+      "id": "dialogSimple",
+      "kind": "sprite",
+      "source": "Ui/Dialog/DialogueBoxSimple.png",
+      "path": "/assets/ui/dialogSimple.png",
+      "width": 316,
+      "height": 60
+    },
+    {
+      "id": "dialogFaceset",
+      "kind": "sprite",
+      "source": "Ui/Dialog/DialogBoxFaceset.png",
+      "path": "/assets/ui/dialogFaceset.png",
+      "width": 300,
+      "height": 58
+    },
+    {
+      "id": "facesetBox",
+      "kind": "sprite",
+      "source": "Ui/Dialog/FacesetBox.png",
+      "path": "/assets/ui/facesetBox.png",
+      "width": 48,
+      "height": 48
+    },
+    {
+      "id": "dialogInfo",
+      "kind": "sprite",
+      "source": "Ui/Dialog/DialogInfo.png",
+      "path": "/assets/ui/dialogInfo.png",
+      "width": 80,
+      "height": 16
+    },
+    {
+      "id": "lifeBarUnder",
+      "kind": "sprite",
+      "source": "Ui/Receptacle/LifeBarMiniUnder.png",
+      "path": "/assets/ui/lifeBarUnder.png",
+      "width": 18,
+      "height": 4
+    },
+    {
+      "id": "lifeBarProgress",
+      "kind": "sprite",
+      "source": "Ui/Receptacle/LifeBarMiniProgress.png",
+      "path": "/assets/ui/lifeBarProgress.png",
+      "width": 18,
+      "height": 4
+    },
+    {
+      "id": "meterBack",
+      "kind": "sprite",
+      "source": "Ui/Receptacle/Receptacle Rectangle/BackgroundWood.png",
+      "path": "/assets/ui/meterBack.png",
+      "width": 34,
+      "height": 56
+    },
+    {
+      "id": "meterFill",
+      "kind": "sprite",
+      "source": "Ui/Receptacle/Receptacle Rectangle/ProgressWhite.png",
+      "path": "/assets/ui/meterFill.png",
+      "width": 22,
+      "height": 40
+    },
+    {
+      "id": "meterHealth",
+      "kind": "sprite",
+      "source": "Ui/Receptacle/Receptacle Rectangle/ProgressHealth.png",
+      "path": "/assets/ui/meterHealth.png",
+      "width": 22,
+      "height": 40
+    },
+    {
+      "id": "heart",
+      "kind": "sprite",
+      "source": "Ui/Receptacle/IconHeart.png",
+      "path": "/assets/ui/heart.png",
+      "width": 14,
+      "height": 12
+    },
+    {
+      "id": "fontNormal",
+      "kind": "font",
+      "source": "Ui/Font/NormalFont.ttf",
+      "path": "/assets/ui/fontNormal.ttf",
+      "width": 0,
+      "height": 0
+    },
+    {
+      "id": "fontBitmapSmall",
+      "kind": "font",
+      "source": "Ui/Font/font8x8.png",
+      "path": "/assets/ui/fontBitmapSmall.png",
+      "width": 120,
+      "height": 64
+    },
+    {
+      "id": "fontBitmapLarge",
+      "kind": "font",
+      "source": "Ui/Font/font24x30.png",
+      "path": "/assets/ui/fontBitmapLarge.png",
+      "width": 360,
+      "height": 240
+    },
+    {
+      "id": "tilesetDungeon",
+      "kind": "tileset",
+      "source": "Backgrounds/Tilesets/TilesetDungeon.png",
+      "path": "/assets/ui/tilesetDungeon.png",
+      "width": 192,
+      "height": 64,
+      "tile": 16
+    },
+    {
+      "id": "tilesetFloor",
+      "kind": "tileset",
+      "source": "Backgrounds/Tilesets/TilesetFloor.png",
+      "path": "/assets/ui/tilesetFloor.png",
+      "width": 352,
+      "height": 417,
+      "tile": 16
+    },
+    {
+      "id": "tilesetFloorDetail",
+      "kind": "tileset",
+      "source": "Backgrounds/Tilesets/TilesetFloorDetail.png",
+      "path": "/assets/ui/tilesetFloorDetail.png",
+      "width": 256,
+      "height": 80,
+      "tile": 16
+    },
+    {
+      "id": "tilesetRelief",
+      "kind": "tileset",
+      "source": "Backgrounds/Tilesets/TilesetRelief.png",
+      "path": "/assets/ui/tilesetRelief.png",
+      "width": 320,
+      "height": 192,
+      "tile": 16
+    },
+    {
+      "id": "emote-committed",
+      "kind": "sprite",
+      "source": "Ui/Emote/emote1.png",
+      "path": "/assets/ui/emote-committed.png",
+      "width": 14,
+      "height": 13
+    },
+    {
+      "id": "emote-holding",
+      "kind": "sprite",
+      "source": "Ui/Emote/emote4.png",
+      "path": "/assets/ui/emote-holding.png",
+      "width": 14,
+      "height": 13
+    },
+    {
+      "id": "emote-thinking",
+      "kind": "sprite",
+      "source": "Ui/Emote/emote2.png",
+      "path": "/assets/ui/emote-thinking.png",
+      "width": 14,
+      "height": 13
+    },
+    {
+      "id": "emote-broke",
+      "kind": "sprite",
+      "source": "Ui/Emote/emote10.png",
+      "path": "/assets/ui/emote-broke.png",
+      "width": 14,
+      "height": 13
+    },
+    {
+      "id": "emote-won",
+      "kind": "sprite",
+      "source": "Ui/Emote/emote7.png",
+      "path": "/assets/ui/emote-won.png",
+      "width": 14,
+      "height": 13
+    },
+    {
+      "id": "emote-lost",
+      "kind": "sprite",
+      "source": "Ui/Emote/emote6.png",
+      "path": "/assets/ui/emote-lost.png",
+      "width": 14,
+      "height": 13
+    },
+    {
+      "id": "icon-battleRoyale",
+      "kind": "sprite",
+      "source": "Ui/Skill Icon/Spell/Cut.png",
+      "path": "/assets/ui/icon-battleRoyale.png",
+      "width": 24,
+      "height": 24
+    },
+    {
+      "id": "icon-gauntlet",
+      "kind": "sprite",
+      "source": "Ui/Skill Icon/Items & Weapon/Guard.png",
+      "path": "/assets/ui/icon-gauntlet.png",
+      "width": 24,
+      "height": 24
+    },
+    {
+      "id": "icon-duel",
+      "kind": "sprite",
+      "source": "Ui/Skill Icon/Spell/Counter.png",
+      "path": "/assets/ui/icon-duel.png",
+      "width": 24,
+      "height": 24
+    },
+    {
+      "id": "icon-placement",
+      "kind": "sprite",
+      "source": "Ui/Skill Icon/Spell/Permutation.png",
+      "path": "/assets/ui/icon-placement.png",
+      "width": 24,
+      "height": 24
+    },
+    {
+      "id": "icon-highRoller",
+      "kind": "sprite",
+      "source": "Ui/Skill Icon/Items & Weapon/Money.png",
+      "path": "/assets/ui/icon-highRoller.png",
+      "width": 24,
+      "height": 24
+    },
+    {
+      "id": "icon-locked",
+      "kind": "sprite",
+      "source": "Ui/Skill Icon/Job & Action/Mine.png",
+      "path": "/assets/ui/icon-locked.png",
+      "width": 24,
+      "height": 24
+    }
+  ],
+  "emotes": {
+    "committed": "emote-committed",
+    "holding": "emote-holding",
+    "thinking": "emote-thinking",
+    "broke": "emote-broke",
+    "won": "emote-won",
+    "lost": "emote-lost"
+  },
+  "modeIcons": {
+    "battleRoyale": "icon-battleRoyale",
+    "gauntlet": "icon-gauntlet",
+    "duel": "icon-duel",
+    "placement": "icon-placement",
+    "highRoller": "icon-highRoller",
+    "locked": "icon-locked"
+  },
   "warnings": [
     "NinjaFire: SeparateAnim/Idle.png missing in pack, animation omitted",
     "NinjaWater: SeparateAnim/Idle.png missing in pack, animation omitted",
-    "Dragon: facingColumns is null on purpose, frames come from the hand sliced frameRects list. A pixel check shows columns 2 and 3 are mirror image 16 px frames (left, right) whose wings meet at the cell boundary, not one 32 px frame as phase 1 first recorded"
+    "Dragon: facingColumns is null on purpose, frames come from the hand sliced frameRects list. A pixel check shows columns 2 and 3 are mirror image 16 px frames (left, right) whose wings meet at the cell boundary, not one 32 px frame as phase 1 first recorded",
+    "ui tilesetFloor: 352x417 is not a whole number of 16 px tiles, usable grid is 22x26"
   ]
 }

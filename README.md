@@ -149,6 +149,75 @@ The arena is a `width x height` tile grid (24 x 24 by default); positions are in
 
 </details>
 
+## The interface
+
+The game runs from `/`: boot, title, mode select, the slot, the arena, the result. Every container is a nine patch from the Ninja Adventure UI kit, every control is its button or tab art, and every screen change is choreographed on one anime.js timeline.
+
+```mermaid
+%%{init: {"theme": "neutral"}}%%
+stateDiagram-v2
+    [*] --> boot
+    boot --> title: every sprite decoded
+    title --> modeSelect: enter the pit
+    modeSelect --> modeSelect: locked mode refused
+    modeSelect --> lobby: Battle Royale, stake chosen
+    lobby --> slot: decisions in, lever live
+    slot --> spinning: lever pulled
+    spinning --> arena: reels settled and round returned
+    arena --> result: playback finished
+    result --> modeSelect: another round
+    spinning --> slot: failure, lever live again
+```
+
+**Two clocks, kept apart.** The phase 2 canvas Timeline remains the sole driver of reel motion and arena playback. anime.js drives DOM chrome only: screens, panels, buttons, the HUD. Five tests enforce the separation: the canvas renderers may not import anime.js at all, no anime.js call may target a canvas element, ref or selector, and nothing outside `src/render` may hand a canvas to an animation. The timer ban that already existed is now scoped to the rendering layer with anime.js whitelisted by exact module name, so importing any other timing library still fails; it is narrower in scope but no looser in what it forbids.
+
+**Vestibular safety.** Nothing rotates, skews, blurs or moves a full screen container, and there is no pointer parallax. Every animated property is element local: opacity, scale, and a few pixels of offset on individual cards. Two tests scan every file that imports anime.js and reject rotation, skew, perspective, blur, animating the body or document element, and any pointer driven motion.
+
+<details>
+<summary>Design tokens</summary>
+
+`src/ui/tokens.ts` is the single source; no component carries a literal colour, spacing value or duration.
+
+The direction is a lamplit dungeon. The wood nine patches and the dungeon tileset bring their own warm browns and cool stone, so the palette around them stays dark and desaturated and lets the art carry the colour. One accent, amber, which is already the rare tier colour on the arena hp bars and the slot payline, so the whole product agrees with itself.
+
+| Token group | Values |
+| --- | --- |
+| Surfaces | `pit #14170f`, `pitDeep #0d0f0a`, `interior #1d2117` |
+| Text | `bone #e8e2cf`, `boneDim #a8a293` |
+| Accent | `amber #ffb300`, `amberDeep #c98200` |
+| Tiers | common green, uncommon blue, rare amber, matching the arena hp bars |
+| Spacing | 2, 4, 8, 12, 16, 24, 40, built on 4 because the art is 16 px |
+| Type | 10, 12, 14, 18, 26, 44 |
+| Timing | tap 120, move 260, screen 460, stagger 42, overlap -220 |
+
+Type is the pack's own `NormalFont.ttf` through `@font-face`, with a monospace fallback so glyph width stays honest if it fails to load. No serif is reachable: two tests fail if any stylesheet names one or falls back to one, and both failed before this phase, which is what they are for.
+
+The face ships a near zero width space, so the root and every control set `word-spacing`. Without it the whole interface renders as run together words, which is exactly how the first screenshot came out.
+
+</details>
+
+<details>
+<summary>Which pack assets are used where</summary>
+
+| Asset | Where |
+| --- | --- |
+| `Ui/Theme/Theme Wood/nine_path_panel`, `_2`, `_interior`, `_disabled` | Every panel, card and list container |
+| `nine_path_bg`, `_2` | Grouping frames: the lineup, the HUD, the ledger |
+| `nine_path_focus` | Emphasis, in place of a coloured side bar |
+| `button_normal`, `_hover`, `_pressed`, `_disabled` | Every button, one sprite per state rather than a filter |
+| `tab`, `tab_hover`, `tab_selected`, `tab_disabled` | Stake tier selection |
+| `Ui/Dialog/DialogueBoxSimple`, `DialogBoxFaceset` | SERV reason strings, which is what a dialog frame is for |
+| `Ui/Receptacle/LifeBarMiniUnder` and `Progress` | Boot progress and every bankroll meter |
+| `Ui/Emote/emote1..10` | Agent state bubbles, mapped to meaning in one place |
+| `Ui/Skill Icon/Spell, Items & Weapon, Job & Action` | Mode identities and the locked badge |
+| `Ui/Font/NormalFont.ttf` | The interface face |
+| `Backgrounds/Tilesets/TilesetDungeon` | Title backdrop, one wall cell cropped and repeated |
+| `TilesetFloor`, `FloorDetail`, `Relief` | Extracted for arena floor work |
+
+Nine patch slices were measured off the pixels, not guessed: the 16x16 panels carry 6 px corners, the 8x8 focus ring 3 px, the 16x8 button 6 across and 3 down. They render through CSS `border-image` with `repeat: round`, which tiles in whole pixels rather than scaling fractionally, so the art stays square at any panel size.
+
+</details>
+
 ## The machine
 
 `/` is the whole player flow: connect, pick a pit, watch the agents decide, pull the lever, watch the fight, collect. One state machine owns every transition and one animation loop drives every moving thing on the page.

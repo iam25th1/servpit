@@ -13,7 +13,7 @@
 }
 
 .title {
-  font-family: var(--display);
+  font-family: var(--font-ui);
   font-weight: 700;
   font-size: 2rem;
   letter-spacing: -0.02em;
@@ -21,9 +21,9 @@
 }
 
 .facts {
-  font-family: var(--display);
+  font-family: var(--font-ui);
   font-size: 1.1rem;
-  color: var(--sage);
+  color: var(--bone-dim);
   margin: 0;
 }
 
@@ -48,7 +48,7 @@
   bottom: 16px;
   margin: 0;
   text-align: center;
-  font-family: var(--display);
+  font-family: var(--font-ui);
   font-size: 1.1rem;
 }
 
@@ -68,7 +68,7 @@
 .pick button {
   background: transparent;
   color: var(--bone);
-  border: 1px solid var(--ash);
+  border: 1px solid var(--edge);
   padding: 6px 14px;
   font: inherit;
   cursor: pointer;
@@ -104,7 +104,7 @@
 .pick input {
   background: var(--pit);
   color: var(--bone);
-  border: 1px solid var(--ash);
+  border: 1px solid var(--edge);
   padding: 6px 8px;
   font: inherit;
 }
@@ -112,7 +112,7 @@
 .status {
   flex-basis: 100%;
   margin: 0;
-  color: var(--sage);
+  color: var(--bone-dim);
 }
 
 .pick {
@@ -134,7 +134,7 @@
 }
 
 .footnote {
-  color: var(--ash-light);
+  color: var(--bone-dim);
   font-size: 0.9rem;
   margin-top: 24px;
   max-width: 70ch;

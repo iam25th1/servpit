@@ -1,0 +1,108 @@
+/* Shared chrome. Every panel, card, dialog and list container in the app
+   renders through .panel or .frame, which are nine patch backed. There is no
+   bare div with a border anywhere. */
+
+.panel,
+.frame,
+.button {
+  /* The nine patch itself arrives as an inline style from ninePatchStyle. */
+  box-sizing: border-box;
+  position: relative;
+}
+
+.panel {
+  padding: var(--space-base);
+  color: var(--bone);
+}
+
+.frame {
+  padding: var(--space-snug);
+}
+
+.interior {
+  background: var(--interior);
+  padding: var(--space-snug);
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-tight);
+  padding: var(--space-snug) var(--space-wide);
+  font-family: var(--font-ui);
+  font-size: var(--text-body);
+  letter-spacing: 0.04em;
+  color: var(--bone);
+  background: transparent;
+  cursor: pointer;
+  /* The press response is a sprite swap plus a spring on this element only.
+     Nothing here transitions, so anime.js owns the motion outright. */
+  transform-origin: center;
+}
+
+.button:disabled {
+  color: var(--bone-dim);
+  cursor: default;
+}
+
+.button:focus-visible,
+.focusable:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 3px;
+}
+
+.label {
+  font-family: var(--font-ui);
+  letter-spacing: 0.04em;
+}
+
+.title {
+  font-family: var(--font-ui);
+  font-size: var(--text-title);
+  letter-spacing: 0.06em;
+  margin: 0;
+  color: var(--bone);
+}
+
+.lead {
+  font-family: var(--font-ui);
+  font-size: var(--text-lead);
+  margin: 0;
+  color: var(--bone);
+}
+
+.body {
+  font-family: var(--font-ui);
+  font-size: var(--text-body);
+  line-height: 1.5;
+  margin: 0;
+  color: var(--bone);
+}
+
+.dim {
+  color: var(--bone-dim);
+}
+
+.accent {
+  color: var(--amber);
+}
+
+.meter {
+  position: relative;
+  image-rendering: pixelated;
+  overflow: hidden;
+}
+
+.meterFill {
+  position: absolute;
+  inset: 0;
+  image-rendering: pixelated;
+  background-repeat: repeat-x;
+  background-size: auto 100%;
+}
+
+.sprite {
+  image-rendering: pixelated;
+  display: block;
+}

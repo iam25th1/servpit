@@ -65,3 +65,50 @@ describe("parseManifest", () => {
     expect(() => parseManifest({ entries: [] })).toThrow(/manifest/);
   });
 });
+
+describe("ui section", () => {
+  it("parses every ui entry, with a slice on each nine patch and a tile on each tileset", () => {
+    const m = parseManifest(manifestJson);
+    expect(m.ui.length).toBeGreaterThanOrEqual(40);
+    const ninePatches = m.ui.filter((u) => u.kind === "ninePatch");
+    expect(ninePatches.length).toBeGreaterThanOrEqual(10);
+    for (const p of ninePatches) {
+      expect(p.slice, p.id).toBeDefined();
+      expect(p.slice!.x * 2).toBeLessThanOrEqual(p.width);
+      expect(p.slice!.y * 2).toBeLessThanOrEqual(p.height);
+    }
+    for (const t of m.ui.filter((u) => u.kind === "tileset")) expect(t.tile, t.id).toBeGreaterThan(0);
+    for (const f of m.ui.filter((u) => u.kind === "font")) expect(f.path).toMatch(/\.(ttf|png)$/);
+  });
+
+  it("resolves every emote and mode icon to a ui entry that exists", () => {
+    const m = parseManifest(manifestJson);
+    const ids = new Set(m.ui.map((u) => u.id));
+    for (const id of Object.values(m.emotes)) expect(ids.has(id), id).toBe(true);
+    for (const id of Object.values(m.modeIcons)) expect(ids.has(id), id).toBe(true);
+    expect(Object.keys(m.modeIcons)).toContain("battleRoyale");
+  });
+
+  it("rejects a nine patch whose slice would overlap its own corners", () => {
+    const j = clone();
+    const entry = (j.ui as Array<Record<string, unknown>>).find((u) => u.kind === "ninePatch")!;
+    entry.slice = { x: 99, y: 99 };
+    expect(() => parseManifest(j)).toThrow(/does not fit inside/);
+  });
+
+  it("rejects a nine patch with no slice, and a ui path outside the assets directory", () => {
+    const j = clone();
+    const entry = (j.ui as Array<Record<string, unknown>>).find((u) => u.kind === "ninePatch")!;
+    delete entry.slice;
+    expect(() => parseManifest(j)).toThrow(/needs a slice/);
+    const k = clone();
+    (k.ui as Array<Record<string, unknown>>)[0].path = "https://example.com/evil.png";
+    expect(() => parseManifest(k)).toThrow(/ui\[0\].path/);
+  });
+
+  it("rejects an emote pointing at a ui id that does not exist", () => {
+    const j = clone();
+    (j.emotes as Record<string, string>).committed = "not-a-real-id";
+    expect(() => parseManifest(j)).toThrow(/unknown ui id/);
+  });
+});

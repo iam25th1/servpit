@@ -5,17 +5,29 @@ import { initialState, reduce, type FlowState } from "./machine";
 const plan = { roundId: "r-1", decisions: [{ agentId: "atlas" }] } as never;
 const run = { roundId: "r-1", winner: "agent-atlas", replay: { log: [{}], characters: [], placements: ["agent-atlas"] } } as never;
 
-const connected = (): FlowState => reduce(initialState(), { type: "connected", player: { id: "p1", label: "0xabc" } });
+const booted = (): FlowState => reduce(initialState(), { type: "assetsReady" });
+const connected = (): FlowState => reduce(booted(), { type: "connected", player: { id: "p1", label: "0xabc" } });
 const chosen = (): FlowState => reduce(connected(), { type: "modeChosen", modeId: "battleRoyale", stake: "low" });
 const lobby = (): FlowState => reduce(chosen(), { type: "planLoaded", plan });
 const pulled = (): FlowState => reduce(lobby(), { type: "leverPulled" });
 
 describe("flow start", () => {
-  it("opens on connect with nothing chosen", () => {
+  it("opens on boot with nothing chosen", () => {
     const s = initialState();
-    expect(s.screen).toBe("connect");
+    expect(s.screen).toBe("boot");
     expect(s.player).toBeNull();
     expect(s.leverLive).toBe(false);
+  });
+
+  it("holds on boot until the assets are actually ready", () => {
+    const s = initialState();
+    expect(reduce(s, { type: "connected", player: { id: "p", label: "x" } }).screen).toBe("boot");
+    expect(booted().screen).toBe("title");
+  });
+
+  it("only leaves the title when the player asks", () => {
+    expect(reduce(booted(), { type: "leverPulled" }).screen).toBe("title");
+    expect(connected().screen).toBe("modeSelect");
   });
 
   it("moves to mode select once a player is connected", () => {
@@ -122,6 +134,6 @@ describe("errors and replay", () => {
     const s = connected();
     expect(reduce(s, { type: "reelsSettled" })).toBe(s);
     expect(reduce(s, { type: "playbackFinished" })).toBe(s);
-    expect(reduce(initialState(), { type: "modeChosen", modeId: "battleRoyale", stake: "low" }).screen).toBe("connect");
+    expect(reduce(initialState(), { type: "modeChosen", modeId: "battleRoyale", stake: "low" }).screen).toBe("boot");
   });
 });

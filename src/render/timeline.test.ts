@@ -222,4 +222,48 @@ describe("slot source hygiene", () => {
     walk(join(process.cwd(), "src/app/play"));
     expect(offenders).toEqual([]);
   });
+
+  it("the ban covers first party source only, and anime.js is whitelisted by name", () => {
+    // anime.js schedules on requestAnimationFrame internally, which is fine:
+    // it drives DOM chrome and nothing else, and the rule exists to stop our
+    // own code opening a second clock. The whitelist is explicit rather than
+    // the rule being softened, so importing any other timing library still
+    // fails this.
+    const allowed = new Set(["animejs", "animejs/svg", "animejs/text", "animejs/scope"]);
+    const offenders: string[] = [];
+    const walk = (dir: string) => {
+      for (const name of readdirSync(dir)) {
+        const p = join(dir, name);
+        if (statSync(p).isDirectory()) walk(p);
+        else if (/\.(ts|tsx)$/.test(p) && !/\.test\.tsx?$/.test(p)) {
+          for (const match of readFileSync(p, "utf8").matchAll(/from "([^"]+)"/g)) {
+            const source = match[1];
+            if (!source.startsWith(".") && !source.startsWith("@/") && /anime|gsap|motion|framer|tween|popmotion/i.test(source)) {
+              if (!allowed.has(source)) offenders.push(`${p}: ${source}`);
+            }
+          }
+        }
+      }
+    };
+    walk(join(process.cwd(), "src"));
+    expect(offenders).toEqual([]);
+  });
+
+  it("only loop.ts opens a raw animation frame in the rendering layer", () => {
+    // Scoped to what renders. src/server schedules an HTTP retry backoff,
+    // which is a different concern from the animation clock and is not what
+    // this rule protects.
+    const offenders: string[] = [];
+    const walk = (dir: string) => {
+      for (const name of readdirSync(dir)) {
+        const p = join(dir, name);
+        if (statSync(p).isDirectory()) walk(p);
+        else if (/\.(ts|tsx)$/.test(p) && !/\.test\.tsx?$/.test(p) && !p.endsWith("loop.ts")) {
+          if (/requestAnimationFrame|setInterval\(|setTimeout\(/.test(readFileSync(p, "utf8"))) offenders.push(p);
+        }
+      }
+    };
+    for (const dir of ["src/render", "src/ui", "src/app"]) walk(join(process.cwd(), dir));
+    expect(offenders).toEqual([]);
+  });
 });

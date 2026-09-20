@@ -1,0 +1,411 @@
+.shell {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  /* Content is centred in the viewport rather than hugging the top, which
+     left more than half the screen empty on every screen after the title. */
+  justify-content: center;
+  padding: var(--space-wide) var(--space-base) var(--space-loose);
+  gap: var(--space-wide);
+}
+
+.shell > header {
+  margin-bottom: auto;
+}
+
+.topbar {
+  width: min(1100px, 100%);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-base);
+}
+
+.wordmark {
+  font-family: var(--font-ui);
+  font-size: var(--text-lead);
+  letter-spacing: 0.2em;
+  color: var(--amber);
+  margin: 0;
+}
+
+.topmeta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-base);
+  font-size: var(--text-small);
+  color: var(--bone-dim);
+}
+
+/* Mode select */
+.modes {
+  /* Centred and capped at three across, so five cards read as a composed
+     wall rather than a row with an orphan under it. */
+  width: min(900px, 100%);
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: var(--space-base);
+  justify-content: center;
+}
+
+.modeCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-snug);
+  min-height: 190px;
+}
+
+.modeHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-snug);
+}
+
+.modeIcon {
+  image-rendering: pixelated;
+  flex: none;
+}
+
+.modeName {
+  font-family: var(--font-ui);
+  font-size: var(--text-lead);
+  letter-spacing: 0.06em;
+  margin: 0;
+}
+
+.modeBlurb {
+  font-size: var(--text-small);
+  color: var(--bone-dim);
+  margin: 0;
+  flex: 1;
+}
+
+/* A locked mode is shuttered: horizontal slats across the panel with a lock
+   sitting on top. It reads as locked with the text unread, which reduced
+   opacity never does. */
+.aboveShutter {
+  position: relative;
+  z-index: 2;
+}
+
+.shutter {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background-image: repeating-linear-gradient(
+    0deg,
+    var(--pit-deep) 0px,
+    var(--pit-deep) 5px,
+    transparent 5px,
+    transparent 11px
+  );
+  opacity: 0.82;
+}
+
+.lockBadge {
+  position: absolute;
+  top: 58%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-tight);
+  pointer-events: none;
+}
+
+.roadmap {
+  font-family: var(--font-ui);
+  font-size: var(--text-micro);
+  letter-spacing: 0.18em;
+  color: var(--amber);
+  background: var(--pit-deep);
+  padding: 2px 8px;
+}
+
+.stakes {
+  display: flex;
+  gap: var(--space-tight);
+}
+
+.stakeTab {
+  flex: 1;
+  font-family: var(--font-ui);
+  font-size: var(--text-small);
+  color: var(--bone);
+  background: transparent;
+  cursor: pointer;
+  padding: var(--space-snug) var(--space-tight);
+  box-sizing: border-box;
+}
+
+.stakeTab:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 2px;
+}
+
+/* Slot and arena stage */
+.offstage {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  pointer-events: none;
+}
+
+.stage {
+  width: min(1100px, 100%);
+  display: grid;
+  grid-template-columns: minmax(0, auto) minmax(280px, 1fr);
+  gap: var(--space-wide);
+  align-items: start;
+  justify-content: center;
+}
+
+.cabinet {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-base);
+}
+
+.canvas {
+  display: block;
+  image-rendering: pixelated;
+  background: var(--pit-deep);
+}
+
+.hidden {
+  display: none;
+}
+
+.leverNote {
+  font-size: var(--text-micro);
+  color: var(--bone-dim);
+  margin: 0;
+  min-height: 1.3em;
+  text-align: center;
+}
+
+.sideHead {
+  font-family: var(--font-ui);
+  font-size: var(--text-lead);
+  margin: 0 0 var(--space-tight);
+  letter-spacing: 0.05em;
+}
+
+.sideNote {
+  font-size: var(--text-micro);
+  color: var(--bone-dim);
+  margin: 0 0 var(--space-snug);
+}
+
+.lineup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-snug);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.agentRow {
+  display: flex;
+  gap: var(--space-snug);
+  align-items: flex-start;
+}
+
+.agentPortrait {
+  position: relative;
+  flex: none;
+}
+
+.faceset {
+  image-rendering: pixelated;
+  display: block;
+}
+
+.emote {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  image-rendering: pixelated;
+}
+
+.agentBody {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-tight);
+}
+
+.agentName {
+  font-family: var(--font-ui);
+  font-size: var(--text-body);
+  letter-spacing: 0.04em;
+}
+
+.agentVerdict {
+  font-size: var(--text-micro);
+  color: var(--bone-dim);
+}
+
+.in {
+  color: var(--amber);
+}
+
+/* Arena HUD */
+.hud {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-snug);
+}
+
+.hudRow {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-snug);
+  font-size: var(--text-small);
+}
+
+.hudValue {
+  font-family: var(--font-ui);
+  color: var(--amber);
+}
+
+.feed {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-hair);
+  max-height: 260px;
+  overflow: hidden;
+  font-size: var(--text-micro);
+}
+
+.feedItem {
+  color: var(--bone-dim);
+}
+
+/* Result */
+.result {
+  /* Balanced and centred: the winner beat and the ledger carry equal weight
+     rather than a small card beside a slab. */
+  width: min(940px, 100%);
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: minmax(260px, 0.9fr) minmax(320px, 1fr);
+  gap: var(--space-wide);
+  align-items: start;
+  position: relative;
+}
+
+.winner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-snug);
+  text-align: center;
+}
+
+/* The winner panel art is light sage, so its supporting line is dark rather
+   than the dim bone used on the dark surfaces. */
+.winner .sideNote,
+.onLight {
+  color: var(--pit-deep);
+  opacity: 0.85;
+}
+
+.winnerFace {
+  image-rendering: pixelated;
+}
+
+.winnerName {
+  font-family: var(--font-ui);
+  font-size: var(--text-title);
+  letter-spacing: 0.06em;
+  margin: 0;
+  color: var(--amber);
+}
+
+.winnerPot {
+  font-family: var(--font-ui);
+  font-size: var(--text-lead);
+  margin: 0;
+}
+
+.ledger {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-snug);
+}
+
+.ledgerRow {
+  display: grid;
+  grid-template-columns: 7ch auto 1fr;
+  gap: var(--space-snug);
+  align-items: center;
+  font-size: var(--text-small);
+}
+
+.delta {
+  text-align: right;
+  font-family: var(--font-ui);
+  font-size: var(--text-body);
+}
+
+.up {
+  color: var(--good);
+}
+
+.down {
+  color: var(--bone);
+  opacity: 0.75;
+}
+
+.notice {
+  grid-column: 1 / -1;
+  font-size: var(--text-small);
+  color: var(--bone-dim);
+  line-height: 1.6;
+}
+
+.coinLayer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: visible;
+  z-index: 3;
+}
+
+.error {
+  color: var(--bad);
+  font-size: var(--text-small);
+  margin: 0;
+}
+
+.dim {
+  color: var(--bone-dim);
+}
+
+.row {
+  display: flex;
+  gap: var(--space-base);
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+@media (max-width: 860px) {
+  .stage,
+  .result {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

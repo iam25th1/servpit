@@ -50,6 +50,20 @@ export interface AudioDef {
   loop: boolean;
 }
 
+export type UiKind = "ninePatch" | "sprite" | "tileset" | "font";
+
+export interface UiDef {
+  id: string;
+  kind: UiKind;
+  path: string;
+  width: number;
+  height: number;
+  /** Nine patch inset in pixels. Present only on a nine patch. */
+  slice?: { x: number; y: number };
+  /** Tile size. Present only on a tileset. */
+  tile?: number;
+}
+
 export interface Manifest {
   source: string;
   pack: string;
@@ -59,11 +73,18 @@ export interface Manifest {
   entries: ManifestEntry[];
   fx: FxDef[];
   audio: AudioDef[];
+  ui: UiDef[];
+  /** Emote id by the meaning this app assigns it. */
+  emotes: Record<string, string>;
+  /** Mode icon id by mode. */
+  modeIcons: Record<string, string>;
   warnings: string[];
 }
 
 const ASSET_PATH = /^\/assets\/[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*\.png$/;
 const AUDIO_PATH = /^\/assets\/audio\/[A-Za-z0-9_-]+\.wav$/;
+const UI_PATH = /^\/assets\/ui\/[A-Za-z0-9_-]+\.(png|ttf)$/;
+const UI_KINDS: readonly UiKind[] = ["ninePatch", "sprite", "tileset", "font"];
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null;
 
@@ -161,6 +182,40 @@ function audio(v: unknown, index: number): AudioDef {
   return { id: str(v.id, `${path}.id`), path: file, loop: v.loop };
 }
 
+function ui(v: unknown, index: number): UiDef {
+  const path = `ui[${index}]`;
+  if (!isObject(v)) fail(path, "must be an object");
+  const file = str(v.path, `${path}.path`);
+  if (!UI_PATH.test(file)) fail(`${path}.path`, `must be a same origin /assets/ui png or ttf path, got ${file}`);
+  if (!UI_KINDS.includes(v.kind as UiKind)) fail(`${path}.kind`, `must be one of ${UI_KINDS.join(", ")}`);
+  const def: UiDef = {
+    id: str(v.id, `${path}.id`),
+    kind: v.kind as UiKind,
+    path: file,
+    width: posInt(v.width, `${path}.width`, 0),
+    height: posInt(v.height, `${path}.height`, 0),
+  };
+  if (v.slice !== undefined) {
+    if (!isObject(v.slice)) fail(`${path}.slice`, "must be an object");
+    const slice = { x: posInt(v.slice.x, `${path}.slice.x`), y: posInt(v.slice.y, `${path}.slice.y`) };
+    // Overlapping corners would smear the frame rather than tile it.
+    if (slice.x * 2 > def.width || slice.y * 2 > def.height) {
+      fail(`${path}.slice`, `${slice.x}x${slice.y} does not fit inside ${def.width}x${def.height}`);
+    }
+    def.slice = slice;
+  }
+  if (def.kind === "ninePatch" && def.slice === undefined) fail(`${path}.slice`, "a nine patch needs a slice");
+  if (v.tile !== undefined) def.tile = posInt(v.tile, `${path}.tile`);
+  return def;
+}
+
+function idMap(v: unknown, path: string): Record<string, string> {
+  if (!isObject(v)) fail(path, "must be an object");
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(v)) out[key] = str(value, `${path}.${key}`);
+  return out;
+}
+
 function size(v: unknown, path: string): { width: number; height: number } {
   if (!isObject(v)) fail(path, "must be an object");
   return { width: posInt(v.width, `${path}.width`), height: posInt(v.height, `${path}.height`) };
@@ -175,6 +230,7 @@ export function parseManifest(json: unknown): Manifest {
   if (!Array.isArray(json.entries) || json.entries.length < 1) fail("entries", "must be a non empty array");
   if (!Array.isArray(json.fx)) fail("fx", "must be an array");
   if (!Array.isArray(json.audio)) fail("audio", "must be an array");
+  if (!Array.isArray(json.ui)) fail("ui", "must be an array");
   if (!Array.isArray(json.warnings) || json.warnings.some((w) => typeof w !== "string")) fail("warnings", "must be an array of strings");
 
   const entries = json.entries.map(entry);
@@ -183,6 +239,16 @@ export function parseManifest(json: unknown): Manifest {
   if (new Set(fxList.map((f) => f.id)).size !== fxList.length) fail("fx", "ids must be unique");
   const audioList = json.audio.map(audio);
   if (new Set(audioList.map((a) => a.id)).size !== audioList.length) fail("audio", "ids must be unique");
+  const uiList = json.ui.map(ui);
+  if (new Set(uiList.map((u) => u.id)).size !== uiList.length) fail("ui", "ids must be unique");
+  const emotes = idMap(json.emotes, "emotes");
+  const modeIcons = idMap(json.modeIcons, "modeIcons");
+  // Every referenced id must actually exist, so a missing sprite fails here
+  // rather than as a blank square on screen.
+  const uiIds = new Set(uiList.map((u) => u.id));
+  for (const [meaning, id] of Object.entries({ ...emotes, ...modeIcons })) {
+    if (!uiIds.has(id)) fail(`emotes/modeIcons.${meaning}`, `references unknown ui id ${id}`);
+  }
 
   return {
     source: str(json.source, "source"),
@@ -193,6 +259,9 @@ export function parseManifest(json: unknown): Manifest {
     entries,
     fx: fxList,
     audio: audioList,
+    ui: uiList,
+    emotes,
+    modeIcons,
     warnings: json.warnings as string[],
   };
 }

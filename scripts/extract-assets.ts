@@ -24,6 +24,9 @@ import { join, resolve } from "node:path";
 import { CHARACTER_ANIMATIONS, ROSTER, type RosterEntry, type Tier } from "../src/config/roster";
 import {
   AUDIO_SOURCES,
+  UI_EMOTES,
+  UI_SKILL_ICONS,
+  UI_SOURCES,
   EXPECTED,
   FRAME_RECT_OVERRIDES,
   FX_SHEETS,
@@ -36,6 +39,7 @@ import {
   pickMonsterSheet,
   readPngSize,
   type FacingName,
+  type UiKind,
   type FrameRect,
   type PngSize,
 } from "./lib/assets";
@@ -58,6 +62,19 @@ interface AudioEntry {
   path: string;
   loop: boolean;
   bytes: number;
+}
+
+interface UiEntry {
+  id: string;
+  kind: UiKind;
+  source: string;
+  path: string;
+  width: number;
+  height: number;
+  /** Nine patch inset in pixels, corners first. Absent for a plain sprite. */
+  slice?: { x: number; y: number };
+  /** Tile size for a tileset. */
+  tile?: number;
 }
 
 interface FxEntry {
@@ -89,6 +106,11 @@ interface Manifest {
   entries: ManifestEntry[];
   fx: FxEntry[];
   audio: AudioEntry[];
+  ui: UiEntry[];
+  /** Emote bubble ids by the meaning this app assigns them. */
+  emotes: Record<string, string>;
+  /** Mode icon ids by mode. */
+  modeIcons: Record<string, string>;
   warnings: string[];
 }
 
@@ -214,6 +236,71 @@ function buildAudio(staging: string, packRoot: string): AudioEntry[] {
   });
 }
 
+/**
+ * UI art, tilesets and fonts. A font has no readable dimensions, so only the
+ * images are measured; everything else records its real size the same way the
+ * sprite sheets do.
+ */
+function buildUi(staging: string, packRoot: string, warnings: string[]): UiEntry[] {
+  const uiDir = join(outDir, "ui");
+  mkdirSync(uiDir, { recursive: true });
+
+  const entries = UI_SOURCES.map((ui) => {
+    const src = join(staging, packRoot, ui.source);
+    if (!existsSync(src)) throw new Error(`ui ${ui.id}: ${ui.source} missing in pack`);
+    const extension = ui.source.slice(ui.source.lastIndexOf("."));
+    const fileName = `${ui.id}${extension}`;
+    copyFileSync(src, join(uiDir, fileName));
+
+    const entry: UiEntry = { id: ui.id, kind: ui.kind, source: ui.source, path: `/assets/ui/${fileName}`, width: 0, height: 0 };
+    if (extension === ".png") {
+      const size = sizeOf(src);
+      entry.width = size.width;
+      entry.height = size.height;
+      if (ui.slice !== undefined) {
+        const slice = typeof ui.slice === "number" ? { x: ui.slice, y: ui.slice } : ui.slice;
+        // A slice wider than half the sprite would make opposite corners
+        // overlap, which reads as a smeared frame rather than a panel.
+        if (slice.x * 2 > size.width || slice.y * 2 > size.height) {
+          warnings.push(`ui ${ui.id}: slice ${slice.x}x${slice.y} does not fit ${size.width}x${size.height}`);
+        }
+        entry.slice = slice;
+      }
+      if (ui.tile !== undefined) {
+        entry.tile = ui.tile;
+        // A sheet that is not a whole number of tiles will mis-tile on its last
+        // row or column. Record it rather than let it show up as a seam.
+        if (size.width % ui.tile !== 0 || size.height % ui.tile !== 0) {
+          warnings.push(
+            `ui ${ui.id}: ${size.width}x${size.height} is not a whole number of ${ui.tile} px tiles, ` +
+              `usable grid is ${Math.floor(size.width / ui.tile)}x${Math.floor(size.height / ui.tile)}`,
+          );
+        }
+      }
+    }
+    return entry;
+  });
+
+  // Emotes and skill icons are copied under their own ids so the app never
+  // has to know the pack's naming.
+  for (const [meaning, file] of Object.entries(UI_EMOTES)) {
+    const src = join(staging, packRoot, `Ui/Emote/${file}.png`);
+    if (!existsSync(src)) throw new Error(`emote ${meaning}: Ui/Emote/${file}.png missing in pack`);
+    const size = sizeOf(src);
+    copyFileSync(src, join(uiDir, `emote-${meaning}.png`));
+    entries.push({ id: `emote-${meaning}`, kind: "sprite", source: `Ui/Emote/${file}.png`, path: `/assets/ui/emote-${meaning}.png`, width: size.width, height: size.height });
+  }
+  for (const [mode, file] of Object.entries(UI_SKILL_ICONS)) {
+    const src = join(staging, packRoot, `Ui/Skill Icon/${file}.png`);
+    if (!existsSync(src)) throw new Error(`icon ${mode}: Ui/Skill Icon/${file}.png missing in pack`);
+    const size = sizeOf(src);
+    copyFileSync(src, join(uiDir, `icon-${mode}.png`));
+    entries.push({ id: `icon-${mode}`, kind: "sprite", source: `Ui/Skill Icon/${file}.png`, path: `/assets/ui/icon-${mode}.png`, width: size.width, height: size.height });
+  }
+
+  return entries;
+}
+
 function totalBytes(dir: string): number {
   let sum = 0;
   for (const name of readdirSync(dir)) {
@@ -238,6 +325,9 @@ function main(): void {
       ...ROSTER.map((e) => `${packRoot}/${e.sourceFolder}/*`),
       ...FX_SHEETS.map((fx) => `${packRoot}/${fx.source}`),
       ...AUDIO_SOURCES.map((sound) => `${packRoot}/${sound.source}`),
+      ...UI_SOURCES.map((ui) => `${packRoot}/${ui.source}`),
+      ...Object.values(UI_EMOTES).map((file) => `${packRoot}/Ui/Emote/${file}.png`),
+      ...Object.values(UI_SKILL_ICONS).map((file) => `${packRoot}/Ui/Skill Icon/${file}.png`),
     ];
     run("unzip", ["-q", "-o", zipPath, ...patterns, "-x", "__MACOSX/*", "-d", staging]);
 
@@ -248,6 +338,7 @@ function main(): void {
     const entries = ROSTER.map((e) => buildEntry(e, staging, packRoot, warnings));
     const fx = buildFx(staging, packRoot);
     const audio = buildAudio(staging, packRoot);
+    const ui = buildUi(staging, packRoot, warnings);
     const manifest: Manifest = {
       source: "ninja-adventure.zip",
       pack: packRoot,
@@ -257,6 +348,9 @@ function main(): void {
       entries,
       fx,
       audio,
+      ui,
+      emotes: Object.fromEntries(Object.keys(UI_EMOTES).map((k) => [k, `emote-${k}`])),
+      modeIcons: Object.fromEntries(Object.keys(UI_SKILL_ICONS).map((k) => [k, `icon-${k}`])),
       warnings,
     };
     writeFileSync(join(outDir, "manifest.json"), JSON.stringify(manifest, null, 2) + "\n");
@@ -264,6 +358,7 @@ function main(): void {
     console.log(`entries:   ${entries.length}`);
     console.log(`fx:        ${fx.length}`);
     console.log(`audio:     ${audio.length}`);
+    console.log(`ui:        ${ui.length}`);
     console.log(`bytes:     ${totalBytes(outDir)}`);
     for (const w of warnings) console.log(`WARN ${w}`);
   } catch (e) {

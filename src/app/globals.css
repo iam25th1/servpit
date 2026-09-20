@@ -1,23 +1,94 @@
+/* Root styling. Tokens come from src/ui/tokens.ts and are mirrored here as
+   custom properties; no component carries a literal colour or duration. */
+
+@font-face {
+  font-family: "ServpitNormal";
+  src: url("/assets/ui/fontNormal.ttf") format("truetype");
+  font-display: block;
+}
+
 :root {
-  --felt: #24352b;
-  --pit: #1c1f1a;
-  --bone: #e8e4d6;
+  --pit: #14170f;
+  --pit-deep: #0d0f0a;
+  --interior: #1d2117;
+  --bone: #e8e2cf;
+  --bone-dim: #a8a293;
   --amber: #ffb300;
-  --sage: #8fa892;
-  --ash: #5c6b60;
-  --ash-light: #7f8d82;
-  --display: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+  --amber-deep: #c98200;
+  --edge: #3d4133;
+  --edge-soft: #2a2e22;
+  --good: #7cb342;
+  --bad: #e05a3a;
+  --tier-common: #7cb342;
+  --tier-uncommon: #42a5f5;
+  --tier-rare: #ffb300;
+
+  /* The pack's own pixel face. No serif is reachable from here: the fallback
+     is a monospace, which keeps glyph width honest if the face fails to load. */
+  --font-ui: "ServpitNormal", "Courier New", monospace;
+  --ui-scale: 3;
+
+  --space-hair: 2px;
+  --space-tight: 4px;
+  --space-snug: 8px;
+  --space-base: 12px;
+  --space-wide: 16px;
+  --space-loose: 24px;
+  --space-vast: 40px;
+
+  --text-micro: 10px;
+  --text-small: 12px;
+  --text-body: 14px;
+  --text-lead: 18px;
+  --text-title: 26px;
+  --text-hero: 44px;
+
+  --time-tap: 120ms;
+  --time-move: 260ms;
+  --time-screen: 460ms;
+}
+
+* {
+  box-sizing: border-box;
 }
 
 html,
 body {
   margin: 0;
-  background: var(--felt);
+  padding: 0;
+  min-height: 100%;
+  background: var(--pit-deep);
   color: var(--bone);
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-family: var(--font-ui);
+  font-size: var(--text-body);
   line-height: 1.5;
+  /* Pixel art everywhere, so never let the browser smooth it. */
+  image-rendering: pixelated;
+  -webkit-font-smoothing: none;
+  /* The pack face ships a near zero width space, so words run together
+     without this. Measured against the rendered text, not guessed. */
+  word-spacing: 0.32em;
 }
 
 a {
   color: var(--amber);
+}
+
+button,
+input,
+select {
+  font-family: var(--font-ui);
+  /* Controls do not inherit word-spacing from body, so "Pull the lever"
+     rendered as one word until this. */
+  word-spacing: 0.32em;
+}
+
+/* The one honest concession to motion sensitivity: anime.js reads this and
+   shortens every choreography to a cut. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --time-tap: 1ms;
+    --time-move: 1ms;
+    --time-screen: 1ms;
+  }
 }
