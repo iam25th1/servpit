@@ -28,14 +28,23 @@ With no credentials set, everything runs against an in memory chain and the dete
 
 | Variable | Purpose |
 | --- | --- |
-| `CDP_API_KEY_ID`, `CDP_API_KEY_SECRET`, `CDP_WALLET_SECRET` | Coinbase Developer Platform credentials for the smart wallets |
-| `PAYMASTER_URL` | CDP paymaster endpoint, so no wallet needs gas |
+| `SERVPIT_KEY_ATLAS` ... `SERVPIT_KEY_POT` | One private key per wallet, six agents and the pot. Written by `npm run generate-wallets` |
+| `RPC_URL` | Base Sepolia endpoint. Defaults to the public one, which is rate limited |
 | `SERV_API_KEY` | SERV Reasoning key. Server side only |
 | `SERV_MODEL` | Overrides the default `claude-haiku-4.5`, for a demo recording on a larger model |
-| `WALLET_BACKEND` | `cdp` or `fake`. Defaults to `cdp` when every CDP variable is present |
+| `WALLET_BACKEND` | `viem` or `fake`. Defaults to `viem` when every key is present |
 | `SERVPIT_DATA_DIR` | Where wallet addresses, the transfer ledger and round history are written. Defaults to `data`, which is gitignored |
 
-All four CDP variables must be present together; `WALLET_BACKEND=cdp` without them fails at startup rather than silently running on the fake chain.
+Every wallet needs a key; `WALLET_BACKEND=viem` with one missing fails at startup, naming the variable rather than echoing its value, instead of silently running on the fake chain.
+
+Getting onto the real network takes three commands:
+
+```bash
+npm run generate-wallets        # writes .env.local, prints the seven addresses
+                                # then fund the first address from a faucet
+npm run fund-wallets            # fans that out to the other six
+npm run round -- --seed demo    # settles a round on Base Sepolia
+```
 
 ## Round pipeline
 
@@ -222,6 +231,69 @@ Two things are deliberate. The payout fires two samples together, a sharp transi
 
 </details>
 
+## Wallets
+
+Agents hold plain externally owned accounts on Base Sepolia, one private key each, through AgentKit's `ViemWalletProvider`. AgentKit still owns the wallet: the server builds a viem wallet client and hands it over, then talks only to the provider.
+
+```mermaid
+%%{init: {"theme": "neutral"}}%%
+flowchart TD
+    G[npm run generate-wallets] -->|7 keys, .env.local only| K[(.env.local, gitignored, mode 600)]
+    F[Base Sepolia faucet] -->|fund one address| A0[atlas, the funder]
+    K --> A0
+    A0 -->|npm run fund-wallets, tops each up to a target| A1[blaze]
+    A0 --> A2[comet]
+    A0 --> A3[delta]
+    A0 --> A4[ember]
+    A0 --> A5[flint]
+    A0 --> P[pot]
+    A0 -->|entry, stake| P
+    A1 -->|entry, stake| P
+    A2 -->|entry, stake| P
+    P -->|payout, pot minus rake| W[the winning agent]
+```
+
+### Why ViemWalletProvider, and what it costs
+
+The previous build used `CdpSmartWalletProvider`: ERC-4337 smart accounts with a Coinbase paymaster. It needed four CDP credentials before a single round could settle. This build needs none: a private key is generated locally and that is the whole setup. Anyone can clone this, run three commands and watch agents move real testnet funds.
+
+The tradeoff is real and worth stating rather than burying.
+
+| | Smart wallets, before | Plain accounts, now |
+| --- | --- | --- |
+| Credentials | Four CDP values | None, keys generated locally |
+| Gas | Sponsored by the paymaster, agents held none | **Agents pay their own**, so every wallet needs ETH |
+| Several transfers at once | One batched user operation | One transaction each, sent in order |
+| Idempotency on chain | CDP deduped on an idempotency key | Gone. The ledger is now the only net |
+| Receipts | A user operation hash and a transaction hash | A transaction hash |
+| Faucet | Available through the CDP client | Use a public faucet, then `npm run fund-wallets` |
+
+**Agents self-fund gas.** That is the change with teeth, because it moves the bar for entering a round. A wallet holding exactly the stake can no longer afford to move it. The chain reports how much to hold back (`gasReserveWei`, 0.0002 ETH on Base Sepolia, orders of magnitude more than the roughly 21,000 gas a transfer needs), and an agent short of stake plus reserve is excluded through the same path as a broke one, with the reason saying which of the two it was short on.
+
+**Losing chain level idempotency matters.** CDP deduplicated on the key we passed it, so a retry could not double pay even if our own bookkeeping was wrong. That second net is gone. The ledger still records every transfer before it is sent, returns a completed record without touching the chain, and refuses to reuse a key for a different amount or destination, so a retry is still safe. There is simply one net now instead of two.
+
+<details>
+<summary>Key handling</summary>
+
+- `npm run generate-wallets` writes keys to `.env.local` only, at mode 600, staged through a temp file and moved into place so an interrupted run leaves nothing half written. It refuses to overwrite an existing file without `--force`, because those wallets may hold funds.
+- It refuses outright to write to any path inside the repository that git is not ignoring. The test seam that lets it run in a sandbox cannot be used to smuggle keys into a commit.
+- Addresses are printed. Key material never is, because a key that reaches a terminal is also in a scrollback buffer, a screen recording and a shell history file.
+- Every key is registered with the logger before anything else reads the environment, so even an accidental log of the whole environment is masked. Error messages name the variable, never the value.
+- `test/env-safety.test.ts` fails if `.env.local` stops being gitignored, if a tracked file grows a 32 byte hex literal, if a key variable name or value reaches a built client bundle, or if a client component references one.
+
+</details>
+
+<details>
+<summary>AgentKit sends analytics, and in this version it can crash the process</summary>
+
+AgentKit fires a usage event to `cca-lite.coinbase.com` whenever a wallet provider is constructed, carrying the wallet address, the network and the provider name. Worth knowing on a money surface.
+
+In 0.10.4 that call is an unawaited async call inside a synchronous `try`, so the `try` cannot catch a rejected fetch. Where that host is slow, blocked or down, the rejection is unhandled and Node terminates the process. Opening a wallet would take the round with it.
+
+`src/server/wallets/analyticsGuard.ts` installs one listener that swallows exactly that failure and rethrows everything else, so ordinary bugs stay as loud as they were. It suppresses the failure, not the request.
+
+</details>
+
 ## Agents
 
 Six named agents hold their own smart wallets and decide for themselves. Each has a strategy descriptor in `src/config/agents.ts` (cautious, aggressive, streak-chaser, contrarian, steady, opportunist) that shapes both the prompt it receives and the heuristic that covers for it. Remaining seats are filled by house bots, which make no reasoning call.
@@ -293,8 +365,8 @@ Every SERV answer is re-validated locally regardless of what Shadow Agent conclu
 <details>
 <summary>Limitations, stated plainly</summary>
 
-- **The pot wallet is operator held.** It is an ordinary smart wallet whose credentials the operator controls. Agents pay into it and the operator pays the winner out of it. There is no escrow contract and no on chain rule forcing the payout; the guarantee is the reconciliation check and the ledger, not the chain. A production build would put the pot behind a contract that settles from the event log.
-- **House bots do not hold wallets.** Filling 18 to 26 seats with funded smart wallets would mean that many transfers per round. The operator pot covers those seats instead, so their stake is already inside the pot and reconciliation accounts for it as the house contribution. Only named agents move money.
+- **The pot wallet is operator held.** It is an ordinary account whose private key the operator controls. Agents pay into it and the operator pays the winner out of it. There is no escrow contract and no on chain rule forcing the payout; the guarantee is the reconciliation check and the ledger, not the chain. A production build would put the pot behind a contract that settles from the event log.
+- **House bots do not hold wallets.** Filling 18 to 26 seats with funded accounts would mean that many transfers per round, and that much gas. The operator pot covers those seats instead, so their stake is already inside the pot and reconciliation accounts for it as the house contribution. Only named agents move money.
 - **Rake defaults to zero.** The plumbing is there and reconciliation subtracts it, but no fee is taken.
 - **Round history is a JSON file.** `SERVPIT_DATA_DIR` holds the wallet address registry, the transfer ledger and recent rounds. Adequate for a single process demo, not for concurrent writers.
 
@@ -447,7 +519,7 @@ Pack quirks are handled explicitly by the loader and recorded in `ActorSprites.n
 src/config/        roster, reels, round (all data)
 src/engine/        rng, intmath, reels, combat, events, payout, resolveRound, modes/
 src/render/        manifest, assets, draw, timeline, arena, emitter, juice, loop (client rendering core)
-src/server/        wallets, ledger, transfers, reconcile, decisions, serv, round flow (server only)
+src/server/        wallets (viem), ledger, transfers, reconcile, decisions, serv, round flow (server only)
 src/render/slot/   reels, lever, cabinet drawing, VFX and audio for the machine
 src/app/play/      the player flow state machine and screen
 src/app/arena/     the /arena demo page and the agent reasoning surface
@@ -470,4 +542,4 @@ test/              repo policy tests (gitignore rules, em dash ban)
 
 Character and monster art: Ninja Adventure asset pack by Pixel-Boy and AAA, CC0 1.0.
 
-Smart wallets through [AgentKit](https://github.com/coinbase/agentkit) on the Coinbase Developer Platform. Agent reasoning through [SERV](https://docs.openserv.ai/what-is-serv) by OpenServ.
+Wallets through [AgentKit](https://github.com/coinbase/agentkit)'s ViemWalletProvider on Base Sepolia. Agent reasoning through [SERV](https://docs.openserv.ai/what-is-serv) by OpenServ.
