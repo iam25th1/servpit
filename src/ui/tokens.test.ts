@@ -201,3 +201,44 @@ describe("vestibular safety in the animation layer", () => {
     expect(offenders).toEqual([]);
   });
 });
+
+describe("no gradients anywhere in the stylesheets", () => {
+  it("no stylesheet uses a gradient function", () => {
+    // The house rule bans gradients. This existed only as a rule until a
+    // repeating-linear-gradient shipped in the locked card slats and survived
+    // a phase, because the hue test reads palette tokens and never looked at
+    // CSS functions.
+    const offenders: string[] = [];
+    const walk = (dir: string) => {
+      for (const name of readdirSync(dir)) {
+        const p = join(dir, name);
+        if (statSync(p).isDirectory()) walk(p);
+        else if (p.endsWith(".css")) {
+          const body = readFileSync(p, "utf8");
+          for (const line of body.split("\n")) {
+            if (/\b(linear|radial|conic|repeating-linear|repeating-radial)-gradient\s*\(/.test(line)) {
+              offenders.push(`${p}: ${line.trim()}`);
+            }
+          }
+        }
+      }
+    };
+    walk(join(process.cwd(), "src"));
+    expect(offenders).toEqual([]);
+  });
+
+  it("no component sets a gradient through an inline style", () => {
+    const offenders: string[] = [];
+    const walk = (dir: string) => {
+      for (const name of readdirSync(dir)) {
+        const p = join(dir, name);
+        if (statSync(p).isDirectory()) walk(p);
+        else if (/\.tsx?$/.test(p) && !/\.test\.tsx?$/.test(p)) {
+          if (/-gradient\s*\(/.test(readFileSync(p, "utf8"))) offenders.push(p);
+        }
+      }
+    };
+    walk(join(process.cwd(), "src"));
+    expect(offenders).toEqual([]);
+  });
+});

@@ -97,12 +97,13 @@ export function GameShell(props: GameShellProps) {
         </div>
       </header>
 
+      <div className={styles.body}>
       {state.screen === "modeSelect" && <ModeSelect onChoose={props.onChooseMode} error={state.error} />}
 
       {/* The stage is always mounted so the canvases exist before the player
           reaches them; the engine builds against them during boot. Only its
           visibility changes. */}
-      <div className={showStage ? styles.stage : styles.offstage} aria-hidden={!showStage}>
+      <div className={showStage ? styles.playfield : styles.offstage} aria-hidden={!showStage}>
           <div className={styles.cabinet}>
             <NinePatch sprite="panelAlt" data-anim="cabinet" style={{ padding: "var(--space-base)" }}>
               <canvas ref={props.slotCanvasRef} className={`${styles.canvas} ${state.screen === "arena" ? styles.hidden : ""}`} role="img" aria-label="Slot machine" />
@@ -122,6 +123,7 @@ export function GameShell(props: GameShellProps) {
       </div>
 
       {state.screen === "result" && run && <ResultScreen run={run} onPlayAgain={props.onPlayAgain} />}
+      </div>
     </main>
   );
 
@@ -134,7 +136,7 @@ export function GameShell(props: GameShellProps) {
 
     return (
       <>
-        <div ref={gridRef} className={styles.modes}>
+        <div ref={gridRef} className={`${styles.modes} ${styles.fill}`}>
           {GAME_MODES.map((mode) => {
             const icon = modeIcon(mode.id);
             const lockIcon = modeIcon("locked");
@@ -148,7 +150,13 @@ export function GameShell(props: GameShellProps) {
               >
                 {/* Slats first, so everything after them sits on top and the
                     mode name stays readable while the body is shuttered. */}
-                {mode.locked && <div className={styles.shutter} aria-hidden="true" />}
+                {mode.locked && (
+                  <div className={styles.shutter} aria-hidden="true">
+                    {Array.from({ length: 14 }, (_, i) => (
+                      <span key={i} className={styles.slat} />
+                    ))}
+                  </div>
+                )}
 
                 <div className={`${styles.modeHead} ${mode.locked ? styles.aboveShutter : ""}`}>
                   <img className={styles.modeIcon} src={icon.path} alt="" width={icon.width * 2} height={icon.height * 2} />
@@ -158,7 +166,7 @@ export function GameShell(props: GameShellProps) {
 
                 {mode.locked ? (
                   <div className={styles.lockBadge}>
-                    <img src={lockIcon.path} alt="" width={lockIcon.width * 2} height={lockIcon.height * 2} style={{ imageRendering: "pixelated" }} />
+                    <img src={lockIcon.path} alt="" width={16} height={16} style={{ imageRendering: "pixelated" }} />
                     <span className={styles.roadmap}>{mode.roadmap}</span>
                   </div>
                 ) : (

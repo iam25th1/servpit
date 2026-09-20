@@ -1,21 +1,39 @@
+/* Fills the fixed stage, not the viewport. The header is a row of its own and
+   the body takes the remaining height, so nothing depends on how tall the
+   window is.
+
+   The previous version centred a flex column and then put margin-bottom: auto
+   on the header. In a centred column that auto margin absorbs all the free
+   space, which pinned the header to the top and pushed every screen's content
+   to the bottom. That is the empty block this replaces. */
 .shell {
-  min-height: 100dvh;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  /* Content is centred in the viewport rather than hugging the top, which
-     left more than half the screen empty on every screen after the title. */
-  justify-content: center;
-  padding: var(--space-wide) var(--space-base) var(--space-loose);
-  gap: var(--space-wide);
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  padding: var(--space-wide) var(--space-loose) var(--space-loose);
+  gap: var(--space-base);
 }
 
-.shell > header {
-  margin-bottom: auto;
+.body {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  gap: var(--space-base);
+}
+
+/* Screens that should fill the stage body rather than sit centred in it. */
+.fill {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .topbar {
-  width: min(1100px, 100%);
+  width: 100%;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -39,25 +57,31 @@
 }
 
 /* Mode select */
+/* Three across, two rows, filling the stage body rather than floating in a
+   band with empty space above and below. */
 .modes {
-  /* Centred and capped at three across, so five cards read as a composed
-     wall rather than a row with an orphan under it. */
-  width: min(900px, 100%);
-  margin: 0 auto;
+  width: 100%;
+  height: 100%;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  grid-template-columns: repeat(3, 1fr);
+  grid-auto-rows: 1fr;
   gap: var(--space-base);
-  justify-content: center;
+  align-content: stretch;
 }
 
 .modeCard {
   display: flex;
   flex-direction: column;
   gap: var(--space-snug);
-  min-height: 190px;
+  min-height: 0;
 }
 
 .modeHead {
+  /* A cleared band behind the title, so a locked card's name is fully
+     readable whatever the slats do. */
+  background: var(--pit-deep);
+  padding: var(--space-tight) var(--space-snug);
+  margin: calc(var(--space-tight) * -1) calc(var(--space-snug) * -1) 0;
   display: flex;
   align-items: center;
   gap: var(--space-snug);
@@ -90,31 +114,38 @@
   z-index: 2;
 }
 
+/* Solid bars, not a gradient: gradients are banned and the previous
+   repeating-linear-gradient was a violation that slipped through because the
+   hue test only read palette tokens. */
 .shutter {
   position: absolute;
   inset: 0;
   z-index: 1;
   pointer-events: none;
-  background-image: repeating-linear-gradient(
-    0deg,
-    var(--pit-deep) 0px,
-    var(--pit-deep) 5px,
-    transparent 5px,
-    transparent 11px
-  );
-  opacity: 0.82;
-}
-
-.lockBadge {
-  position: absolute;
-  top: 58%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  z-index: 2;
   display: flex;
   flex-direction: column;
+  justify-content: space-between;
+  padding: 3px 0;
+}
+
+.slat {
+  height: 6px;
+  background: var(--pit-deep);
+  opacity: 0.85;
+}
+
+/* Corner badge at a deliberate size. It used to sit at the card's centre and
+   overlap the body text. */
+.lockBadge {
+  position: absolute;
+  right: var(--space-snug);
+  bottom: var(--space-snug);
+  z-index: 2;
+  display: flex;
   align-items: center;
   gap: var(--space-tight);
+  padding: 2px var(--space-tight);
+  background: var(--pit-deep);
   pointer-events: none;
 }
 
@@ -158,12 +189,16 @@
   pointer-events: none;
 }
 
-.stage {
-  width: min(1100px, 100%);
+/* Fills the stage body. The HUD column stretches to the full height so the
+   arena does not sit in a band with empty space under it. */
+.playfield {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
   display: grid;
-  grid-template-columns: minmax(0, auto) minmax(280px, 1fr);
+  grid-template-columns: minmax(0, auto) minmax(300px, 1fr);
   gap: var(--space-wide);
-  align-items: start;
+  align-items: stretch;
   justify-content: center;
 }
 
@@ -171,7 +206,9 @@
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: var(--space-base);
+  min-height: 0;
 }
 
 .canvas {
@@ -208,6 +245,9 @@
 .lineup {
   display: flex;
   flex-direction: column;
+  justify-content: space-between;
+  flex: 1;
+  min-height: 0;
   gap: var(--space-snug);
   margin: 0;
   padding: 0;
@@ -265,6 +305,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-snug);
+  min-height: 0;
 }
 
 .hudRow {
@@ -286,7 +327,8 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-hair);
-  max-height: 260px;
+  flex: 1;
+  min-height: 0;
   overflow: hidden;
   font-size: var(--text-micro);
 }
@@ -299,7 +341,7 @@
 .result {
   /* Balanced and centred: the winner beat and the ledger carry equal weight
      rather than a small card beside a slab. */
-  width: min(940px, 100%);
+  width: min(1000px, 100%);
   margin: 0 auto;
   display: grid;
   grid-template-columns: minmax(260px, 0.9fr) minmax(320px, 1fr);
@@ -451,9 +493,9 @@ a.transferHash {
   justify-content: center;
 }
 
-@media (max-width: 860px) {
-  .stage,
-  .result {
-    grid-template-columns: minmax(0, 1fr);
-  }
+/* The stage is a fixed pixel box, so this is a stage width query rather than a
+   device one: it only fires if the logical composition itself is narrow. */
+.narrow .playfield,
+.narrow .result {
+  grid-template-columns: minmax(0, 1fr);
 }

@@ -32,6 +32,7 @@ import { TitleScreen } from "./screens/TitleScreen";
 import { GameShell } from "./screens/GameShell";
 import { UiKitProvider } from "@/ui/UiKit";
 import { createResponsiveScope, playTransition } from "@/ui/transitions";
+import { Stage } from "@/ui/Stage";
 import { pickPlayerDraw, type RunReel } from "./reelPick";
 import styles from "./play.module.css";
 
@@ -432,7 +433,8 @@ export function PlayClient() {
 
   return (
     <UiKitProvider manifest={manifest}>
-      <div ref={scopeRootRef} onPointerDown={unlockAudio}>
+      <Stage>
+      <div ref={scopeRootRef} className={styles.root} onPointerDown={unlockAudio}>
         {state.screen === "boot" && <BootScreen manifest={manifest} onReady={() => dispatch({ type: "assetsReady" })} />}
         {state.screen === "title" && <TitleScreen onStart={startSession} />}
 
@@ -452,6 +454,7 @@ export function PlayClient() {
           />
         </div>
       </div>
+      </Stage>
     </UiKitProvider>
   );
 }

@@ -1,3 +1,9 @@
+/* Fills the fixed stage; every screen positions against this. */
+.root {
+  position: absolute;
+  inset: 0;
+}
+
 .shell {
   max-width: 1100px;
   margin: 0 auto;
