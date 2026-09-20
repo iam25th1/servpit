@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 export async function GET(): Promise<NextResponse> {
   const ctx = await getServerContext();
   ctx.bankroll.invalidate();
-  const link = (address: string) => (ctx.chain.kind === "cdp" ? basescanAddress(ctx.chain.network, address) : null);
+  const link = (address: string) => (ctx.chain.settles ? basescanAddress(ctx.chain.network, address) : null);
   const agents = await Promise.all(
     NAMED_AGENTS.map(async (profile) => {
       const wallet = ctx.wallets.agents.get(profile.id)!;

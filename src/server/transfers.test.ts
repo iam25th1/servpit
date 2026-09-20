@@ -22,7 +22,7 @@ describe("entry and payout transfers", () => {
     const bankroll = new BankrollCache({ ttlMs: 60_000, now: () => 0 });
     expect(await bankroll.get(agent)).toBe(1_000n);
 
-    const entry = await collectEntry({ ledger, bankroll, network: chain.network, chainKind: chain.kind }, "round-9", "atlas", agent, pot, 250n);
+    const entry = await collectEntry({ ledger, bankroll, network: chain.network, settles: chain.settles }, "round-9", "atlas", agent, pot, 250n);
     expect(entry.kind).toBe("entry");
     expect(entry.amountWei).toBe(250n);
     expect(entry.txHash).toMatch(/^0x/);
@@ -30,7 +30,7 @@ describe("entry and payout transfers", () => {
     expect(await bankroll.get(agent)).toBe(750n);
     expect(await bankroll.get(pot)).toBe(1_250n);
 
-    const payout = await payWinner({ ledger, bankroll, network: chain.network, chainKind: chain.kind }, "round-9", "atlas", pot, agent, 900n);
+    const payout = await payWinner({ ledger, bankroll, network: chain.network, settles: chain.settles }, "round-9", "atlas", pot, agent, 900n);
     expect(payout.kind).toBe("payout");
     expect(await bankroll.get(agent)).toBe(1_650n);
     expect(await bankroll.get(pot)).toBe(350n);
@@ -44,7 +44,7 @@ describe("entry and payout transfers", () => {
     const pot = await chain.open("pot");
     const ledger = new TransferLedger(join(dir, "ledger.json"));
     const bankroll = new BankrollCache({ ttlMs: 0, now: () => 0 });
-    const entry = await collectEntry({ ledger, bankroll, network: "base-sepolia", chainKind: "cdp" }, "round-10", "atlas", agent, pot, 1n);
+    const entry = await collectEntry({ ledger, bankroll, network: "base-sepolia", settles: true }, "round-10", "atlas", agent, pot, 1n);
     expect(entry.link).toBe(`https://sepolia.basescan.org/tx/${entry.txHash}`);
   });
 });

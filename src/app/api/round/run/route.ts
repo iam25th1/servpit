@@ -27,7 +27,7 @@ export async function POST(request: Request): Promise<NextResponse> {
   const plan = await planRound(flow, parsed.seed);
   const run = await runRound(flow, plan);
   const stored = ctx.flow.store.get(plan.roundId);
-  const link = (address: string) => (ctx.chain.kind === "cdp" ? basescanAddress(ctx.chain.network, address) : null);
+  const link = (address: string) => (ctx.chain.settles ? basescanAddress(ctx.chain.network, address) : null);
 
   return NextResponse.json({
     roundId: plan.roundId,

@@ -107,8 +107,31 @@ describe("broke agents", () => {
     const chain = new FakeChain({ initialBalanceWei: 99n });
     const broke = await chain.open("atlas");
     const cache = new BankrollCache({ ttlMs: 0, now: () => 0 });
-    expect(await eligibleForEntry(broke, 100n, cache)).toEqual({ eligible: false, balance: 99n, reason: "balance 99 wei below stake 100 wei" });
+    expect(await eligibleForEntry(broke, 100n, cache)).toEqual({ eligible: false, balance: 99n, reason: "balance 99 wei below the 100 wei needed" });
     const rich = await new FakeChain({ initialBalanceWei: 100n }).open("blaze");
     expect(await eligibleForEntry(rich, 100n, cache)).toEqual({ eligible: true, balance: 100n });
+  });
+});
+
+describe("gas exhausted agents", () => {
+  it("are excluded by the same path as a broke agent once gas is no longer sponsored", async () => {
+    const { eligibleForEntry } = await import("../bankroll");
+    const cache = new BankrollCache({ ttlMs: 0, now: () => 0 });
+    // Covers the stake exactly, but nothing left for the gas the transfer costs.
+    const wallet = await new FakeChain({ initialBalanceWei: 100n }).open("atlas");
+    const outcome = await eligibleForEntry(wallet, 100n, cache, 50n);
+    expect(outcome.eligible).toBe(false);
+    if (!outcome.eligible) expect(outcome.reason).toMatch(/150 wei needed/);
+    // With the reserve covered it enters as normal.
+    const funded = await new FakeChain({ initialBalanceWei: 150n }).open("blaze");
+    expect((await eligibleForEntry(funded, 100n, cache, 50n)).eligible).toBe(true);
+  });
+
+  it("asks the chain how much gas to reserve, so the fake chain reserves nothing", async () => {
+    const fake = new FakeChain({ initialBalanceWei: 1n });
+    expect(fake.gasReserveWei).toBe(0n);
+    const { ViemChain } = await import("./viem");
+    const viem = new ViemChain({ keys: {} });
+    expect(viem.gasReserveWei).toBeGreaterThan(0n);
   });
 });

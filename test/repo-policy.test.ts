@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 const root = process.cwd();
 const EM_DASH = String.fromCharCode(0x2014);
@@ -41,7 +41,9 @@ describe("em dash ban", () => {
     const offenders: string[] = [];
     for (const file of listed.stdout.split("\0")) {
       if (!file || !textExt.test(file)) continue;
-      const body = readFileSync(`${root}/${file}`, "utf8");
+      const path = `${root}/${file}`;
+      if (!existsSync(path)) continue;
+      const body = readFileSync(path, "utf8");
       if (body.includes(EM_DASH)) offenders.push(file);
     }
     expect(offenders).toEqual([]);

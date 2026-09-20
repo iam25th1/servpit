@@ -26,9 +26,9 @@ const enterTransport = () =>
     }),
   }) as unknown as ChatTransport;
 
-async function harness(options: { balanceWei?: bigint; transport?: ChatTransport } = {}) {
+async function harness(options: { balanceWei?: bigint; transport?: ChatTransport; gasReserveWei?: bigint } = {}) {
   dir = mkdtempSync(join(tmpdir(), "servpit-round-"));
-  const chain = new FakeChain({ initialBalanceWei: options.balanceWei ?? 1_000_000n });
+  const chain = new FakeChain({ initialBalanceWei: options.balanceWei ?? 1_000_000n, gasReserveWei: options.gasReserveWei });
   const registry = new WalletRegistry(join(dir, "wallets.json"));
   const wallets = await openWallets(chain, registry);
   const ledger = new TransferLedger(join(dir, "ledger.json"));
@@ -153,5 +153,26 @@ describe("runRound", () => {
     const result = await runRound(ctx, plan);
     const paid = result.payout ? result.payout.amountWei : 0n;
     expect(paid).toBeLessThanOrEqual(BigInt(result.round.pot - result.round.rake));
+  });
+});
+
+describe("gas is no longer sponsored", () => {
+  it("excludes an agent that can cover the stake but not the gas, by the same path as a broke one", async () => {
+    const { ctx } = await harness({ transport: enterTransport(), gasReserveWei: 500n });
+    const atlas = ctx.wallets.agents.get("atlas")!;
+    // Leave exactly the stake, nothing for gas.
+    await atlas.send([{ to: ctx.wallets.pot.address, value: (await atlas.getBalance()) - 100n }], "leave-stake-only");
+    ctx.bankroll.invalidate();
+    const plan = await planRound(ctx, "gas");
+    const atlasDecision = plan.decisions.find((d) => d.agentId === "atlas")!;
+    expect(atlasDecision.decision.enter).toBe(false);
+    expect(atlasDecision.rejection ?? "").toMatch(/short on gas/);
+    expect(plan.entering.map((e) => e.agentId)).not.toContain("atlas");
+  });
+
+  it("lets the same agent in once it holds the stake plus the reserve", async () => {
+    const { ctx } = await harness({ transport: enterTransport(), gasReserveWei: 500n });
+    const plan = await planRound(ctx, "gas2");
+    expect(plan.entering.map((e) => e.agentId)).toContain("atlas");
   });
 });
