@@ -6,6 +6,7 @@
 import { NextResponse } from "next/server";
 import { getServerContext } from "@/server/context";
 import { basescanAddress } from "@/server/money";
+import { entrantNames } from "@/server/round/entrantNames";
 import { planRound, runRound } from "@/server/round/flow";
 import { parseRoundRequest } from "../plan/params";
 
@@ -61,7 +62,15 @@ export async function POST(request: Request): Promise<NextResponse> {
     // The event log the phase 2 renderer replays, and the reel draws the slot
     // screen shows. Both come from the same resolved round, so the symbols on
     // the machine are the entrants real draws rather than decoration.
-    replay: { characters: run.round.characters, log: run.round.log, placements: run.round.placements },
+    // names lets the arena draw a fighter's display name over its health bar
+    // without taking an entrant id apart in the view. Agents only; a house
+    // bot has no name beyond the id it already has.
+    replay: {
+      characters: run.round.characters,
+      log: run.round.log,
+      placements: run.round.placements,
+      names: entrantNames(plan.entering, plan.decisions),
+    },
     reels: run.round.reels.map((pull, i) => ({ entrantId: plan.entrants[i].id, symbols: pull.symbols, characterId: pull.characterId, tier: pull.characterTier, combo: pull.combo, bonusPct: pull.bonusPct })),
   });
 }

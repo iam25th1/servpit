@@ -20,6 +20,8 @@ export function createFakeLoader(overrides: Record<string, SizeOverride> = {}): 
   for (const e of testManifest.entries) sizes.set(e.facesetPath, { width: testManifest.faceset.width, height: testManifest.faceset.height });
   // The arena tiles its floor from these, so they are decoded at boot too.
   for (const u of testManifest.ui) if (u.kind === "tileset") sizes.set(u.path, { width: u.width, height: u.height });
+  // The arena draws nameplates from the bitmap font sheet.
+  for (const u of testManifest.ui) if (u.kind === "font" && u.path.endsWith(".png")) sizes.set(u.path, { width: u.width, height: u.height });
   const loader: ImageLoader = {
     async load(path) {
       loads.push(path);

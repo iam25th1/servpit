@@ -25,6 +25,8 @@ beforeAll(async () => {
 
 const actor = (id: string, x: number, y: number): ActorState => ({
   id,
+  // These fixtures are about frame rate, not naming. Unlabelled is right.
+  name: null,
   characterId: "Knight",
   tier: "common",
   x,

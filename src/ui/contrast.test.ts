@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { AA_BODY, AA_LARGE, contrastRatio, failures, flatten, luminance } from "./contrast";
-import { darkSurfaces, lightSurfaces, midSurfaces } from "./surfaces";
+import { arenaFloorColours, darkSurfaces, lightSurfaces, midSurfaces, nameplateInk, nameplateShadow } from "./surfaces";
 import { palette } from "./tokens";
 
 /** The lightest pixel of the plank wall the title backdrop repeats. */
@@ -126,5 +126,33 @@ describe("every text style against the surface it lands on", () => {
 
   it("covers every text style, so a new one cannot be added unchecked", () => {
     expect(PAIRS.length).toBeGreaterThanOrEqual(38);
+  });
+});
+
+describe("the arena nameplate, which is canvas text on a tiled floor", () => {
+  it("has no single tone that works, which is why it is drawn twice", () => {
+    // Stated as a test so the two pass draw cannot be simplified away by
+    // someone who has not looked at what the floor actually contains.
+    const inkWorst = Math.min(...arenaFloorColours.map((c) => contrastRatio(nameplateInk, c)));
+    const shadowWorst = Math.min(...arenaFloorColours.map((c) => contrastRatio(nameplateShadow, c)));
+    expect(inkWorst).toBeLessThan(AA_BODY);
+    expect(shadowWorst).toBeLessThan(AA_BODY);
+  });
+
+  it("clears 4.5:1 against every floor colour on one tone or the other", () => {
+    // An outlined glyph is legible when either the ink or the outline
+    // separates from what is behind it. Both failing on the same colour is
+    // the only way a name disappears.
+    const failures = arenaFloorColours.filter(
+      (c) => Math.max(contrastRatio(nameplateInk, c), contrastRatio(nameplateShadow, c)) < AA_BODY,
+    );
+    expect(failures).toEqual([]);
+  });
+
+  it("covers the whole floor, base tiles and scatter", () => {
+    expect(arenaFloorColours.length).toBe(15);
+    // The two extremes that make a single tone impossible.
+    expect(arenaFloorColours).toContain("#141b1b");
+    expect(arenaFloorColours).toContain("#f2eaf1");
   });
 });

@@ -9,6 +9,7 @@
 import { WALK_FRAME_MS } from "@/config/playback";
 import type { Tier } from "@/config/roster";
 import type { Animation, AssetStore, DecodedImage, Slice } from "./assets";
+import { GLYPH, clampRun, glyphCell, plateLeft, textWidth } from "./bitmapFont";
 import { floorPlan, type FloorCell } from "./floorPlan";
 import type { DrawTarget } from "./draw";
 import type { ActorState } from "./timeline";
@@ -56,6 +57,16 @@ const FLOOR_DETAILS: readonly (readonly [number, number])[] = [
 ];
 
 const TILESET_TILE = 16;
+
+/** The sheet the nameplates are drawn from. */
+const NAMEPLATE_FONT = "fontBitmapSmall";
+
+/**
+ * Pixels between the top of the health bar and the bottom of the name. The
+ * bar occupies the three pixels above the sprite, so this clears it without
+ * pushing the name into the fighter standing on the row above.
+ */
+const NAMEPLATE_GAP = 2;
 
 /** Flat colours only. No purple, no gradients. */
 export const PALETTE = {
@@ -144,6 +155,9 @@ export class ArenaRenderer {
       const y = py + fx.offsetY;
       target.drawSlice(slice, x, y, { scale: fx.scale, white: fx.white, alpha: fx.alpha });
       if (actor.alive) this.drawHpBar(target, actor, x, y);
+      // After the sprite and the bar, so a fighter drawn later cannot cover
+      // a name that belongs to the one in front of it.
+      this.drawNameplate(target, actor, x, y, fx.alpha);
     }
     frame.drawEffects?.(target);
   }
@@ -172,6 +186,48 @@ export class ArenaRenderer {
     const fill = actor.maxHp > 0 ? Math.max(actor.hp > 0 ? 1 : 0, Math.round((w * actor.hp) / actor.maxHp)) : 0;
     target.fillRect(x, y - 3, w, 2, PALETTE.hpBack);
     if (fill > 0) target.fillRect(x, y - 3, fill, 2, PALETTE.hp[actor.tier]);
+  }
+
+  /**
+   * The fighter's display name, above its health bar.
+   *
+   * Canvas text, not DOM text: every glyph is a slice of the pack's 8x8 font
+   * sheet drawn on whole pixels, so a name scales with the arena exactly as
+   * the fighter does and nothing is antialiased. anime.js never touches this;
+   * it is drawn once per frame from the same actor state the sprite is.
+   *
+   * Two passes. The sheet's own near black ink goes down one pixel right and
+   * down as a shadow, then a whitened copy of the same glyph over it. The
+   * floor is tiled now and carries bones and pale cracks, so a single tone
+   * would disappear over some of it whichever tone it was.
+   *
+   * Only a named fighter gets one. A house bot has no name beyond its id,
+   * and twenty four labels in one arena is noise rather than information.
+   */
+  private drawNameplate(target: DrawTarget, actor: ActorState, x: number, y: number, alpha: number): void {
+    const name = actor.name;
+    if (name === null || name.length === 0) return;
+    const image = this.store.fonts.get(NAMEPLATE_FONT);
+    if (!image) return;
+
+    // Whole pixels throughout: the arena is drawn at a whole number scale and
+    // a half pixel here would blur the glyph at every scale above one.
+    //
+    // Clamped to the canvas, because it clips. A fighter standing against
+    // the right wall had the back half of its name cut off, and one on the
+    // top row would have had the whole plate above the top edge.
+    const width = textWidth(name);
+    const left = clampRun(plateLeft(Math.round(x), this.tile, name), width, 0, this.width);
+    const top = clampRun(Math.round(y) - 3 - NAMEPLATE_GAP - GLYPH, GLYPH, 0, this.height);
+
+    for (let i = 0; i < name.length; i++) {
+      const cell = glyphCell(name[i]);
+      if (!cell) continue;
+      const slice: Slice = { image, sx: cell.col * GLYPH, sy: cell.row * GLYPH, sw: GLYPH, sh: GLYPH };
+      const gx = left + i * GLYPH;
+      target.drawSlice(slice, gx + 1, top + 1, { alpha });
+      target.drawSlice(slice, gx, top, { alpha, white: true });
+    }
   }
 
   /**
