@@ -16,6 +16,13 @@ import { useUiKit } from "@/ui/UiKit";
 import { timing } from "@/ui/tokens";
 import styles from "./title.module.css";
 
+/**
+ * The cell of tilesetRelief the backdrop repeats. Exported so the contrast
+ * test can compute what the title's text actually lands on: the wall shows
+ * through the panel field, so the surface is a composite rather than a token.
+ */
+export const WALL_TILE = { x: 5, y: 1 } as const;
+
 export interface TitleScreenProps {
   onStart: () => void;
 }
@@ -60,13 +67,20 @@ export function TitleScreen({ onStart }: TitleScreenProps) {
     };
   }, []);
 
-  const dungeon = ui("tilesetDungeon");
+  const relief = ui("tilesetRelief");
 
-  // Tiling the whole sheet showed every unrelated tile at once, which reads as
-  // noise rather than a wall. Crop one cell to a data url and repeat that.
+  // One cell cropped to a data url and repeated. Tiling the whole sheet shows
+  // every unrelated tile at once, which reads as noise rather than a surface.
+  //
+  // The cell is WALL_TILE of tilesetRelief: a plank face, 80 per cent one
+  // colour with a vertical grain, and the only candidate on either sheet that
+  // repeats without a cap line breaking it into shelving. The previous cell
+  // came from tilesetDungeon, which is not a wall sheet at all: it is chests,
+  // barrels, gems and pots, and the cell being tiled was a pot. That is the
+  // repeating head shape the backdrop used to show.
   const [wall, setWall] = useState<string | null>(null);
   useEffect(() => {
-    const tile = dungeon.tile ?? 16;
+    const tile = relief.tile ?? 16;
     const image = new Image();
     image.onload = () => {
       const canvas = document.createElement("canvas");
@@ -75,20 +89,18 @@ export function TitleScreen({ onStart }: TitleScreenProps) {
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
       ctx.imageSmoothingEnabled = false;
-      // Third column of the second row: a flat interior face rather than a
-      // bordered block, so the repeat reads as a surface instead of a grid.
-      ctx.drawImage(image, tile * 3, tile * 2, tile, tile, 0, 0, tile, tile);
+      ctx.drawImage(image, tile * WALL_TILE.x, tile * WALL_TILE.y, tile, tile, 0, 0, tile, tile);
       setWall(canvas.toDataURL());
     };
-    image.src = dungeon.path;
-  }, [dungeon.path, dungeon.tile]);
+    image.src = relief.path;
+  }, [relief.path, relief.tile]);
 
   return (
     <main ref={rootRef} className={styles.title} data-screen="title">
       {/* Static tiled dungeon wall. Fixed position, no parallax, no pointer link. */}
       <div
         className={styles.backdrop}
-        style={wall ? { backgroundImage: `url(${wall})`, backgroundSize: `${(dungeon.tile ?? 16) * 3}px ${(dungeon.tile ?? 16) * 3}px`, backgroundRepeat: "repeat" } : undefined}
+        style={wall ? { backgroundImage: `url(${wall})`, backgroundSize: `${(relief.tile ?? 16) * 3}px ${(relief.tile ?? 16) * 3}px`, backgroundRepeat: "repeat" } : undefined}
         aria-hidden="true"
       />
       <div className={styles.vignette} aria-hidden="true" />

@@ -89,6 +89,24 @@ describe("no serif is reachable anywhere in the app", () => {
     return out;
   };
 
+  it("no stylesheet sizes or spaces anything from the viewport", () => {
+    // The game renders into a fixed 1280x720 stage that is scaled to fit, so
+    // a viewport unit makes the same composition different on two displays.
+    // The title used clamp(38px, 11vw, ...) for the wordmark and a 6vmin
+    // vignette inset, and the shell used 100dvh before the stage landed.
+    const offenders: string[] = [];
+    for (const file of cssFiles()) {
+      readFileSync(file, "utf8")
+        .split("\n")
+        // A comment may name the unit it is explaining.
+        .filter((line) => !line.trim().startsWith("*") && !line.trim().startsWith("/*"))
+        .forEach((line, i) => {
+          if (/\b[0-9.]+(vw|vh|vmin|vmax|dvh|dvw|svh|lvh)\b/.test(line)) offenders.push(`${file}:${i + 1} ${line.trim()}`);
+        });
+    }
+    expect(offenders).toEqual([]);
+  });
+
   it("no stylesheet names a serif family or falls back to one", () => {
     const offenders: string[] = [];
     for (const file of cssFiles()) {

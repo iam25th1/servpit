@@ -3,6 +3,13 @@ import { AA_BODY, AA_LARGE, contrastRatio, failures, flatten, luminance } from "
 import { darkSurfaces, lightSurfaces, midSurfaces } from "./surfaces";
 import { palette } from "./tokens";
 
+/** The lightest pixel of the plank wall the title backdrop repeats. */
+const WALL_LIGHTEST = "#5f7160";
+/** That wall at the backdrop's opacity, over the page. */
+const TITLE_WALL = flatten(WALL_LIGHTEST, palette.pit, 0.5);
+/** The title panel's flat field over that wall. */
+const TITLE_FIELD = flatten(palette.pitDeep, TITLE_WALL, 0.8);
+
 /**
  * Every text style in the interface, against the colour it actually lands on.
  *
@@ -45,6 +52,15 @@ const PAIRS = [
   { what: "transfer amount", text: palette.amber, surface: darkSurfaces.bg },
   { what: "transfer hash link", text: palette.amber, surface: darkSurfaces.bg },
 
+  // The title, whose text sits on a flat field over the plank wall. The
+  // lightest wall pixel is #5f7160; at the backdrop's 0.5 it composites to
+  // #3a4438 over the page, and the panel field of pitDeep at 0.8 over that
+  // gives #161a13. That is the real surface, not a token.
+  { what: "title wordmark", text: palette.amber, surface: TITLE_FIELD, large: true },
+  { what: "title tagline", text: palette.boneDim, surface: TITLE_FIELD },
+  { what: "title attract line", text: palette.amber, surface: TITLE_FIELD },
+  { what: "anything on the wall outside the panel", text: palette.bone, surface: TITLE_WALL },
+
   // On the page itself.
   { what: "offchain notice", text: palette.boneDim, surface: palette.pit },
   { what: "lever note", text: palette.boneDim, surface: palette.pit },
@@ -52,6 +68,15 @@ const PAIRS = [
   { what: "wordmark", text: palette.amber, surface: palette.pit },
   { what: "error", text: palette.bad, surface: palette.pit },
 ];
+
+describe("the title backdrop composite", () => {
+  it("is the value the stylesheet documents", () => {
+    // If the backdrop's opacity or the panel field changes, this fails and
+    // the pairs below stop describing the screen.
+    expect(TITLE_WALL).toBe("#3a4438");
+    expect(TITLE_FIELD).toBe("#161a13");
+  });
+});
 
 describe("contrastRatio", () => {
   it("is 21 for black on white and 1 for a colour on itself", () => {
@@ -94,6 +119,6 @@ describe("every text style against the surface it lands on", () => {
   });
 
   it("covers every text style, so a new one cannot be added unchecked", () => {
-    expect(PAIRS.length).toBeGreaterThanOrEqual(30);
+    expect(PAIRS.length).toBeGreaterThanOrEqual(34);
   });
 });

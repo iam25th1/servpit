@@ -8,15 +8,17 @@
   overflow: hidden;
 }
 
-/* Dungeon backdrop. A static tiled field: it never moves, never parallaxes
-   and never responds to the pointer. */
+/* A plank wall from the relief tileset. A static tiled field: it never moves,
+   never parallaxes and never responds to the pointer. */
 .backdrop {
   position: absolute;
   inset: 0;
   image-rendering: pixelated;
-  /* Low enough that the wall recedes behind the content. At 0.4 the repeat
-     read as wallpaper and competed with the wordmark. */
-  opacity: 0.16;
+  /* The wall is #5f7160, so at this alpha the lightest pixel composites to
+     #3a4438 over the page. That is the surface the contrast test checks the
+     title's text against. At 0.28 the planks were not visible at all, which
+     is no better than the field it replaced. */
+  opacity: 0.5;
   z-index: 0;
 }
 
@@ -25,8 +27,10 @@
   inset: 0;
   z-index: 1;
   /* Flat inset shadow, not a gradient fill: darkens the edges so the wordmark
-     holds the centre without painting a ramp. */
-  box-shadow: inset 0 0 0 6vmin var(--pit-deep);
+     holds the centre without painting a ramp. A fixed inset rather than a
+     viewport unit: the stage is a fixed pixel box, so reading the window here
+     would make the same composition darker on one display than another. */
+  box-shadow: inset 0 0 0 48px var(--pit-deep);
   pointer-events: none;
 }
 
@@ -35,8 +39,16 @@
 .stage {
   position: relative;
   z-index: 2;
-  width: min(900px, 100%);
-  height: min(640px, 100%);
+  /* A flat treated field, not a gradient: the wall reads through it at a
+     fifth, enough that the panel is a dimmed piece of the same wall rather
+     than a black slab laid over it, and dark enough that the text still sits
+     on effectively the page colour. */
+  background-color: rgb(13 15 10 / 0.8);
+  /* Sized so the wall frames it on all four sides. At 900x640 in a 1280x720
+     stage the panel left 40 px top and bottom and the wall may as well not
+     have been there. */
+  width: min(820px, 100%);
+  height: min(520px, 100%);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -46,9 +58,14 @@
   padding: var(--space-vast) var(--space-loose);
 }
 
+/* The frame has to be the panel's own size. Inset alone left it 495 px tall
+   inside a 640 px panel, so the content centred in the panel read as sitting
+   low inside the frame. */
 .frameSvg {
   position: absolute;
   inset: 0;
+  width: 100%;
+  height: 100%;
   z-index: 1;
   pointer-events: none;
   overflow: visible;
@@ -63,7 +80,10 @@
 
 .wordmark {
   font-family: var(--font-ui);
-  font-size: clamp(38px, 11vw, var(--text-hero));
+  /* The stage is a fixed pixel box, so this is a token rather than a vw
+     clamp. The clamp was a viewport read and at 1200 px wide it resolved to
+     the token anyway. */
+  font-size: var(--text-hero);
   letter-spacing: 0.18em;
   margin: 0;
   color: var(--amber);
