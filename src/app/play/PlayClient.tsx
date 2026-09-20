@@ -303,11 +303,14 @@ export function PlayClient() {
       const draw = pickPlayerDraw(settled.reels);
       if (draw) {
         const symbols = draw.symbols as [string, string, string];
+        // Always record the draw first. If the reels have not started yet the
+        // lever's own release will pick it up, which matters because a fast
+        // answer must never cut the dead air short: starting the reels here
+        // would skip the pause the pull is built around.
         pendingDrawRef.current = symbols;
-        // Already spinning: retarget rather than restart, so nothing jumps.
-        if (!engine.reels.retarget(symbols)) {
-          engine.reels.reset();
-          engine.reels.start(symbols, 2);
+        if (engine.reels.state === "spinning") {
+          // Already turning, so retarget rather than restart and nothing jumps.
+          engine.reels.retarget(symbols);
         }
         engine.bulbsReversed = TIER_PAYOFF({ tier: draw.tier, combo: draw.combo }).reverseBulbs;
       }
