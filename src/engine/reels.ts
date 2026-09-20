@@ -81,7 +81,7 @@ export function pull(rng: Rng, roster: readonly RosterEntry[], config: ReelConfi
   const face2 = roster[idx[1]];
   const members2 = roster.filter((e) => e.tier === face2.tier);
   const table = config.modifiers[face2.tier];
-  const modifier = table[members2.indexOf(face2) % table.length];
+  const modifier = { ...table[members2.indexOf(face2) % table.length] };
 
   const face3 = roster[idx[2]];
   const members3 = roster.filter((e) => e.tier === face3.tier);
