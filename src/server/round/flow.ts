@@ -63,6 +63,13 @@ export interface RoundRun {
   round: RoundResult;
   entries: TransferOutcome[];
   payout: TransferOutcome | null;
+  /**
+   * Set when a house bot won. Eighteen of the twenty four entrants have no
+   * wallet, so there is no payout to make and the prize stays in the pot.
+   * Reported rather than only logged, because otherwise the result screen
+   * shows entries that do not add up to the pot and nothing saying why.
+   */
+  retained: { winnerEntrantId: string; amountWei: bigint } | null;
   reconciliation: ReconcileResult;
 }
 
@@ -144,10 +151,12 @@ export async function runRound(ctx: FlowContext, plan: RoundPlan): Promise<Round
   const prizeWei = toWei(prize);
 
   let payout: TransferOutcome | null = null;
+  let retained: { winnerEntrantId: string; amountWei: bigint } | null = null;
   if (winnerAgent) {
     const wallet = ctx.wallets.agents.get(winnerAgent.agentId)!;
     payout = await payWinner({ ledger: ctx.ledger, bankroll: ctx.bankroll, network: ctx.chain.network, settles: ctx.chain.settles }, plan.roundId, winnerAgent.agentId, pot, wallet, prizeWei);
   } else {
+    retained = { winnerEntrantId, amountWei: prizeWei };
     log.info("house bot won, prize retained in the pot", { roundId: plan.roundId, winner: winnerEntrantId, prizeWei: prizeWei.toString() });
   }
 
@@ -220,7 +229,7 @@ export async function runRound(ctx: FlowContext, plan: RoundPlan): Promise<Round
     payoutMinorUnits: fromWei(prizeWei),
   });
 
-  return { plan, round, entries, payout, reconciliation };
+  return { plan, round, entries, payout, retained, reconciliation };
 }
 
 export { heuristicDecision };

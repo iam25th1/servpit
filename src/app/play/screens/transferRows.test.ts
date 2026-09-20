@@ -67,3 +67,33 @@ describe("transferRows", () => {
     expect(rows[0].hashShort).toBe("pending");
   });
 });
+
+describe("a round a house bot won", () => {
+  it("shows where the prize went, so the pot is accounted for", () => {
+    // Eighteen of the twenty four entrants are house bots with no wallet, so
+    // when one wins there is no payout transfer to make. The result screen
+    // used to show three entries against a pot of 2400 and nothing saying
+    // where the rest went. The run now reports the retention explicitly.
+    const rows = transferRows([
+      { kind: "entry", agentId: "blaze", amountWei: "100", txHash: "0xaaa", link: null },
+      { kind: "retained", agentId: "bot-03", amountWei: "2400", txHash: null, link: null },
+    ]);
+    expect(rows).toHaveLength(2);
+    expect(rows[1].label).toBe("bot-03 won, prize kept in the pot");
+    expect(rows[1].hashShort).toBe("no transfer");
+    expect(rows[1].explorable).toBe(false);
+  });
+
+  it("sorts the retention last, where the payout would have been", () => {
+    const rows = transferRows([
+      { kind: "retained", agentId: "bot-03", amountWei: "2400", txHash: null, link: null },
+      { kind: "entry", agentId: "blaze", amountWei: "100", txHash: null, link: null },
+    ]);
+    expect(rows.map((r) => r.kind)).toEqual(["entry", "retained"]);
+  });
+
+  it("still says pending for a payout whose hash has not arrived", () => {
+    const rows = transferRows([{ kind: "payout", agentId: "blaze", amountWei: "2400", txHash: null, link: null }]);
+    expect(rows[0].hashShort).toBe("pending");
+  });
+});

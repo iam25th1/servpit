@@ -27,12 +27,16 @@ export function Dialog({ speaker, children, scale = uiScale, className }: Dialog
         backgroundImage: `url(${box.path})`,
         backgroundSize: "100% 100%",
         imageRendering: "pixelated",
-        minHeight: box.height * (scale / 2),
-        padding: speaker ? `${8 * scale}px ${6 * scale}px ${8 * scale}px ${20 * scale}px` : `${7 * scale}px ${6 * scale}px`,
+        // The vertical padding is the frame art's own border at this scale,
+        // no more. It used to be nearly twice that, which cost the lineup the
+        // height it needs to show six agents inside the stage.
+        minHeight: box.height * (scale / 3),
+        padding: speaker ? `${5 * scale}px ${6 * scale}px ${5 * scale}px ${20 * scale}px` : `${4 * scale}px ${6 * scale}px`,
         fontSize: "var(--text-small)",
-        // The frame is light parchment, so the text on it is dark. Bone on
+        // The frame is light parchment, so the text on it is ink. Bone on
         // near white was unreadable.
-        color: "var(--pit-deep)",
+        color: "var(--ink)",
+        ["--on-surface-dim" as string]: "var(--ink-dim)",
         lineHeight: 1.45,
       }}
     >

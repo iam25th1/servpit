@@ -1,31 +1,53 @@
+/* Fills the fixed stage, never the viewport. */
 .boot {
-  min-height: 100dvh;
+  position: absolute;
+  inset: 0;
   display: grid;
   place-items: center;
   padding: var(--space-loose);
+  overflow: hidden;
 }
 
+/* Sized to the composition. The panel used to be a wide letterbox floating
+   in the middle of the stage with 260 px of nothing above and below it. */
 .inner {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  width: min(820px, 100%);
+  height: min(520px, 100%);
+  text-align: center;
+}
+
+.panel {
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: var(--space-wide);
-  min-width: min(420px, 90vw);
-  text-align: center;
 }
 
 .wordmark {
   font-family: var(--font-ui);
-  font-size: var(--text-title);
+  font-size: var(--text-hero);
   letter-spacing: 0.22em;
   margin: 0;
   color: var(--amber);
+  /* The cleared band. It also sets the dim colour for anything inside it,
+     because the band is dark while the panel around it is light wood. */
+  background: var(--pit-deep);
+  --on-surface-dim: var(--bone-dim);
+  align-self: stretch;
+  padding: var(--space-snug) var(--space-base);
 }
 
 .line {
   font-family: var(--font-ui);
-  font-size: var(--text-small);
-  color: var(--bone-dim);
+  font-size: var(--text-body);
+  color: var(--on-surface-dim, var(--bone-dim));
   margin: 0;
   min-height: 1.4em;
   /* Fixed width so a longer filename cannot reflow the panel mid load. */
@@ -43,14 +65,18 @@
 
 .count {
   font-family: var(--font-ui);
-  font-size: var(--text-micro);
-  color: var(--bone-dim);
+  font-size: var(--text-small);
+  color: var(--on-surface-dim, var(--bone-dim));
   min-width: 7ch;
   text-align: right;
 }
 
+/* Ink, not the bad token: red on the wood panel measured 1.9:1. The message
+   being an error is carried by the word, not by the colour of it. */
 .error {
-  color: var(--bad);
+  color: var(--ink);
   font-size: var(--text-small);
+  font-family: var(--font-ui);
   margin: 0;
+  max-width: 60ch;
 }

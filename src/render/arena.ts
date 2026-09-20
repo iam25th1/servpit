@@ -7,7 +7,8 @@
 // scale, white flash, alpha) computed by the juice system per frame.
 
 import type { Tier } from "@/config/roster";
-import type { Animation, AssetStore, Slice } from "./assets";
+import type { Animation, AssetStore, DecodedImage, Slice } from "./assets";
+import { floorPlan, type FloorCell } from "./floorPlan";
 import type { DrawTarget } from "./draw";
 import type { ActorState } from "./timeline";
 
@@ -26,9 +27,39 @@ export interface ActorFx {
 
 export const NEUTRAL_FX: Readonly<ActorFx> = Object.freeze({ offsetX: 0, offsetY: 0, scale: 1, white: false, alpha: 1, attacking: false });
 
+/**
+ * Cells of tilesetFloor the pit floor is laid from. Four tiles of the sheet's
+ * brown stone block, which repeat seamlessly and read as the bottom of a pit
+ * rather than as graph paper. Column 22 does not exist: the sheet is 352 px
+ * wide, which is 22 columns numbered 0 to 21.
+ */
+const FLOOR_TILES: readonly (readonly [number, number])[] = [
+  [20, 16],
+  [21, 16],
+  [20, 17],
+  [21, 17],
+];
+
+/**
+ * Cells of tilesetFloorDetail scattered over it: cracks, pebbles, a skull, a
+ * bone, a rock. The bones are not decoration for their own sake; this is the
+ * floor of a battle royale pit.
+ */
+const FLOOR_DETAILS: readonly (readonly [number, number])[] = [
+  [1, 0],
+  [4, 0],
+  [5, 0],
+  [13, 0],
+  [14, 0],
+  [15, 0],
+];
+
+const TILESET_TILE = 16;
+
 /** Flat colours only. No purple, no gradients. */
 export const PALETTE = {
   background: "#1c1f1a",
+  /** Kept for the test that asserts the old hairline grid is gone. */
   grid: "#262a24",
   border: "#3a4035",
   hpBack: "#111311",
@@ -43,6 +74,8 @@ export interface ArenaOptions {
   padding?: number;
   /** Milliseconds per walk frame. Default 100. */
   walkFrameMs?: number;
+  /** Seeds the floor's tile and scatter variation. One floor per round. */
+  floorSeed?: string;
 }
 
 export interface DrawFrame {
@@ -61,14 +94,29 @@ export class ArenaRenderer {
   private readonly padding: number;
   private readonly walkFrameMs: number;
   private readonly arena: { width: number; height: number };
+  private seed: string;
+  private plan: FloorCell[][];
+  private planSeed: string;
 
   constructor(private readonly store: AssetStore, options: ArenaOptions) {
     this.arena = options.arena;
     this.tile = options.tileSize ?? 16;
     this.padding = options.padding ?? 8;
     this.walkFrameMs = options.walkFrameMs ?? 100;
+    this.seed = options.floorSeed ?? "servpit";
+    this.planSeed = this.seed;
+    this.plan = floorPlan(this.arena.width, this.arena.height, this.seed, FLOOR_TILES.length, FLOOR_DETAILS.length);
     this.width = this.arena.width * this.tile + 2 * this.padding;
     this.height = this.arena.height * this.tile + 2 * this.padding;
+  }
+
+  /** The round the floor belongs to. Setting it relays the floor once. */
+  get floorSeed(): string {
+    return this.seed;
+  }
+
+  set floorSeed(seed: string) {
+    this.seed = seed;
   }
 
   tileToPixel(x: number, y: number): { px: number; py: number } {
@@ -121,12 +169,46 @@ export class ArenaRenderer {
     if (fill > 0) target.fillRect(x, y - 3, fill, 2, PALETTE.hp[actor.tier]);
   }
 
+  /**
+   * The pit floor, tiled from the pack's own sheets. It used to be a one
+   * pixel grid over a flat fill, which reads as graph paper.
+   *
+   * The plan is a pure function of the round's seed, so the floor is laid
+   * once and drawn identically on every frame. Varying it per frame would
+   * make the whole background crawl under the fighters.
+   */
   private drawFloor(target: DrawTarget): void {
     const { px, py } = this.tileToPixel(0, 0);
     const w = this.arena.width * this.tile;
     const h = this.arena.height * this.tile;
-    for (let i = 1; i < this.arena.width; i++) target.fillRect(px + i * this.tile, py, 1, h, PALETTE.grid);
-    for (let j = 1; j < this.arena.height; j++) target.fillRect(px, py + j * this.tile, w, 1, PALETTE.grid);
+
+    if (this.planSeed !== this.seed) {
+      this.plan = floorPlan(this.arena.width, this.arena.height, this.seed, FLOOR_TILES.length, FLOOR_DETAILS.length);
+      this.planSeed = this.seed;
+    }
+
+    const floor = this.store.tilesets.get("tilesetFloor");
+    const detail = this.store.tilesets.get("tilesetFloorDetail");
+    if (floor) {
+      const cell = (image: DecodedImage, col: number, row: number): Slice => ({
+        image,
+        sx: col * TILESET_TILE,
+        sy: row * TILESET_TILE,
+        sw: TILESET_TILE,
+        sh: TILESET_TILE,
+      });
+      for (let j = 0; j < this.arena.height; j++) {
+        for (let i = 0; i < this.arena.width; i++) {
+          const spec = this.plan[j][i];
+          const [bc, br] = FLOOR_TILES[spec.base];
+          target.drawSlice(cell(floor, bc, br), px + i * this.tile, py + j * this.tile);
+          if (spec.detail !== null && detail) {
+            const [dc, dr] = FLOOR_DETAILS[spec.detail];
+            target.drawSlice(cell(detail, dc, dr), px + i * this.tile, py + j * this.tile);
+          }
+        }
+      }
+    }
     target.fillRect(px - 1, py - 1, w + 2, 1, PALETTE.border);
     target.fillRect(px - 1, py + h, w + 2, 1, PALETTE.border);
     target.fillRect(px - 1, py - 1, 1, h + 2, PALETTE.border);

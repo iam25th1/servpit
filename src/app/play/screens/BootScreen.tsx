@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Manifest } from "@/render/manifest";
 import { Meter } from "@/ui/Meter";
 import { NinePatch } from "@/ui/NinePatch";
+import { PlankWall } from "@/ui/PlankWall";
 import { preloadAssets, type LoadProgress } from "@/ui/assetLoader";
 import styles from "./boot.module.css";
 
@@ -42,11 +43,19 @@ export function BootScreen({ manifest, onReady }: BootScreenProps) {
 
   return (
     <main className={styles.boot} data-screen="boot">
+      {/* The same wall the title stands on, so the two screens are one place
+          rather than a panel floating in a void. */}
+      <PlankWall />
       <div className={styles.inner}>
-        <NinePatch sprite="panel" data-anim="boot-panel" style={{ width: "100%" }}>
+        <NinePatch sprite="panel" data-anim="boot-panel" className={styles.panel}>
+          {/* Amber is lamplight and does not read on the wood panel, where it
+              measured 1.7:1. The wordmark gets a cleared band, the way a
+              locked mode card's title does. */}
           <h1 className={styles.wordmark}>SERVPIT</h1>
           <div className={styles.barHolder} style={{ justifyContent: "center", marginTop: "var(--space-base)" }}>
-            <Meter value={progress.fraction} variant="mini" scale={8} label={`Loading, ${Math.round(progress.fraction * 100)} percent`} />
+            {/* Sized to the panel, not to the sprite. At scale 8 the gauge
+                was a token in the middle of a large field. */}
+            <Meter value={progress.fraction} variant="mini" scale={14} label={`Loading, ${Math.round(progress.fraction * 100)} percent`} />
             <span className={styles.count} aria-live="off">
               {progress.loaded}/{progress.total}
             </span>

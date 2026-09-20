@@ -10,9 +10,9 @@
 import { animate, createTimeline, stagger, utils } from "animejs";
 import { createDrawable } from "animejs/svg";
 import { split } from "animejs/text";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { Button } from "@/ui/Button";
-import { useUiKit } from "@/ui/UiKit";
+import { PlankWall } from "@/ui/PlankWall";
 import { timing } from "@/ui/tokens";
 import styles from "./title.module.css";
 
@@ -21,7 +21,6 @@ export interface TitleScreenProps {
 }
 
 export function TitleScreen({ onStart }: TitleScreenProps) {
-  const { ui } = useUiKit();
   const rootRef = useRef<HTMLElement>(null);
   const wordmarkRef = useRef<HTMLHeadingElement>(null);
   const frameRef = useRef<SVGRectElement>(null);
@@ -60,38 +59,10 @@ export function TitleScreen({ onStart }: TitleScreenProps) {
     };
   }, []);
 
-  const dungeon = ui("tilesetDungeon");
-
-  // Tiling the whole sheet showed every unrelated tile at once, which reads as
-  // noise rather than a wall. Crop one cell to a data url and repeat that.
-  const [wall, setWall] = useState<string | null>(null);
-  useEffect(() => {
-    const tile = dungeon.tile ?? 16;
-    const image = new Image();
-    image.onload = () => {
-      const canvas = document.createElement("canvas");
-      canvas.width = tile;
-      canvas.height = tile;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return;
-      ctx.imageSmoothingEnabled = false;
-      // Third column of the second row: a flat interior face rather than a
-      // bordered block, so the repeat reads as a surface instead of a grid.
-      ctx.drawImage(image, tile * 3, tile * 2, tile, tile, 0, 0, tile, tile);
-      setWall(canvas.toDataURL());
-    };
-    image.src = dungeon.path;
-  }, [dungeon.path, dungeon.tile]);
 
   return (
     <main ref={rootRef} className={styles.title} data-screen="title">
-      {/* Static tiled dungeon wall. Fixed position, no parallax, no pointer link. */}
-      <div
-        className={styles.backdrop}
-        style={wall ? { backgroundImage: `url(${wall})`, backgroundSize: `${(dungeon.tile ?? 16) * 3}px ${(dungeon.tile ?? 16) * 3}px`, backgroundRepeat: "repeat" } : undefined}
-        aria-hidden="true"
-      />
-      <div className={styles.vignette} aria-hidden="true" />
+      <PlankWall />
 
       <div className={styles.stage}>
         <svg className={styles.frameSvg} viewBox="0 0 400 220" preserveAspectRatio="none" aria-hidden="true">

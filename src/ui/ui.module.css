@@ -10,6 +10,8 @@
   position: relative;
 }
 
+/* The colour is set by NinePatch from the sprite. This is the fallback for a
+   sprite that is not in the sampled table. */
 .panel {
   padding: var(--space-base);
   color: var(--bone);
@@ -33,7 +35,8 @@
   font-family: var(--font-ui);
   font-size: var(--text-body);
   letter-spacing: 0.04em;
-  color: var(--bone);
+  /* The label colour is set by Button, because it depends on which of the
+     four sprites is showing. */
   background: transparent;
   cursor: pointer;
   /* The press response is a sprite swap plus a spring on this element only.
@@ -42,7 +45,6 @@
 }
 
 .button:disabled {
-  color: var(--bone-dim);
   cursor: default;
 }
 
@@ -81,7 +83,7 @@
 }
 
 .dim {
-  color: var(--bone-dim);
+  color: var(--on-surface-dim, var(--bone-dim));
 }
 
 .accent {

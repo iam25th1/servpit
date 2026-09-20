@@ -32,7 +32,10 @@ import { TitleScreen } from "./screens/TitleScreen";
 import { GameShell } from "./screens/GameShell";
 import { UiKitProvider } from "@/ui/UiKit";
 import { createResponsiveScope, playTransition } from "@/ui/transitions";
+import { Stage } from "@/ui/Stage";
 import { pickPlayerDraw, type RunReel } from "./reelPick";
+import { runRequestFor } from "./roundRequest";
+import { arenaStanding, type ArenaStanding } from "./screens/arenaHud";
 import styles from "./play.module.css";
 
 interface PlanDecision {
@@ -48,6 +51,8 @@ interface PlanDecision {
 
 interface PlanResponse {
   roundId: string;
+  /** The seed the plan was built from, which the run must be settled with. */
+  seed: string;
   servCalls: number;
   costSummary: string;
   decisions: PlanDecision[];
@@ -122,6 +127,10 @@ export function PlayClient() {
   const [assetError, setAssetError] = useState<string | null>(null);
   const [muted, setMuted] = useState(true);
   const [leverNote, setLeverNote] = useState("");
+  // What the arena HUD shows while the replay runs. It is read from the
+  // timeline's own actor state on each batch, so the count and the feed are
+  // driven by the same clock the canvas draws from rather than a second one.
+  const [arena, setArena] = useState<ArenaStanding>({ standing: 0, downed: [] });
 
   const slotCanvasRef = useRef<HTMLCanvasElement>(null);
   const arenaCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -320,7 +329,7 @@ export function PlayClient() {
 
     try {
       const mode = state.mode;
-      const settled = await postJson<RunResponse>("/api/round/run", { seed: plan.roundId.replace(/^r-/, "s"), entrants: mode?.entrants ?? 24 });
+      const settled = await postJson<RunResponse>("/api/round/run", runRequestFor(plan, mode?.entrants ?? 24));
       const draw = pickPlayerDraw(settled.reels);
       if (draw) {
         const symbols = draw.symbols as [string, string, string];
@@ -335,8 +344,16 @@ export function PlayClient() {
         }
         engine.bulbsReversed = TIER_PAYOFF({ tier: draw.tier, combo: draw.combo }).reverseBulbs;
       }
+      // One floor per round: the tile and scatter variation is seeded from
+      // the round, so two rounds do not run on the same pit floor.
+      engine.arenaRenderer.floorSeed = settled.roundId;
       engine.timeline = new Timeline(settled.replay as never);
       engine.timeline.onBatch((batch, silent) => engine.juice.onBatch(batch, silent, (id) => engine.timeline!.actor(id)));
+      // The HUD reads the tick that has already been applied, so the standing
+      // count falls as the pit empties instead of sitting at the entrant
+      // count for the whole replay.
+      setArena(arenaStanding(engine.timeline.actors()));
+      engine.timeline.onBatch(() => setArena(arenaStanding(engine.timeline!.actors())));
       engine.timeline.play();
       dispatch({ type: "roundReady", run: settled });
     } catch (e) {
@@ -377,6 +394,7 @@ export function PlayClient() {
       engine.timeline = null;
       engine.bulbsReversed = false;
     }
+    setArena({ standing: 0, downed: [] });
     dispatch({ type: "playAgain" });
   };
 
@@ -432,7 +450,8 @@ export function PlayClient() {
 
   return (
     <UiKitProvider manifest={manifest}>
-      <div ref={scopeRootRef} onPointerDown={unlockAudio}>
+      <Stage>
+      <div ref={scopeRootRef} className={styles.root} onPointerDown={unlockAudio}>
         {state.screen === "boot" && <BootScreen manifest={manifest} onReady={() => dispatch({ type: "assetsReady" })} />}
         {state.screen === "title" && <TitleScreen onStart={startSession} />}
 
@@ -443,6 +462,7 @@ export function PlayClient() {
             run={run}
             muted={muted}
             leverNote={leverNote}
+            arena={arena}
             slotCanvasRef={slotCanvasRef}
             arenaCanvasRef={arenaCanvasRef}
             onChooseMode={(modeId, stake) => void chooseMode(modeId, stake)}
@@ -452,6 +472,7 @@ export function PlayClient() {
           />
         </div>
       </div>
+      </Stage>
     </UiKitProvider>
   );
 }

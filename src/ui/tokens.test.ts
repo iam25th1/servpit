@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync, readdirSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { palette, space, timing, tokensToCss, type, uiScale } from "./tokens";
 
 const hue = (hex: string): number => {
@@ -88,6 +88,24 @@ describe("no serif is reachable anywhere in the app", () => {
     walk(join(process.cwd(), "src"));
     return out;
   };
+
+  it("no stylesheet sizes or spaces anything from the viewport", () => {
+    // The game renders into a fixed 1280x720 stage that is scaled to fit, so
+    // a viewport unit makes the same composition different on two displays.
+    // The title used clamp(38px, 11vw, ...) for the wordmark and a 6vmin
+    // vignette inset, and the shell used 100dvh before the stage landed.
+    const offenders: string[] = [];
+    for (const file of cssFiles()) {
+      readFileSync(file, "utf8")
+        .split("\n")
+        // A comment may name the unit it is explaining.
+        .filter((line) => !line.trim().startsWith("*") && !line.trim().startsWith("/*"))
+        .forEach((line, i) => {
+          if (/\b[0-9.]+(vw|vh|vmin|vmax|dvh|dvw|svh|lvh)\b/.test(line)) offenders.push(`${file}:${i + 1} ${line.trim()}`);
+        });
+    }
+    expect(offenders).toEqual([]);
+  });
 
   it("no stylesheet names a serif family or falls back to one", () => {
     const offenders: string[] = [];
@@ -199,5 +217,63 @@ describe("vestibular safety in the animation layer", () => {
       return /pointermove|mousemove/i.test(body) && /animate\(|utils\.set\(/.test(body);
     });
     expect(offenders).toEqual([]);
+  });
+});
+
+describe("no gradients anywhere in the stylesheets", () => {
+  it("no stylesheet uses a gradient function", () => {
+    // The house rule bans gradients. This existed only as a rule until a
+    // repeating-linear-gradient shipped in the locked card slats and survived
+    // a phase, because the hue test reads palette tokens and never looked at
+    // CSS functions.
+    const offenders: string[] = [];
+    const walk = (dir: string) => {
+      for (const name of readdirSync(dir)) {
+        const p = join(dir, name);
+        if (statSync(p).isDirectory()) walk(p);
+        else if (p.endsWith(".css")) {
+          const body = readFileSync(p, "utf8");
+          for (const line of body.split("\n")) {
+            if (/\b(linear|radial|conic|repeating-linear|repeating-radial)-gradient\s*\(/.test(line)) {
+              offenders.push(`${p}: ${line.trim()}`);
+            }
+          }
+        }
+      }
+    };
+    walk(join(process.cwd(), "src"));
+    expect(offenders).toEqual([]);
+  });
+
+  it("no component sets a gradient through an inline style", () => {
+    const offenders: string[] = [];
+    const walk = (dir: string) => {
+      for (const name of readdirSync(dir)) {
+        const p = join(dir, name);
+        if (statSync(p).isDirectory()) walk(p);
+        else if (/\.tsx?$/.test(p) && !/\.test\.tsx?$/.test(p)) {
+          if (/-gradient\s*\(/.test(readFileSync(p, "utf8"))) offenders.push(p);
+        }
+      }
+    };
+    walk(join(process.cwd(), "src"));
+    expect(offenders).toEqual([]);
+  });
+});
+
+describe("globals.css and the token module", () => {
+  const globals = readFileSync(resolve(__dirname, "../app/globals.css"), "utf8");
+  const root = globals.slice(globals.indexOf(":root {"), globals.indexOf("}", globals.indexOf(":root {")));
+
+  it("declares every token the module produces, with the same value", () => {
+    // These two had silently drifted: globals.css is what the browser reads,
+    // tokensToCss was called by nothing but its own test, so raising a size or
+    // a colour in the module changed nothing on screen.
+    const missing = tokensToCss()
+      .split(";")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .filter((decl) => !root.includes(decl.endsWith(";") ? decl : `${decl};`));
+    expect(missing).toEqual([]);
   });
 });

@@ -52,6 +52,10 @@ export async function POST(request: Request): Promise<NextResponse> {
     transfers: [
       ...run.entries.map((e) => ({ kind: e.kind, agentId: e.agentId, amountWei: e.amountWei.toString(), txHash: e.txHash ?? null, link: e.link, applied: e.applied })),
       ...(run.payout ? [{ kind: run.payout.kind, agentId: run.payout.agentId, amountWei: run.payout.amountWei.toString(), txHash: run.payout.txHash ?? null, link: run.payout.link, applied: run.payout.applied }] : []),
+      // A house bot won, so nothing was transferred and the prize stayed in
+      // the pot. Reported as a row of its own so the list accounts for the
+      // whole pot rather than stopping at the entries.
+      ...(run.retained ? [{ kind: "retained", agentId: run.retained.winnerEntrantId, amountWei: run.retained.amountWei.toString(), txHash: null, link: null, applied: false }] : []),
     ],
     agents: stored?.agents ?? [],
     // The event log the phase 2 renderer replays, and the reel draws the slot

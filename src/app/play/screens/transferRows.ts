@@ -29,17 +29,24 @@ export interface TransferRow {
 const shorten = (hash: string): string => `${hash.slice(0, 8)}...${hash.slice(-6)}`;
 
 export function transferRows(transfers: readonly TransferInput[]): TransferRow[] {
-  const order = (kind: string): number => (kind === "payout" ? 1 : 0);
+  // The entries first, then whatever happened to the prize. A retention
+  // sorts where the payout would have been, because it answers the same
+  // question: where the pot went.
+  const order = (kind: string): number => (kind === "payout" || kind === "retained" ? 1 : 0);
   return [...transfers]
     .sort((a, b) => order(a.kind) - order(b.kind))
     .map((t) => {
       const hash = typeof t.txHash === "string" && t.txHash.length > 0 ? t.txHash : null;
       const link = typeof t.link === "string" && t.link.length > 0 ? t.link : null;
+      // A retention is not a transfer and never gets a hash, so it says so
+      // rather than sitting on "pending" forever.
+      const retained = t.kind === "retained";
+      const verb = retained ? "won, prize kept in the pot" : t.kind === "payout" ? "paid out" : "paid in";
       return {
         kind: t.kind,
-        label: `${t.agentId} ${t.kind === "payout" ? "paid out" : "paid in"}`,
+        label: `${t.agentId} ${verb}`,
         amountWei: t.amountWei,
-        hashShort: hash ? shorten(hash) : "pending",
+        hashShort: hash ? shorten(hash) : retained ? "no transfer" : "pending",
         link,
         explorable: link !== null,
       };

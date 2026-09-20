@@ -11,6 +11,7 @@ import { animate, createSpring } from "animejs";
 import { useCallback, useRef, useState, type ReactNode } from "react";
 import { uiScale } from "./tokens";
 import { ninePatchStyle } from "./ninePatchGeometry";
+import { inkFor } from "./surfaces";
 import { useUiKit } from "./UiKit";
 import styles from "./ui.module.css";
 
@@ -32,6 +33,10 @@ export function Button({ onClick, disabled = false, children, className, scale =
 
   const sprite = disabled ? "buttonDisabled" : state === "pressed" ? "buttonPressed" : state === "hover" ? "buttonHover" : "button";
   const patch = ninePatchStyle(ui(sprite), scale);
+  // The four button sprites are not all the same lightness: normal and hover
+  // are bright orange, pressed and disabled are mid brown. A single label
+  // colour fails on one pair or the other, so it follows the sprite.
+  const ink = inkFor(sprite);
 
   const press = useCallback(() => {
     if (disabled || !ref.current) return;
@@ -45,7 +50,7 @@ export function Button({ onClick, disabled = false, children, className, scale =
       type={type}
       disabled={disabled}
       className={`${styles.button} ${className ?? ""}`.trim()}
-      style={patch}
+      style={{ ...patch, color: ink.color }}
       onPointerEnter={() => !disabled && setState("hover")}
       onPointerLeave={() => setState("normal")}
       onPointerDown={() => {

@@ -1,5 +1,9 @@
 /* Root styling. Tokens come from src/ui/tokens.ts and are mirrored here as
-   custom properties; no component carries a literal colour or duration. */
+   custom properties; no component carries a literal colour or duration.
+
+   This file is what the browser reads. tokensToCss() in the module is checked
+   against it by a test, because the two had drifted: raising a size in the
+   module used to change nothing on screen. */
 
 @font-face {
   font-family: "ServpitNormal";
@@ -12,12 +16,15 @@
   --pit-deep: #0d0f0a;
   --interior: #1d2117;
   --bone: #e8e2cf;
-  --bone-dim: #a8a293;
+  --bone-dim: #b5afa0;
+  --bone-bright: #f0ebdb;
+  --ink: #0d0f0a;
+  --ink-dim: #1d2117;
   --amber: #ffb300;
   --amber-deep: #c98200;
   --edge: #3d4133;
   --edge-soft: #2a2e22;
-  --good: #7cb342;
+  --good: #8bc34a;
   --bad: #e05a3a;
   --tier-common: #7cb342;
   --tier-uncommon: #42a5f5;
@@ -25,7 +32,7 @@
 
   /* The pack's own pixel face. No serif is reachable from here: the fallback
      is a monospace, which keeps glyph width honest if the face fails to load. */
-  --font-ui: "ServpitNormal", "Courier New", monospace;
+  --font-ui: 'ServpitNormal', 'Courier New', monospace;
   --ui-scale: 3;
 
   --space-hair: 2px;
@@ -36,16 +43,18 @@
   --space-loose: 24px;
   --space-vast: 40px;
 
-  --text-micro: 10px;
-  --text-small: 12px;
-  --text-body: 14px;
-  --text-lead: 18px;
-  --text-title: 26px;
-  --text-hero: 44px;
+  --text-micro: 12px;
+  --text-small: 14px;
+  --text-body: 16px;
+  --text-lead: 22px;
+  --text-title: 32px;
+  --text-hero: 48px;
 
   --time-tap: 120ms;
   --time-move: 260ms;
   --time-screen: 460ms;
+  --time-stagger: 42ms;
+  --time-overlap: -220ms;
 }
 
 * {

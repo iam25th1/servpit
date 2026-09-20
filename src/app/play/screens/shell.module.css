@@ -1,21 +1,39 @@
+/* Fills the fixed stage, not the viewport. The header is a row of its own and
+   the body takes the remaining height, so nothing depends on how tall the
+   window is.
+
+   The previous version centred a flex column and then put margin-bottom: auto
+   on the header. In a centred column that auto margin absorbs all the free
+   space, which pinned the header to the top and pushed every screen's content
+   to the bottom. That is the empty block this replaces. */
 .shell {
-  min-height: 100dvh;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  /* Content is centred in the viewport rather than hugging the top, which
-     left more than half the screen empty on every screen after the title. */
-  justify-content: center;
-  padding: var(--space-wide) var(--space-base) var(--space-loose);
-  gap: var(--space-wide);
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  padding: var(--space-wide) var(--space-loose) var(--space-loose);
+  gap: var(--space-base);
 }
 
-.shell > header {
-  margin-bottom: auto;
+.body {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  gap: var(--space-base);
+}
+
+/* Screens that should fill the stage body rather than sit centred in it. */
+.fill {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .topbar {
-  width: min(1100px, 100%);
+  width: 100%;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -35,29 +53,39 @@
   align-items: center;
   gap: var(--space-base);
   font-size: var(--text-small);
-  color: var(--bone-dim);
+  color: var(--on-surface-dim, var(--bone-dim));
 }
 
 /* Mode select */
+/* Three across, two rows, filling the stage body rather than floating in a
+   band with empty space above and below. */
 .modes {
-  /* Centred and capped at three across, so five cards read as a composed
-     wall rather than a row with an orphan under it. */
-  width: min(900px, 100%);
-  margin: 0 auto;
+  width: 100%;
+  height: 100%;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  grid-template-columns: repeat(3, 1fr);
+  grid-auto-rows: 1fr;
   gap: var(--space-base);
-  justify-content: center;
+  align-content: stretch;
 }
 
 .modeCard {
   display: flex;
   flex-direction: column;
   gap: var(--space-snug);
-  min-height: 190px;
+  min-height: 0;
 }
 
 .modeHead {
+  /* A cleared band behind the title, so a locked card's name is fully
+     readable whatever the slats do. The band is dark while the card is light,
+     so it restores bone: inheriting the panel's ink made the mode names
+     invisible against their own band. */
+  background: var(--pit-deep);
+  color: var(--bone);
+  --on-surface-dim: var(--bone-dim);
+  padding: var(--space-tight) var(--space-snug);
+  margin: calc(var(--space-tight) * -1) calc(var(--space-snug) * -1) 0;
   display: flex;
   align-items: center;
   gap: var(--space-snug);
@@ -77,8 +105,14 @@
 
 .modeBlurb {
   font-size: var(--text-small);
-  color: var(--bone-dim);
+  color: var(--on-surface-dim, var(--bone-dim));
   margin: 0;
+  flex: 1;
+}
+
+/* Holds the card open to the same height the blurb would, so a locked card
+   and a live one have the same silhouette apart from the slats. */
+.shutterFill {
   flex: 1;
 }
 
@@ -90,31 +124,40 @@
   z-index: 2;
 }
 
+/* Solid bars, not a gradient: gradients are banned and the previous
+   repeating-linear-gradient was a violation that slipped through because the
+   hue test only read palette tokens. */
 .shutter {
   position: absolute;
   inset: 0;
   z-index: 1;
   pointer-events: none;
-  background-image: repeating-linear-gradient(
-    0deg,
-    var(--pit-deep) 0px,
-    var(--pit-deep) 5px,
-    transparent 5px,
-    transparent 11px
-  );
-  opacity: 0.82;
-}
-
-.lockBadge {
-  position: absolute;
-  top: 58%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  z-index: 2;
   display: flex;
   flex-direction: column;
+  justify-content: space-between;
+  padding: 3px 0;
+}
+
+.slat {
+  height: 6px;
+  background: var(--pit-deep);
+  opacity: 0.85;
+}
+
+/* Corner badge at a deliberate size. It used to sit at the card's centre and
+   overlap the body text. */
+.lockBadge {
+  color: var(--bone);
+  --on-surface-dim: var(--bone-dim);
+  position: absolute;
+  right: var(--space-snug);
+  bottom: var(--space-snug);
+  z-index: 2;
+  display: flex;
   align-items: center;
   gap: var(--space-tight);
+  padding: 2px var(--space-tight);
+  background: var(--pit-deep);
   pointer-events: none;
 }
 
@@ -132,11 +175,13 @@
   gap: var(--space-tight);
 }
 
+/* The tab sprite is white art, so the label is ink. Bone on it measured
+   1.87:1 and was the unreadable "Low 100 / High 1000" row. */
 .stakeTab {
   flex: 1;
   font-family: var(--font-ui);
-  font-size: var(--text-small);
-  color: var(--bone);
+  font-size: var(--text-body);
+  color: var(--ink);
   background: transparent;
   cursor: pointer;
   padding: var(--space-snug) var(--space-tight);
@@ -158,20 +203,32 @@
   pointer-events: none;
 }
 
-.stage {
-  width: min(1100px, 100%);
+/* Fills the stage body. The HUD column stretches to the full height so the
+   arena does not sit in a band with empty space under it. */
+.playfield {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
   display: grid;
-  grid-template-columns: minmax(0, auto) minmax(280px, 1fr);
+  grid-template-columns: minmax(0, auto) minmax(300px, 1fr);
   gap: var(--space-wide);
-  align-items: start;
+  align-items: stretch;
   justify-content: center;
+}
+
+/* Without this a grid item's automatic minimum is its content, so the lineup
+   panel grew to 854 px inside a 720 px stage and ran off the bottom. */
+.playfield > * {
+  min-height: 0;
 }
 
 .cabinet {
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: var(--space-base);
+  min-height: 0;
 }
 
 .canvas {
@@ -186,7 +243,7 @@
 
 .leverNote {
   font-size: var(--text-micro);
-  color: var(--bone-dim);
+  color: var(--on-surface-dim, var(--bone-dim));
   margin: 0;
   min-height: 1.3em;
   text-align: center;
@@ -201,17 +258,21 @@
 
 .sideNote {
   font-size: var(--text-micro);
-  color: var(--bone-dim);
+  color: var(--on-surface-dim, var(--bone-dim));
   margin: 0 0 var(--space-snug);
 }
 
 .lineup {
   display: flex;
   flex-direction: column;
-  gap: var(--space-snug);
+  justify-content: space-between;
+  flex: 1;
+  min-height: 0;
+  gap: var(--space-tight);
   margin: 0;
   padding: 0;
   list-style: none;
+  overflow: hidden;
 }
 
 .agentRow {
@@ -230,19 +291,28 @@
   display: block;
 }
 
-.emote {
-  position: absolute;
-  top: -8px;
-  right: -8px;
-  image-rendering: pixelated;
-}
+/* The emote bubbles were cut rather than scaled. They are 14x13 sprites whose
+   meaning is carried by two pixel eyes and a two pixel mouth: at twice the
+   pack's density that is a four pixel feature, still not readable at a normal
+   viewing distance, and three times over would have made the bubble larger
+   than the portrait it belongs to. They also said nothing the verdict beside
+   them does not already say in words. UiKit still exposes emote() and the
+   manifest still carries the sprites, for a surface with room for them. */
 
 .agentBody {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--space-tight);
+  gap: var(--space-hair);
+}
+
+/* One line for the name, the verdict and the bankroll. At the raised type
+   scale three stacked lines per agent no longer fit six agents in the stage. */
+.agentLine {
+  display: flex;
+  align-items: center;
+  gap: var(--space-snug);
 }
 
 .agentName {
@@ -253,7 +323,7 @@
 
 .agentVerdict {
   font-size: var(--text-micro);
-  color: var(--bone-dim);
+  color: var(--on-surface-dim, var(--bone-dim));
 }
 
 .in {
@@ -265,6 +335,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-snug);
+  min-height: 0;
 }
 
 .hudRow {
@@ -279,6 +350,11 @@
   color: var(--amber);
 }
 
+/* The entrant count the standing figure is counting down from. */
+.hudOf {
+  color: var(--on-surface-dim, var(--bone-dim));
+}
+
 .feed {
   list-style: none;
   margin: 0;
@@ -286,20 +362,23 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-hair);
-  max-height: 260px;
+  flex: 1;
+  min-height: 0;
   overflow: hidden;
-  font-size: var(--text-micro);
+  /* Off micro: the kill feed was one of the two places the old scale was
+     least readable. */
+  font-size: var(--text-small);
 }
 
 .feedItem {
-  color: var(--bone-dim);
+  color: var(--on-surface-dim, var(--bone-dim));
 }
 
 /* Result */
 .result {
   /* Balanced and centred: the winner beat and the ledger carry equal weight
      rather than a small card beside a slab. */
-  width: min(940px, 100%);
+  width: min(1000px, 100%);
   margin: 0 auto;
   display: grid;
   grid-template-columns: minmax(260px, 0.9fr) minmax(320px, 1fr);
@@ -316,12 +395,16 @@
   text-align: center;
 }
 
-/* The winner panel art is light sage, so its supporting line is dark rather
-   than the dim bone used on the dark surfaces. */
-.winner .sideNote,
-.onLight {
-  color: var(--pit-deep);
-  opacity: 0.85;
+/* Amber is lamplight and only reads on a dark surface, so the winner's name
+   gets a cleared nameplate rather than sitting straight on the sage panel,
+   where it measured 1.7:1. */
+.nameplate {
+  background: var(--pit-deep);
+  color: var(--amber);
+  --on-surface-dim: var(--bone-dim);
+  padding: var(--space-tight) var(--space-base);
+  align-self: stretch;
+  text-align: center;
 }
 
 .winnerFace {
@@ -420,10 +503,19 @@ a.transferHash {
 }
 
 .notice {
-  grid-column: 1 / -1;
+  margin: 0;
   font-size: var(--text-small);
-  color: var(--bone-dim);
-  line-height: 1.6;
+  color: var(--on-surface-dim, var(--bone-dim));
+  line-height: 1.45;
+}
+
+/* The explanation and the way out, on one row. */
+.footer {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-wide);
+  align-items: center;
 }
 
 .coinLayer {
@@ -441,7 +533,7 @@ a.transferHash {
 }
 
 .dim {
-  color: var(--bone-dim);
+  color: var(--on-surface-dim, var(--bone-dim));
 }
 
 .row {
@@ -451,9 +543,9 @@ a.transferHash {
   justify-content: center;
 }
 
-@media (max-width: 860px) {
-  .stage,
-  .result {
-    grid-template-columns: minmax(0, 1fr);
-  }
+/* The stage is a fixed pixel box, so this is a stage width query rather than a
+   device one: it only fires if the logical composition itself is narrow. */
+.narrow .playfield,
+.narrow .result {
+  grid-template-columns: minmax(0, 1fr);
 }

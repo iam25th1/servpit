@@ -1,0 +1,28 @@
+/* The area outside the stage is the page background, so a stage that does not
+   fill the window reads as letterboxing rather than as a broken layout. */
+.letterbox {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: var(--pit-deep);
+}
+
+/* Occupies exactly the scaled size, so the letterbox centres what is seen. */
+.frame {
+  position: relative;
+  flex: none;
+  overflow: hidden;
+}
+
+/* The stage itself is a fixed pixel box. Every screen composes inside it and
+   none of them reads viewport height. */
+.stage {
+  position: absolute;
+  top: 0;
+  left: 0;
+  flex: none;
+  background: var(--pit);
+  overflow: hidden;
+}
