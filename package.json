@@ -13,7 +13,8 @@
     "extract-assets": "tsx scripts/extract-assets.ts",
     "reel-report": "tsx scripts/reel-distribution.ts",
     "sim": "tsx scripts/sim.ts",
-    "round": "tsx scripts/round.ts"
+    "round": "tsx scripts/round.ts",
+    "generate-wallets": "tsx scripts/generate-wallets.ts"
   },
   "dependencies": {
     "@coinbase/agentkit": "^0.10.4",
@@ -21,7 +22,8 @@
     "next": "16.3.5",
     "openai": "^7.20.0",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "viem": "^2.38.3"
   },
   "devDependencies": {
     "@types/node": "^24.13.6",
