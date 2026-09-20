@@ -1037,6 +1037,78 @@
       "rows": 1
     }
   ],
+  "audio": [
+    {
+      "id": "leverPull",
+      "source": "Audio/Sounds/Whoosh & Slash/Whoosh.wav",
+      "path": "/assets/audio/leverPull.wav",
+      "loop": false,
+      "bytes": 58520
+    },
+    {
+      "id": "reelSpin",
+      "source": "Audio/Sounds/Whoosh & Slash/Whoosh2.wav",
+      "path": "/assets/audio/reelSpin.wav",
+      "loop": true,
+      "bytes": 78332
+    },
+    {
+      "id": "reelStop",
+      "source": "Audio/Sounds/Menu/Move4.wav",
+      "path": "/assets/audio/reelStop.wav",
+      "loop": false,
+      "bytes": 36040
+    },
+    {
+      "id": "nearMiss",
+      "source": "Audio/Sounds/Alert/Alert2.wav",
+      "path": "/assets/audio/nearMiss.wav",
+      "loop": false,
+      "bytes": 53128
+    },
+    {
+      "id": "winSting",
+      "source": "Audio/Jingles/Success1.wav",
+      "path": "/assets/audio/winSting.wav",
+      "loop": false,
+      "bytes": 78838
+    },
+    {
+      "id": "jackpotSting",
+      "source": "Audio/Jingles/LevelUp3.wav",
+      "path": "/assets/audio/jackpotSting.wav",
+      "loop": false,
+      "bytes": 264812
+    },
+    {
+      "id": "payoutTransient",
+      "source": "Audio/Sounds/Bonus/Coin3.wav",
+      "path": "/assets/audio/payoutTransient.wav",
+      "loop": false,
+      "bytes": 46932
+    },
+    {
+      "id": "payoutBody",
+      "source": "Audio/Sounds/Bonus/Gold1.wav",
+      "path": "/assets/audio/payoutBody.wav",
+      "loop": false,
+      "bytes": 75730
+    },
+    {
+      "id": "uiSelect",
+      "source": "Audio/Sounds/Menu/Accept4.wav",
+      "path": "/assets/audio/uiSelect.wav",
+      "loop": false,
+      "bytes": 43460
+    },
+    {
+      "id": "uiLocked",
+      "source": "Audio/Sounds/Menu/Cancel.wav",
+      "path": "/assets/audio/uiLocked.wav",
+      "loop": false,
+      "bytes": 83606
+    }
+  ],
   "warnings": [
     "NinjaFire: SeparateAnim/Idle.png missing in pack, animation omitted",
     "NinjaWater: SeparateAnim/Idle.png missing in pack, animation omitted",

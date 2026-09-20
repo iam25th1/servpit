@@ -160,3 +160,30 @@ export function fxFrameGrid(width: number, height: number): { frameWidth: number
   }
   return { frameWidth: height, frameHeight: height, cols: width / height, rows: 1 };
 }
+
+export interface AudioSource {
+  id: string;
+  /** Path inside the pack, relative to the pack root. */
+  source: string;
+  /** Looping beds must be seamless; one shots must not loop. */
+  loop: boolean;
+}
+
+/**
+ * Sounds the slot machine uses, from the pack's 132 effects and 15 jingles.
+ * Only the ones actually played are extracted, to keep the committed payload
+ * small. The payout is deliberately two samples, a sharp transient over a low
+ * body, because either alone reads thin.
+ */
+export const AUDIO_SOURCES: readonly AudioSource[] = [
+  { id: "leverPull", source: "Audio/Sounds/Whoosh & Slash/Whoosh.wav", loop: false },
+  { id: "reelSpin", source: "Audio/Sounds/Whoosh & Slash/Whoosh2.wav", loop: true },
+  { id: "reelStop", source: "Audio/Sounds/Menu/Move4.wav", loop: false },
+  { id: "nearMiss", source: "Audio/Sounds/Alert/Alert2.wav", loop: false },
+  { id: "winSting", source: "Audio/Jingles/Success1.wav", loop: false },
+  { id: "jackpotSting", source: "Audio/Jingles/LevelUp3.wav", loop: false },
+  { id: "payoutTransient", source: "Audio/Sounds/Bonus/Coin3.wav", loop: false },
+  { id: "payoutBody", source: "Audio/Sounds/Bonus/Gold1.wav", loop: false },
+  { id: "uiSelect", source: "Audio/Sounds/Menu/Accept4.wav", loop: false },
+  { id: "uiLocked", source: "Audio/Sounds/Menu/Cancel.wav", loop: false },
+];
