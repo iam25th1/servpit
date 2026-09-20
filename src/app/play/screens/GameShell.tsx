@@ -20,6 +20,7 @@ import { staggerIn } from "@/ui/transitions";
 import type { FlowState } from "../machine";
 import type { ArenaStanding } from "./arenaHud";
 import { swingMeters } from "./bankrollMeter";
+import { entrantLabel } from "./entrantLabel";
 import { transferRows } from "./transferRows";
 import styles from "./shell.module.css";
 
@@ -280,7 +281,7 @@ export function GameShell(props: GameShellProps) {
         <ul ref={feedRef} className={styles.feed}>
           {arena.downed.slice(0, 12).map((id, i) => (
             <li key={id} className={styles.feedItem}>
-              {arena.standing + i + 1}. {id} is out
+              {arena.standing + i + 1}. {entrantLabel(id, run?.agents ?? [])} is out
             </li>
           ))}
         </ul>
@@ -293,7 +294,7 @@ export function GameShell(props: GameShellProps) {
     const coinPathRef = useRef<SVGPathElement>(null);
     const prize = BigInt(run.potWei) - BigInt(run.rakeWei);
     const meters = swingMeters(run.agents.map((a) => ({ agentId: a.agentId, changeWei: BigInt(a.balanceAfterWei) - BigInt(a.balanceBeforeWei) })));
-    const winnerAgent = run.agents.find((a) => `agent-${a.agentId}` === run.winner);
+    const winnerName = entrantLabel(run.winner, run.agents);
 
     useEffect(() => {
       const root = rootRef.current;
@@ -339,7 +340,7 @@ export function GameShell(props: GameShellProps) {
 
         <NinePatch sprite="panelAlt" scale={uiScale} className={styles.winner} data-anim="winner-panel">
           <img className={styles.winnerFace} src={facesetPath(winnerCharacter(run))} alt="" width={38 * 2} height={38 * 2} />
-          <h2 className={`${styles.winnerName} ${styles.nameplate}`}>{winnerAgent ? winnerAgent.name : run.winner}</h2>
+          <h2 className={`${styles.winnerName} ${styles.nameplate}`}>{winnerName}</h2>
           <p className={styles.winnerPot}>{prize.toString()} taken</p>
           <p className={styles.sideNote}>Reconciliation {run.reconciled ? "held against chain balances" : "FAILED"}</p>
         </NinePatch>
