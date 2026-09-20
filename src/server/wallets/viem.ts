@@ -15,6 +15,7 @@ import { createWalletClient, http } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { baseSepolia } from "viem/chains";
 import { log } from "../log";
+import { guardAgentKitAnalytics } from "./analyticsGuard";
 import { ADDRESS, WALLET_ID, type Call, type Chain, type TxReceipt, type Wallet } from "./types";
 
 type Hex = `0x${string}`;
@@ -63,7 +64,12 @@ export class ViemChain implements Chain {
   constructor(
     private readonly config: ViemChainConfig,
     private readonly factory: ProviderFactory = defaultFactory,
-  ) {}
+  ) {
+    // AgentKit's analytics call on provider construction is an unawaited,
+    // uncaught promise. Without this, an unreachable analytics host takes the
+    // process down. See analyticsGuard.ts.
+    guardAgentKitAnalytics();
+  }
 
   async open(id: string, address?: string): Promise<Wallet> {
     if (!WALLET_ID.test(id)) throw new RangeError(`wallet id must match ${WALLET_ID}`);
