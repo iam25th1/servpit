@@ -23,6 +23,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { CHARACTER_ANIMATIONS, ROSTER, type RosterEntry, type Tier } from "../src/config/roster";
 import {
+  AUDIO_SOURCES,
   EXPECTED,
   FRAME_RECT_OVERRIDES,
   FX_SHEETS,
@@ -49,6 +50,14 @@ interface SpriteSheet {
   facingColumns: number[] | null;
   /** Explicit hand sliced frames per facing, used when facingColumns is null. */
   frameRects?: Record<FacingName, FrameRect[]>;
+}
+
+interface AudioEntry {
+  id: string;
+  source: string;
+  path: string;
+  loop: boolean;
+  bytes: number;
 }
 
 interface FxEntry {
@@ -79,6 +88,7 @@ interface Manifest {
   facingOrder: string[];
   entries: ManifestEntry[];
   fx: FxEntry[];
+  audio: AudioEntry[];
   warnings: string[];
 }
 
@@ -193,6 +203,17 @@ function buildFx(staging: string, packRoot: string): FxEntry[] {
   });
 }
 
+function buildAudio(staging: string, packRoot: string): AudioEntry[] {
+  const audioDir = join(outDir, "audio");
+  mkdirSync(audioDir, { recursive: true });
+  return AUDIO_SOURCES.map((sound) => {
+    const src = join(staging, packRoot, sound.source);
+    if (!existsSync(src)) throw new Error(`audio ${sound.id}: ${sound.source} missing in pack`);
+    copyFileSync(src, join(audioDir, `${sound.id}.wav`));
+    return { id: sound.id, source: sound.source, path: `/assets/audio/${sound.id}.wav`, loop: sound.loop, bytes: statSync(src).size };
+  });
+}
+
 function totalBytes(dir: string): number {
   let sum = 0;
   for (const name of readdirSync(dir)) {
@@ -213,7 +234,11 @@ function main(): void {
   console.log(`staging:   ${staging}`);
 
   try {
-    const patterns = [...ROSTER.map((e) => `${packRoot}/${e.sourceFolder}/*`), ...FX_SHEETS.map((fx) => `${packRoot}/${fx.source}`)];
+    const patterns = [
+      ...ROSTER.map((e) => `${packRoot}/${e.sourceFolder}/*`),
+      ...FX_SHEETS.map((fx) => `${packRoot}/${fx.source}`),
+      ...AUDIO_SOURCES.map((sound) => `${packRoot}/${sound.source}`),
+    ];
     run("unzip", ["-q", "-o", zipPath, ...patterns, "-x", "__MACOSX/*", "-d", staging]);
 
     rmSync(outDir, { recursive: true, force: true });
@@ -222,6 +247,7 @@ function main(): void {
     const warnings: string[] = [];
     const entries = ROSTER.map((e) => buildEntry(e, staging, packRoot, warnings));
     const fx = buildFx(staging, packRoot);
+    const audio = buildAudio(staging, packRoot);
     const manifest: Manifest = {
       source: "ninja-adventure.zip",
       pack: packRoot,
@@ -230,12 +256,14 @@ function main(): void {
       facingOrder: ["down", "up", "left", "right"],
       entries,
       fx,
+      audio,
       warnings,
     };
     writeFileSync(join(outDir, "manifest.json"), JSON.stringify(manifest, null, 2) + "\n");
 
     console.log(`entries:   ${entries.length}`);
     console.log(`fx:        ${fx.length}`);
+    console.log(`audio:     ${audio.length}`);
     console.log(`bytes:     ${totalBytes(outDir)}`);
     for (const w of warnings) console.log(`WARN ${w}`);
   } catch (e) {

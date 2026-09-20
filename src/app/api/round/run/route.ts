@@ -51,7 +51,10 @@ export async function POST(request: Request): Promise<NextResponse> {
       ...(run.payout ? [{ kind: run.payout.kind, agentId: run.payout.agentId, amountWei: run.payout.amountWei.toString(), txHash: run.payout.txHash ?? null, link: run.payout.link, applied: run.payout.applied }] : []),
     ],
     agents: stored?.agents ?? [],
-    // The event log the phase 2 renderer replays.
+    // The event log the phase 2 renderer replays, and the reel draws the slot
+    // screen shows. Both come from the same resolved round, so the symbols on
+    // the machine are the entrants real draws rather than decoration.
     replay: { characters: run.round.characters, log: run.round.log, placements: run.round.placements },
+    reels: run.round.reels.map((pull, i) => ({ entrantId: plan.entrants[i].id, symbols: pull.symbols, characterId: pull.characterId, tier: pull.characterTier, combo: pull.combo, bonusPct: pull.bonusPct })),
   });
 }

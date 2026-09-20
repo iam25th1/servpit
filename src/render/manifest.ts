@@ -44,6 +44,12 @@ export interface FxDef {
   rows: number;
 }
 
+export interface AudioDef {
+  id: string;
+  path: string;
+  loop: boolean;
+}
+
 export interface Manifest {
   source: string;
   pack: string;
@@ -52,10 +58,12 @@ export interface Manifest {
   facingOrder: FacingName[];
   entries: ManifestEntry[];
   fx: FxDef[];
+  audio: AudioDef[];
   warnings: string[];
 }
 
 const ASSET_PATH = /^\/assets\/[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*\.png$/;
+const AUDIO_PATH = /^\/assets\/audio\/[A-Za-z0-9_-]+\.wav$/;
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null;
 
@@ -144,6 +152,15 @@ function fx(v: unknown, index: number): FxDef {
   };
 }
 
+function audio(v: unknown, index: number): AudioDef {
+  const path = `audio[${index}]`;
+  if (!isObject(v)) fail(path, "must be an object");
+  const file = str(v.path, `${path}.path`);
+  if (!AUDIO_PATH.test(file)) fail(`${path}.path`, `must be a same origin /assets/audio wav path, got ${file}`);
+  if (typeof v.loop !== "boolean") fail(`${path}.loop`, "must be a boolean");
+  return { id: str(v.id, `${path}.id`), path: file, loop: v.loop };
+}
+
 function size(v: unknown, path: string): { width: number; height: number } {
   if (!isObject(v)) fail(path, "must be an object");
   return { width: posInt(v.width, `${path}.width`), height: posInt(v.height, `${path}.height`) };
@@ -157,12 +174,15 @@ export function parseManifest(json: unknown): Manifest {
   }
   if (!Array.isArray(json.entries) || json.entries.length < 1) fail("entries", "must be a non empty array");
   if (!Array.isArray(json.fx)) fail("fx", "must be an array");
+  if (!Array.isArray(json.audio)) fail("audio", "must be an array");
   if (!Array.isArray(json.warnings) || json.warnings.some((w) => typeof w !== "string")) fail("warnings", "must be an array of strings");
 
   const entries = json.entries.map(entry);
   if (new Set(entries.map((e) => e.id)).size !== entries.length) fail("entries", "ids must be unique");
   const fxList = json.fx.map(fx);
   if (new Set(fxList.map((f) => f.id)).size !== fxList.length) fail("fx", "ids must be unique");
+  const audioList = json.audio.map(audio);
+  if (new Set(audioList.map((a) => a.id)).size !== audioList.length) fail("audio", "ids must be unique");
 
   return {
     source: str(json.source, "source"),
@@ -172,6 +192,7 @@ export function parseManifest(json: unknown): Manifest {
     facingOrder: [...FACING_NAMES],
     entries,
     fx: fxList,
+    audio: audioList,
     warnings: json.warnings as string[],
   };
 }

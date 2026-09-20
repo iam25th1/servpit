@@ -43,6 +43,8 @@ export interface ActorSprites {
   tier: Tier;
   /** frames[animation][facing][frameIndex] */
   frames: Record<Animation, Slice[][]>;
+  /** Portrait, used as the slot machine symbol. */
+  faceset: Slice;
   /** Quirks applied while loading this actor. */
   notes: string[];
 }
@@ -128,6 +130,10 @@ async function loadActor(entry: ManifestEntry, loader: ImageLoader, remember: (i
     return facingFrames(s.image, s.def, `${entry.id} ${name}`);
   };
 
+  const facesetImage = await decode(loader, entry.facesetPath, `${entry.id} faceset`);
+  remember(facesetImage);
+  const faceset = slice(facesetImage, { x: 0, y: 0, w: facesetImage.width, h: facesetImage.height }, `${entry.id} faceset`);
+
   let frames: Record<Animation, Slice[][]>;
   if (sheets.has("sheet")) {
     const all = framesOf("sheet");
@@ -149,7 +155,7 @@ async function loadActor(entry: ManifestEntry, loader: ImageLoader, remember: (i
       if (frames[anim][facing].length < 1) throw new AssetError(`${entry.id} ${anim}: no frames for facing ${facing}`);
     }
   }
-  return { id: entry.id, tier: entry.tier, frames, notes };
+  return { id: entry.id, tier: entry.tier, frames, faceset, notes };
 }
 
 async function loadFx(def: FxDef, loader: ImageLoader, remember: (img: DecodedImage) => void): Promise<FxSprites> {

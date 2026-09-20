@@ -6,11 +6,28 @@ import { createFakeLoader, testManifest as manifest } from "./testing";
 const fakeLoader = createFakeLoader;
 
 describe("loadAssets", () => {
+  it("loads a faceset per actor at the manifest size, for the slot symbols", async () => {
+    const store = await loadAssets(manifest, fakeLoader().loader);
+    for (const entry of manifest.entries) {
+      const faceset = store.actors.get(entry.id)!.faceset;
+      expect(faceset.sw, entry.id).toBe(manifest.faceset.width);
+      expect(faceset.sh, entry.id).toBe(manifest.faceset.height);
+      expect(faceset.sx).toBe(0);
+      expect(faceset.sy).toBe(0);
+      expect(faceset.image.source).toMatchObject({ path: entry.facesetPath });
+    }
+  });
+
+  it("fails loudly when a faceset is missing", async () => {
+    const { loader } = fakeLoader({ "/assets/Knight/Faceset.png": "missing" });
+    await expect(loadAssets(manifest, loader)).rejects.toThrow(/Knight faceset/);
+  });
+
   it("decodes every sheet exactly once", async () => {
     const { loader, loads } = fakeLoader();
     await loadAssets(manifest, loader);
     expect(new Set(loads).size).toBe(loads.length);
-    const expected = manifest.entries.reduce((n, e) => n + Object.keys(e.sprites).length, 0) + manifest.fx.length;
+    const expected = manifest.entries.reduce((n, e) => n + Object.keys(e.sprites).length + 1, 0) + manifest.fx.length;
     expect(loads).toHaveLength(expected);
   });
 

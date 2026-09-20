@@ -21,6 +21,23 @@ describe("parseManifest", () => {
     expect(bear.sprites.sheet.facingColumns).toEqual([0, 2, 1, 3]);
   });
 
+  it("parses the audio section and constrains paths to same origin wav files", () => {
+    const m = parseManifest(manifestJson);
+    expect(m.audio.length).toBeGreaterThanOrEqual(10);
+    expect(m.audio.find((a) => a.id === "reelSpin")?.loop).toBe(true);
+    expect(m.audio.find((a) => a.id === "reelStop")?.loop).toBe(false);
+    for (const a of m.audio) expect(a.path).toMatch(/^\/assets\/audio\/[A-Za-z0-9_-]+\.wav$/);
+  });
+
+  it("rejects an audio entry with a foreign path or a non boolean loop", () => {
+    const j = clone();
+    (j.audio as Array<Record<string, unknown>>)[0].path = "https://example.com/evil.wav";
+    expect(() => parseManifest(j)).toThrow(/audio\[0\].path/);
+    const k = clone();
+    (k.audio as Array<Record<string, unknown>>)[0].loop = "yes";
+    expect(() => parseManifest(k)).toThrow(/audio\[0\].loop/);
+  });
+
   it("rejects a sprite with neither facingColumns nor frameRects", () => {
     const j = clone();
     const entries = j.entries as Array<{ id: string; sprites: Record<string, Record<string, unknown>> }>;
