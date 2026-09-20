@@ -31,7 +31,7 @@ import { BootScreen } from "./screens/BootScreen";
 import { TitleScreen } from "./screens/TitleScreen";
 import { GameShell } from "./screens/GameShell";
 import { UiKitProvider } from "@/ui/UiKit";
-import { playTransition } from "@/ui/transitions";
+import { createResponsiveScope, playTransition } from "@/ui/transitions";
 import { pickPlayerDraw, type RunReel } from "./reelPick";
 import styles from "./play.module.css";
 
@@ -386,6 +386,16 @@ export function PlayClient() {
   };
 
 
+  // One responsive scope for the whole app: it registers the phone and
+  // reduced motion queries once and reverts what it owns on teardown.
+  const scopeRootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const root = scopeRootRef.current;
+    if (!root) return;
+    const scope = createResponsiveScope(root);
+    return () => scope.revert();
+  }, [manifest]);
+
   // Screen transitions: one timeline per change, driven from the machine's
   // screen value. anime.js owns DOM chrome; the canvas Timeline owns the reels
   // and the arena, and they never target the same element.
@@ -420,7 +430,7 @@ export function PlayClient() {
 
   return (
     <UiKitProvider manifest={manifest}>
-      <div onPointerDown={unlockAudio}>
+      <div ref={scopeRootRef} onPointerDown={unlockAudio}>
         {state.screen === "boot" && <BootScreen manifest={manifest} onReady={() => dispatch({ type: "assetsReady" })} />}
         {state.screen === "title" && <TitleScreen onStart={startSession} />}
 

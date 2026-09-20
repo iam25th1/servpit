@@ -13,7 +13,7 @@
 // This drives DOM chrome only. Reel motion and arena playback stay on the
 // phase 2 canvas Timeline, and the two never target the same element.
 
-import { animate, createTimeline, stagger, utils } from "animejs";
+import { animate, createScope, createTimeline, stagger, utils, type Scope } from "animejs";
 import { timing } from "./tokens";
 
 /** Elements a screen offers up for choreography, in the order they should move. */
@@ -95,4 +95,37 @@ export function staggerIn(elements: HTMLElement[], options: { grid?: [number, nu
     ease: "outQuad",
     delay: stagger(timing.stagger, options.grid ? { grid: options.grid, from: "center", start: options.delay ?? 0 } : { start: options.delay ?? 0 }),
   }).then(() => undefined);
+}
+
+
+/**
+ * Screen sized choreography. A phone gets shorter travel and a tighter
+ * stagger, because the same 10 px offset that reads as arrival on a desktop
+ * reads as a jolt in a viewport a third the width, and six cards staggered at
+ * desktop spacing takes too long when they are stacked.
+ *
+ * createScope keeps the media query registered in one place and reverts every
+ * animation it owns on teardown.
+ */
+export function createResponsiveScope(root: HTMLElement): Scope {
+  return createScope({
+    root,
+    mediaQueries: { phone: "(max-width: 860px)", reduced: "(prefers-reduced-motion: reduce)" },
+  }).add((scope) => {
+    const matches = scope?.matches ?? {};
+    const phone = Boolean(matches.phone);
+    const still = Boolean(matches.reduced);
+    // Published for the transition helpers to read, so one place decides.
+    root.dataset.motion = still ? "none" : phone ? "compact" : "full";
+    root.style.setProperty("--anim-travel", still ? "0px" : phone ? "6px" : "10px");
+    root.style.setProperty("--anim-stagger", still ? "0ms" : phone ? "26ms" : "42ms");
+  });
+}
+
+/** Travel distance and stagger for the current viewport, set by the scope. */
+export function motionProfile(root: HTMLElement | null): { travel: number; stagger: number } {
+  const mode = root?.dataset.motion ?? "full";
+  if (mode === "none") return { travel: 0, stagger: 0 };
+  if (mode === "compact") return { travel: 6, stagger: 26 };
+  return { travel: 10, stagger: timing.stagger };
 }
