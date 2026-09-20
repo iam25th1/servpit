@@ -96,8 +96,10 @@ export function GameShell(props: GameShellProps) {
 
       {state.screen === "modeSelect" && <ModeSelect onChoose={props.onChooseMode} error={state.error} />}
 
-      {showStage && (
-        <div className={styles.stage}>
+      {/* The stage is always mounted so the canvases exist before the player
+          reaches them; the engine builds against them during boot. Only its
+          visibility changes. */}
+      <div className={showStage ? styles.stage : styles.offstage} aria-hidden={!showStage}>
           <div className={styles.cabinet}>
             <NinePatch sprite="panelAlt" data-anim="cabinet" style={{ padding: "var(--space-base)" }}>
               <canvas ref={props.slotCanvasRef} className={`${styles.canvas} ${state.screen === "arena" ? styles.hidden : ""}`} role="img" aria-label="Slot machine" />
@@ -114,8 +116,7 @@ export function GameShell(props: GameShellProps) {
           </div>
 
           {state.screen === "arena" ? <ArenaHud run={run} /> : <Lineup plan={plan} error={state.error} />}
-        </div>
-      )}
+      </div>
 
       {state.screen === "result" && run && <ResultScreen run={run} onPlayAgain={props.onPlayAgain} />}
     </main>
@@ -142,22 +143,21 @@ export function GameShell(props: GameShellProps) {
                 data-card=""
                 aria-disabled={mode.locked}
               >
-                <div className={styles.modeHead}>
+                {/* Slats first, so everything after them sits on top and the
+                    mode name stays readable while the body is shuttered. */}
+                {mode.locked && <div className={styles.shutter} aria-hidden="true" />}
+
+                <div className={`${styles.modeHead} ${mode.locked ? styles.aboveShutter : ""}`}>
                   <img className={styles.modeIcon} src={icon.path} alt="" width={icon.width * 2} height={icon.height * 2} />
                   <h2 className={styles.modeName}>{mode.name}</h2>
                 </div>
                 <p className={styles.modeBlurb}>{mode.blurb}</p>
 
                 {mode.locked ? (
-                  <>
-                    {/* Slats plus a lock, so it reads as shuttered at a glance
-                        with the text unread. Not reduced opacity. */}
-                    <div className={styles.shutter} aria-hidden="true" />
-                    <div className={styles.lockBadge}>
-                      <img src={lockIcon.path} alt="" width={lockIcon.width * 2} height={lockIcon.height * 2} style={{ imageRendering: "pixelated" }} />
-                      <span className={styles.roadmap}>{mode.roadmap}</span>
-                    </div>
-                  </>
+                  <div className={styles.lockBadge}>
+                    <img src={lockIcon.path} alt="" width={lockIcon.width * 2} height={lockIcon.height * 2} style={{ imageRendering: "pixelated" }} />
+                    <span className={styles.roadmap}>{mode.roadmap}</span>
+                  </div>
                 ) : (
                   <div className={styles.stakes}>
                     {mode.stakes?.map((stake) => (
@@ -314,21 +314,21 @@ export function GameShell(props: GameShellProps) {
           />
         ))}
 
-        <NinePatch sprite="focus" scale={uiScale} className={styles.winner} data-anim="winner-panel">
+        <NinePatch sprite="panelAlt" scale={uiScale} className={styles.winner} data-anim="winner-panel">
           <img className={styles.winnerFace} src={facesetPath(winnerCharacter(run))} alt="" width={38 * 3} height={38 * 3} />
           <h2 className={styles.winnerName}>{winnerAgent ? winnerAgent.name : run.winner}</h2>
           <p className={styles.winnerPot}>{prize.toString()} taken</p>
-          <p className={styles.sideNote}>Reconciliation {run.reconciled ? "held against chain balances" : "FAILED"}</p>
+          <p className={`${styles.sideNote} ${styles.onLight}`}>Reconciliation {run.reconciled ? "held against chain balances" : "FAILED"}</p>
         </NinePatch>
 
-        <NinePatch sprite="panel" className={styles.ledger} data-anim="ledger">
+        <NinePatch sprite="bg" className={styles.ledger} data-anim="ledger">
           <h2 className={styles.sideHead}>Bankrolls</h2>
           {run.agents.map((a) => {
             const change = BigInt(a.balanceAfterWei) - BigInt(a.balanceBeforeWei);
             return (
               <div key={a.agentId} className={styles.ledgerRow} data-ledger-row="">
                 <span>{a.name}</span>
-                <Meter value={meterValue(a.balanceAfterWei, peak)} variant="bar" scale={2} label={`${a.name} bankroll`} />
+                <Meter value={meterValue(a.balanceAfterWei, peak)} variant="mini" scale={5} label={`${a.name} bankroll`} />
                 <span className={`${styles.delta} ${change > 0n ? styles.up : styles.down}`}>
                   {change >= 0n ? "+" : ""}
                   {change.toString()}

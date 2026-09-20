@@ -65,6 +65,9 @@ body {
   /* Pixel art everywhere, so never let the browser smooth it. */
   image-rendering: pixelated;
   -webkit-font-smoothing: none;
+  /* The pack face ships a near zero width space, so words run together
+     without this. Measured against the rendered text, not guessed. */
+  word-spacing: 0.32em;
 }
 
 a {
@@ -75,6 +78,9 @@ button,
 input,
 select {
   font-family: var(--font-ui);
+  /* Controls do not inherit word-spacing from body, so "Pull the lever"
+     rendered as one word until this. */
+  word-spacing: 0.32em;
 }
 
 /* The one honest concession to motion sensitivity: anime.js reads this and

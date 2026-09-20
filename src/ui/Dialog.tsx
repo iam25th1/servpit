@@ -30,6 +30,10 @@ export function Dialog({ speaker, children, scale = uiScale, className }: Dialog
         minHeight: box.height * (scale / 2),
         padding: speaker ? `${8 * scale}px ${6 * scale}px ${8 * scale}px ${20 * scale}px` : `${7 * scale}px ${6 * scale}px`,
         fontSize: "var(--text-small)",
+        // The frame is light parchment, so the text on it is dark. Bone on
+        // near white was unreadable.
+        color: "var(--pit-deep)",
+        lineHeight: 1.45,
       }}
     >
       {speaker && (

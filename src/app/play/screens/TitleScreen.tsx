@@ -10,7 +10,7 @@
 import { animate, createTimeline, stagger, utils } from "animejs";
 import { createDrawable } from "animejs/svg";
 import { split } from "animejs/text";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/ui/Button";
 import { useUiKit } from "@/ui/UiKit";
 import { timing } from "@/ui/tokens";
@@ -62,10 +62,35 @@ export function TitleScreen({ onStart }: TitleScreenProps) {
 
   const dungeon = ui("tilesetDungeon");
 
+  // Tiling the whole sheet showed every unrelated tile at once, which reads as
+  // noise rather than a wall. Crop one cell to a data url and repeat that.
+  const [wall, setWall] = useState<string | null>(null);
+  useEffect(() => {
+    const tile = dungeon.tile ?? 16;
+    const image = new Image();
+    image.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = tile;
+      canvas.height = tile;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      ctx.imageSmoothingEnabled = false;
+      // Second row, second column: a plain dungeon wall face rather than an
+      // edge piece, so the repeat has no seams built into it.
+      ctx.drawImage(image, tile, tile, tile, tile, 0, 0, tile, tile);
+      setWall(canvas.toDataURL());
+    };
+    image.src = dungeon.path;
+  }, [dungeon.path, dungeon.tile]);
+
   return (
     <main ref={rootRef} className={styles.title} data-screen="title">
       {/* Static tiled dungeon wall. Fixed position, no parallax, no pointer link. */}
-      <div className={styles.backdrop} style={{ backgroundImage: `url(${dungeon.path})`, backgroundSize: `${dungeon.tile! * 4}px ${dungeon.tile! * 4}px`, backgroundRepeat: "repeat" }} aria-hidden="true" />
+      <div
+        className={styles.backdrop}
+        style={wall ? { backgroundImage: `url(${wall})`, backgroundSize: `${(dungeon.tile ?? 16) * 3}px ${(dungeon.tile ?? 16) * 3}px`, backgroundRepeat: "repeat" } : undefined}
+        aria-hidden="true"
+      />
       <div className={styles.vignette} aria-hidden="true" />
 
       <div className={styles.stage}>

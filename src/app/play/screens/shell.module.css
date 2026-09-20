@@ -3,8 +3,15 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: var(--space-wide) var(--space-base) var(--space-vast);
+  /* Content is centred in the viewport rather than hugging the top, which
+     left more than half the screen empty on every screen after the title. */
+  justify-content: center;
+  padding: var(--space-wide) var(--space-base) var(--space-loose);
   gap: var(--space-wide);
+}
+
+.shell > header {
+  margin-bottom: auto;
 }
 
 .topbar {
@@ -33,10 +40,14 @@
 
 /* Mode select */
 .modes {
-  width: min(1100px, 100%);
+  /* Centred and capped at three across, so five cards read as a composed
+     wall rather than a row with an orphan under it. */
+  width: min(900px, 100%);
+  margin: 0 auto;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
   gap: var(--space-base);
+  justify-content: center;
 }
 
 .modeCard {
@@ -74,9 +85,15 @@
 /* A locked mode is shuttered: horizontal slats across the panel with a lock
    sitting on top. It reads as locked with the text unread, which reduced
    opacity never does. */
+.aboveShutter {
+  position: relative;
+  z-index: 2;
+}
+
 .shutter {
   position: absolute;
   inset: 0;
+  z-index: 1;
   pointer-events: none;
   background-image: repeating-linear-gradient(
     0deg,
@@ -90,9 +107,10 @@
 
 .lockBadge {
   position: absolute;
-  top: 50%;
+  top: 58%;
   left: 50%;
   transform: translate(-50%, -50%);
+  z-index: 2;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -131,6 +149,15 @@
 }
 
 /* Slot and arena stage */
+.offstage {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  pointer-events: none;
+}
+
 .stage {
   width: min(1100px, 100%);
   display: grid;
@@ -270,9 +297,12 @@
 
 /* Result */
 .result {
-  width: min(1100px, 100%);
+  /* Balanced and centred: the winner beat and the ledger carry equal weight
+     rather than a small card beside a slab. */
+  width: min(940px, 100%);
+  margin: 0 auto;
   display: grid;
-  grid-template-columns: minmax(280px, 1fr) minmax(300px, 1.2fr);
+  grid-template-columns: minmax(260px, 0.9fr) minmax(320px, 1fr);
   gap: var(--space-wide);
   align-items: start;
   position: relative;
@@ -284,6 +314,14 @@
   align-items: center;
   gap: var(--space-snug);
   text-align: center;
+}
+
+/* The winner panel art is light sage, so its supporting line is dark rather
+   than the dim bone used on the dark surfaces. */
+.winner .sideNote,
+.onLight {
+  color: var(--pit-deep);
+  opacity: 0.85;
 }
 
 .winnerFace {
@@ -312,7 +350,7 @@
 
 .ledgerRow {
   display: grid;
-  grid-template-columns: 8ch 1fr 9ch;
+  grid-template-columns: 7ch auto 1fr;
   gap: var(--space-snug);
   align-items: center;
   font-size: var(--text-small);
@@ -321,6 +359,7 @@
 .delta {
   text-align: right;
   font-family: var(--font-ui);
+  font-size: var(--text-body);
 }
 
 .up {
@@ -328,7 +367,8 @@
 }
 
 .down {
-  color: var(--bone-dim);
+  color: var(--bone);
+  opacity: 0.75;
 }
 
 .notice {
