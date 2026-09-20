@@ -75,9 +75,9 @@ export function TitleScreen({ onStart }: TitleScreenProps) {
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
       ctx.imageSmoothingEnabled = false;
-      // Second row, second column: a plain dungeon wall face rather than an
-      // edge piece, so the repeat has no seams built into it.
-      ctx.drawImage(image, tile, tile, tile, tile, 0, 0, tile, tile);
+      // Third column of the second row: a flat interior face rather than a
+      // bordered block, so the repeat reads as a surface instead of a grid.
+      ctx.drawImage(image, tile * 3, tile * 2, tile, tile, 0, 0, tile, tile);
       setWall(canvas.toDataURL());
     };
     image.src = dungeon.path;

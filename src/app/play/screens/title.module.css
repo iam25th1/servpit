@@ -13,7 +13,9 @@
   position: absolute;
   inset: 0;
   image-rendering: pixelated;
-  opacity: 0.4;
+  /* Low enough that the wall recedes behind the content. At 0.4 the repeat
+     read as wallpaper and competed with the wordmark. */
+  opacity: 0.16;
   z-index: 0;
 }
 
