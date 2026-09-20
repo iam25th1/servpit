@@ -43,3 +43,7 @@ next-env.d.ts
 # asset archives and macOS zip cruft (never commit; extraction stages then deletes)
 *.zip
 __MACOSX/
+
+# Next.js dev regenerates these agent docs (they contain em dashes); never commit them
+/AGENTS.md
+/CLAUDE.md

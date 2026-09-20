@@ -24,13 +24,18 @@ import { join, resolve } from "node:path";
 import { CHARACTER_ANIMATIONS, ROSTER, type RosterEntry, type Tier } from "../src/config/roster";
 import {
   EXPECTED,
+  FRAME_RECT_OVERRIDES,
+  FX_SHEETS,
   SHEET_NOTES,
   dimensionWarnings,
   facingColumnsFor,
   frameGrid,
+  fxFrameGrid,
   isMacosxPath,
   pickMonsterSheet,
   readPngSize,
+  type FacingName,
+  type FrameRect,
   type PngSize,
 } from "./lib/assets";
 
@@ -40,8 +45,21 @@ interface SpriteSheet {
   frameHeight: number;
   cols: number;
   rows: number;
-  /** Sheet column for each facing value (0 down, 1 up, 2 left, 3 right), or null when the sheet has no uniform columns. */
+  /** Sheet column for each facing value (0 down, 1 up, 2 left, 3 right), or null when frameRects carries the slicing. */
   facingColumns: number[] | null;
+  /** Explicit hand sliced frames per facing, used when facingColumns is null. */
+  frameRects?: Record<FacingName, FrameRect[]>;
+}
+
+interface FxEntry {
+  id: string;
+  group: string;
+  source: string;
+  path: string;
+  frameWidth: number;
+  frameHeight: number;
+  cols: number;
+  rows: number;
 }
 
 interface ManifestEntry {
@@ -60,6 +78,7 @@ interface Manifest {
   /** Meaning of facing values 0 to 3 in the event log and in facingColumns. */
   facingOrder: string[];
   entries: ManifestEntry[];
+  fx: FxEntry[];
   warnings: string[];
 }
 
@@ -108,7 +127,9 @@ function sheetFor(file: string, publicPath: string, warnings: string[], label: s
   } catch (e) {
     warnings.push(`${label}: ${(e as Error).message}, recorded as a single frame`);
   }
-  return { sheet: { path: publicPath, frameWidth, frameHeight, cols, rows, facingColumns }, size };
+  // A single column sheet (Dead.png) serves every facing from column 0.
+  const columns = facingColumns !== null && cols === 1 ? [0, 0, 0, 0] : facingColumns;
+  return { sheet: { path: publicPath, frameWidth, frameHeight, cols, rows, facingColumns: columns }, size };
 }
 
 function buildEntry(entry: RosterEntry, staging: string, packRoot: string, warnings: string[]): ManifestEntry {
@@ -130,6 +151,7 @@ function buildEntry(entry: RosterEntry, staging: string, packRoot: string, warni
     const name = pickMonsterSheet(readdirSync(srcDir));
     copyFileSync(join(srcDir, name), join(destDir, name));
     const { sheet, size } = sheetFor(join(srcDir, name), `/assets/${entry.id}/${name}`, warnings, `${entry.id}: ${name}`, facingColumns);
+    if (Object.prototype.hasOwnProperty.call(FRAME_RECT_OVERRIDES, entry.id)) sheet.frameRects = FRAME_RECT_OVERRIDES[entry.id];
     sprites.sheet = sheet;
     sheets.sheet = size;
   } else {
@@ -158,6 +180,19 @@ function buildEntry(entry: RosterEntry, staging: string, packRoot: string, warni
   };
 }
 
+function buildFx(staging: string, packRoot: string): FxEntry[] {
+  const fxDir = join(outDir, "fx");
+  mkdirSync(fxDir, { recursive: true });
+  return FX_SHEETS.map((fx) => {
+    const src = join(staging, packRoot, fx.source);
+    if (!existsSync(src)) throw new Error(`fx ${fx.id}: ${fx.source} missing in pack`);
+    const size = sizeOf(src);
+    const grid = fxFrameGrid(size.width, size.height);
+    copyFileSync(src, join(fxDir, `${fx.id}.png`));
+    return { id: fx.id, group: fx.group, source: fx.source, path: `/assets/fx/${fx.id}.png`, ...grid };
+  });
+}
+
 function totalBytes(dir: string): number {
   let sum = 0;
   for (const name of readdirSync(dir)) {
@@ -178,7 +213,7 @@ function main(): void {
   console.log(`staging:   ${staging}`);
 
   try {
-    const patterns = ROSTER.map((e) => `${packRoot}/${e.sourceFolder}/*`);
+    const patterns = [...ROSTER.map((e) => `${packRoot}/${e.sourceFolder}/*`), ...FX_SHEETS.map((fx) => `${packRoot}/${fx.source}`)];
     run("unzip", ["-q", "-o", zipPath, ...patterns, "-x", "__MACOSX/*", "-d", staging]);
 
     rmSync(outDir, { recursive: true, force: true });
@@ -186,6 +221,7 @@ function main(): void {
 
     const warnings: string[] = [];
     const entries = ROSTER.map((e) => buildEntry(e, staging, packRoot, warnings));
+    const fx = buildFx(staging, packRoot);
     const manifest: Manifest = {
       source: "ninja-adventure.zip",
       pack: packRoot,
@@ -193,11 +229,13 @@ function main(): void {
       faceset: { width: EXPECTED.faceset, height: EXPECTED.faceset },
       facingOrder: ["down", "up", "left", "right"],
       entries,
+      fx,
       warnings,
     };
     writeFileSync(join(outDir, "manifest.json"), JSON.stringify(manifest, null, 2) + "\n");
 
     console.log(`entries:   ${entries.length}`);
+    console.log(`fx:        ${fx.length}`);
     console.log(`bytes:     ${totalBytes(outDir)}`);
     for (const w of warnings) console.log(`WARN ${w}`);
   } catch (e) {

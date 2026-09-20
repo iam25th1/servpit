@@ -69,9 +69,9 @@
           "rows": 1,
           "facingColumns": [
             0,
-            1,
-            2,
-            3
+            0,
+            0,
+            0
           ]
         }
       }
@@ -129,9 +129,9 @@
           "rows": 1,
           "facingColumns": [
             0,
-            1,
-            2,
-            3
+            0,
+            0,
+            0
           ]
         }
       }
@@ -189,9 +189,9 @@
           "rows": 1,
           "facingColumns": [
             0,
-            1,
-            2,
-            3
+            0,
+            0,
+            0
           ]
         }
       }
@@ -249,9 +249,9 @@
           "rows": 1,
           "facingColumns": [
             0,
-            1,
-            2,
-            3
+            0,
+            0,
+            0
           ]
         }
       }
@@ -309,9 +309,9 @@
           "rows": 1,
           "facingColumns": [
             0,
-            1,
-            2,
-            3
+            0,
+            0,
+            0
           ]
         }
       }
@@ -369,9 +369,9 @@
           "rows": 1,
           "facingColumns": [
             0,
-            1,
-            2,
-            3
+            0,
+            0,
+            0
           ]
         }
       }
@@ -429,9 +429,9 @@
           "rows": 1,
           "facingColumns": [
             0,
-            1,
-            2,
-            3
+            0,
+            0,
+            0
           ]
         }
       }
@@ -489,9 +489,9 @@
           "rows": 1,
           "facingColumns": [
             0,
-            1,
-            2,
-            3
+            0,
+            0,
+            0
           ]
         }
       }
@@ -549,9 +549,9 @@
           "rows": 1,
           "facingColumns": [
             0,
-            1,
-            2,
-            3
+            0,
+            0,
+            0
           ]
         }
       }
@@ -596,9 +596,9 @@
           "rows": 1,
           "facingColumns": [
             0,
-            1,
-            2,
-            3
+            0,
+            0,
+            0
           ]
         }
       }
@@ -643,9 +643,9 @@
           "rows": 1,
           "facingColumns": [
             0,
-            1,
-            2,
-            3
+            0,
+            0,
+            0
           ]
         }
       }
@@ -703,9 +703,9 @@
           "rows": 1,
           "facingColumns": [
             0,
-            1,
-            2,
-            3
+            0,
+            0,
+            0
           ]
         }
       }
@@ -763,9 +763,9 @@
           "rows": 1,
           "facingColumns": [
             0,
-            1,
-            2,
-            3
+            0,
+            0,
+            0
           ]
         }
       }
@@ -782,7 +782,113 @@
           "frameHeight": 16,
           "cols": 4,
           "rows": 4,
-          "facingColumns": null
+          "facingColumns": null,
+          "frameRects": {
+            "down": [
+              {
+                "x": 0,
+                "y": 0,
+                "w": 16,
+                "h": 16
+              },
+              {
+                "x": 0,
+                "y": 16,
+                "w": 16,
+                "h": 16
+              },
+              {
+                "x": 0,
+                "y": 32,
+                "w": 16,
+                "h": 16
+              },
+              {
+                "x": 0,
+                "y": 48,
+                "w": 16,
+                "h": 16
+              }
+            ],
+            "up": [
+              {
+                "x": 16,
+                "y": 0,
+                "w": 16,
+                "h": 16
+              },
+              {
+                "x": 16,
+                "y": 16,
+                "w": 16,
+                "h": 16
+              },
+              {
+                "x": 16,
+                "y": 32,
+                "w": 16,
+                "h": 16
+              },
+              {
+                "x": 16,
+                "y": 48,
+                "w": 16,
+                "h": 16
+              }
+            ],
+            "left": [
+              {
+                "x": 32,
+                "y": 0,
+                "w": 16,
+                "h": 16
+              },
+              {
+                "x": 32,
+                "y": 16,
+                "w": 16,
+                "h": 16
+              },
+              {
+                "x": 32,
+                "y": 32,
+                "w": 16,
+                "h": 16
+              },
+              {
+                "x": 32,
+                "y": 48,
+                "w": 16,
+                "h": 16
+              }
+            ],
+            "right": [
+              {
+                "x": 48,
+                "y": 0,
+                "w": 16,
+                "h": 16
+              },
+              {
+                "x": 48,
+                "y": 16,
+                "w": 16,
+                "h": 16
+              },
+              {
+                "x": 48,
+                "y": 32,
+                "w": 16,
+                "h": 16
+              },
+              {
+                "x": 48,
+                "y": 48,
+                "w": 16,
+                "h": 16
+              }
+            ]
+          }
         }
       }
     },
@@ -829,9 +935,111 @@
       }
     }
   ],
+  "fx": [
+    {
+      "id": "Cut",
+      "group": "attack",
+      "source": "FX/Attack/Cut/SpriteSheet.png",
+      "path": "/assets/fx/Cut.png",
+      "frameWidth": 32,
+      "frameHeight": 32,
+      "cols": 4,
+      "rows": 1
+    },
+    {
+      "id": "CutDouble",
+      "group": "attack",
+      "source": "FX/Attack/CutDouble/SpriteSheet.png",
+      "path": "/assets/fx/CutDouble.png",
+      "frameWidth": 32,
+      "frameHeight": 32,
+      "cols": 5,
+      "rows": 1
+    },
+    {
+      "id": "CutX",
+      "group": "attack",
+      "source": "FX/Attack/CutX/SpriteSheet.png",
+      "path": "/assets/fx/CutX.png",
+      "frameWidth": 32,
+      "frameHeight": 32,
+      "cols": 4,
+      "rows": 1
+    },
+    {
+      "id": "Claw",
+      "group": "attack",
+      "source": "FX/Attack/Claw/SpriteSheet.png",
+      "path": "/assets/fx/Claw.png",
+      "frameWidth": 32,
+      "frameHeight": 32,
+      "cols": 4,
+      "rows": 1
+    },
+    {
+      "id": "ClawDouble",
+      "group": "attack",
+      "source": "FX/Attack/ClawDouble/SpriteSheet.png",
+      "path": "/assets/fx/ClawDouble.png",
+      "frameWidth": 32,
+      "frameHeight": 32,
+      "cols": 4,
+      "rows": 1
+    },
+    {
+      "id": "SlashCurved",
+      "group": "attack",
+      "source": "FX/Attack/SlashCurved/SpriteSheet.png",
+      "path": "/assets/fx/SlashCurved.png",
+      "frameWidth": 32,
+      "frameHeight": 32,
+      "cols": 4,
+      "rows": 1
+    },
+    {
+      "id": "SlashDoubleCurved",
+      "group": "attack",
+      "source": "FX/Attack/SlashDoubleCurved/SpriteSheet.png",
+      "path": "/assets/fx/SlashDoubleCurved.png",
+      "frameWidth": 32,
+      "frameHeight": 32,
+      "cols": 4,
+      "rows": 1
+    },
+    {
+      "id": "CircularSlash",
+      "group": "attack",
+      "source": "FX/Attack/CircularSlash/SpriteSheet.png",
+      "path": "/assets/fx/CircularSlash.png",
+      "frameWidth": 32,
+      "frameHeight": 32,
+      "cols": 4,
+      "rows": 1
+    },
+    {
+      "id": "Smoke",
+      "group": "smoke",
+      "source": "FX/Smoke/Smoke/SpriteSheet.png",
+      "path": "/assets/fx/Smoke.png",
+      "frameWidth": 32,
+      "frameHeight": 32,
+      "cols": 6,
+      "rows": 1
+    },
+    {
+      "id": "Explosion",
+      "group": "explosion",
+      "source": "FX/Elemental/Explosion/SpriteSheet.png",
+      "path": "/assets/fx/Explosion.png",
+      "frameWidth": 40,
+      "frameHeight": 40,
+      "cols": 9,
+      "rows": 1
+    }
+  ],
   "warnings": [
     "NinjaFire: SeparateAnim/Idle.png missing in pack, animation omitted",
     "NinjaWater: SeparateAnim/Idle.png missing in pack, animation omitted",
-    "Dragon: SpriteSheet.png is not a uniform 4 column grid, columns 2 and 3 form one 32 px wide winged frame per row, hand slice before use"
+    "Dragon: facingColumns is null on purpose, frames come from the hand sliced frameRects list. A pixel check shows columns 2 and 3 are mirror image 16 px frames (left, right) whose wings meet at the cell boundary, not one 32 px frame as phase 1 first recorded"
   ]
 }
