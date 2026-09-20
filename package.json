@@ -14,7 +14,8 @@
     "reel-report": "tsx scripts/reel-distribution.ts",
     "sim": "tsx scripts/sim.ts",
     "round": "tsx scripts/round.ts",
-    "generate-wallets": "tsx scripts/generate-wallets.ts"
+    "generate-wallets": "tsx scripts/generate-wallets.ts",
+    "fund-wallets": "tsx scripts/fund-wallets.ts"
   },
   "dependencies": {
     "@coinbase/agentkit": "^0.10.4",
