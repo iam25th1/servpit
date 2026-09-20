@@ -66,9 +66,12 @@ export class ReelSet {
     private readonly symbols: readonly string[],
   ) {
     if (symbols.length < 3) throw new RangeError("a reel strip needs at least three symbols");
+    // Each reel rests on a different symbol: three identical columns read as a
+    // broken machine rather than an idle one.
+    const restSpacing = Math.max(1, Math.floor(symbols.length / 3));
     this.reels = [0, 1, 2].map((index) => ({
       index,
-      offset: 0,
+      offset: (index * restSpacing) % symbols.length,
       travelled: 0,
       speed: 0,
       stopped: true,

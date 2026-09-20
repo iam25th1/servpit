@@ -60,6 +60,10 @@ export class SlotRenderer {
     this.drawBulbs(target, frame);
     this.drawWindow(target);
     for (const reel of frame.reels) this.drawReel(target, reel, frame);
+    // DrawTarget has no clip, so the strip is masked after the fact: cabinet
+    // coloured bands cover whatever hangs past the window.
+    this.maskOverflow(target);
+    this.drawWindowFrame(target);
     this.drawPayline(target);
     this.drawLever(target, frame.leverProgress ?? 0);
     frame.drawEffects?.(target);
@@ -68,14 +72,26 @@ export class SlotRenderer {
   private drawWindow(target: DrawTarget): void {
     const w = this.layout.window;
     target.fillRect(w.x, w.y, w.width, w.height, SLOT_PALETTE.window);
-    target.fillRect(w.x - 1, w.y - 1, w.width + 2, 1, SLOT_PALETTE.frame);
-    target.fillRect(w.x - 1, w.y + w.height, w.width + 2, 1, SLOT_PALETTE.frame);
-    target.fillRect(w.x - 1, w.y - 1, 1, w.height + 2, SLOT_PALETTE.frame);
-    target.fillRect(w.x + w.width, w.y - 1, 1, w.height + 2, SLOT_PALETTE.frame);
     for (let i = 1; i < 3; i++) {
       const x = reelX(this.layout, i) - this.layout.reel.gap / 2;
       target.fillRect(x, w.y, 1, w.height, SLOT_PALETTE.divider);
     }
+  }
+
+  /** Covers strip overflow above and below the window. */
+  private maskOverflow(target: DrawTarget): void {
+    const w = this.layout.window;
+    const bleed = this.layout.cell.size * (this.layout.window.height / this.layout.cell.size);
+    target.fillRect(w.x - 2, w.y - bleed - 2, w.width + 4, bleed + 2, SLOT_PALETTE.cabinet);
+    target.fillRect(w.x - 2, w.y + w.height, w.width + 4, bleed + 2, SLOT_PALETTE.cabinet);
+  }
+
+  private drawWindowFrame(target: DrawTarget): void {
+    const w = this.layout.window;
+    target.fillRect(w.x - 1, w.y - 1, w.width + 2, 1, SLOT_PALETTE.frame);
+    target.fillRect(w.x - 1, w.y + w.height, w.width + 2, 1, SLOT_PALETTE.frame);
+    target.fillRect(w.x - 1, w.y - 1, 1, w.height + 2, SLOT_PALETTE.frame);
+    target.fillRect(w.x + w.width, w.y - 1, 1, w.height + 2, SLOT_PALETTE.frame);
   }
 
   private drawReel(target: DrawTarget, reel: ReelState, frame: SlotFrame): void {

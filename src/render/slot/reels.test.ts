@@ -23,6 +23,12 @@ describe("ReelSet lifecycle", () => {
     }
   });
 
+  it("rests with each reel on a different symbol, so the idle machine does not look broken", () => {
+    const set = new ReelSet(DEFAULT_SLOT, SYMBOLS);
+    const resting = set.reelStates().map((r) => r.symbol);
+    expect(new Set(resting).size).toBe(3);
+  });
+
   it("rejects a target symbol that is not on the strip", () => {
     const set = new ReelSet(DEFAULT_SLOT, SYMBOLS);
     expect(() => set.start(["Knight", "Monk", "NotASymbol"], 0)).toThrow(/NotASymbol/);

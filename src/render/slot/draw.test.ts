@@ -10,14 +10,23 @@ import { SlotRenderer, SLOT_PALETTE } from "./draw";
 type Fill = { x: number; y: number; w: number; h: number; color: string; alpha: number };
 type Sprite = { slice: Slice; x: number; y: number; options: DrawOptions };
 
+type Call = { kind: "fill"; y: number; color: string } | { kind: "sprite" };
+
 class RecordingTarget implements DrawTarget {
   fills: Fill[] = [];
   sprites: Sprite[] = [];
+  calls: Call[] = [];
   cleared: string | null = null;
   constructor(readonly width: number, readonly height: number) {}
   clear(color: string) { this.cleared = color; }
-  fillRect(x: number, y: number, w: number, h: number, color: string, alpha = 1) { this.fills.push({ x, y, w, h, color, alpha }); }
-  drawSlice(slice: Slice, x: number, y: number, options: DrawOptions = {}) { this.sprites.push({ slice, x, y, options }); }
+  fillRect(x: number, y: number, w: number, h: number, color: string, alpha = 1) {
+    this.fills.push({ x, y, w, h, color, alpha });
+    this.calls.push({ kind: "fill", y, color });
+  }
+  drawSlice(slice: Slice, x: number, y: number, options: DrawOptions = {}) {
+    this.sprites.push({ slice, x, y, options });
+    this.calls.push({ kind: "sprite" });
+  }
 }
 
 const SYMBOLS = ["NinjaRed", "NinjaBlue", "Knight", "Monk", "Hunter", "Boy", "Eskimo", "Caveman", "Bear", "Dragon"];
@@ -106,6 +115,23 @@ describe("SlotRenderer reel drawing", () => {
       expect(s.y + SLOT_LAYOUT.cell.size).toBeGreaterThan(w.y - 1);
       expect(s.y).toBeLessThan(w.y + w.height + 1);
     }
+  });
+
+  it("masks the strip overflow, so no symbol is visible outside the window", () => {
+    const target = new RecordingTarget(SLOT_LAYOUT.width, SLOT_LAYOUT.height);
+    new SlotRenderer(store).draw(target, { reels: spinning(500).reelStates(), timeMs: 0 });
+    const w = SLOT_LAYOUT.window;
+    // Symbols may be drawn past the window edge, but a cabinet coloured band
+    // must cover the area above and below it afterwards.
+    const masks = target.fills.filter((f) => f.color === SLOT_PALETTE.cabinet);
+    const above = masks.find((f) => f.y < w.y && f.y + f.h >= w.y && f.x <= w.x && f.x + f.w >= w.x + w.width);
+    const below = masks.find((f) => f.y <= w.y + w.height && f.y + f.h > w.y + w.height && f.x <= w.x && f.x + f.w >= w.x + w.width);
+    expect(above, "no mask above the window").toBeDefined();
+    expect(below, "no mask below the window").toBeDefined();
+    const lastSymbol = target.sprites.length;
+    const maskIndex = target.calls.findIndex((c) => c.kind === "fill" && c.color === SLOT_PALETTE.cabinet && c.y < w.y);
+    expect(lastSymbol).toBeGreaterThan(0);
+    expect(maskIndex).toBeGreaterThan(-1);
   });
 
   it("paints flat colours only, nothing in the purple range", () => {
