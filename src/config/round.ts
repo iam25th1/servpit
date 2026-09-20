@@ -1,4 +1,6 @@
 // Round level tuning: base stats per tier, arena, storm, stakes and rake.
+// Base stats are tuned so win rate lands near rare 2.5x, uncommon 1.2x and
+// common 0.85x of the 1 / entrants baseline (see round.test.ts).
 // The mode is a strategy object; swap it here to change the game.
 
 import { battleRoyale } from "@/engine/modes/battleRoyale";
@@ -39,8 +41,8 @@ export const DEFAULT_ROUND: RoundConfig = {
   reels: DEFAULT_REELS,
   baseStats: {
     common: { hp: 100, atk: 12, def: 2, spd: 1 },
-    uncommon: { hp: 120, atk: 14, def: 3, spd: 1 },
-    rare: { hp: 170, atk: 18, def: 4, spd: 1 },
+    uncommon: { hp: 115, atk: 12, def: 2, spd: 1 },
+    rare: { hp: 125, atk: 13, def: 3, spd: 1 },
   },
   arena: { width: 24, height: 24 },
   maxTicks: 300,
