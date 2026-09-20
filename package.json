@@ -9,7 +9,8 @@
     "lint": "eslint .",
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run",
-    "gate": "npm run typecheck && npm run lint && npm run test && npm run build"
+    "gate": "npm run typecheck && npm run lint && npm run test && npm run build",
+    "extract-assets": "tsx scripts/extract-assets.ts"
   },
   "dependencies": {
     "next": "16.3.5",
