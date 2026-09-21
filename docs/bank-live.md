@@ -1,6 +1,6 @@
 # The bank, verified on Base Sepolia
 
-Nine real rounds, settled against Base Sepolia with `SERVPIT_BANK_ENABLED` on, the bank
+Ten real rounds, nine from the command line and one played in the browser, settled against Base Sepolia with `SERVPIT_BANK_ENABLED` on, the bank
 wallet funded from a faucet and the operator wallet deliberately empty. Every figure below
 came off the chain or out of the round's own record. No fake chain, no scripted model.
 
@@ -86,6 +86,20 @@ operator wallet has never held anything.** The path is tested on the fake chain,
 empty operator leaves the seat empty, and the first wreck after the operator is funded gets
 a real transfer. On Base Sepolia it is waiting on somebody sending that wallet some ETH.
 
+### In the browser, on the real chain
+
+Round `r-857a4c79369a0c04`, played through the app at http://localhost:3000 with
+`WALLET_BACKEND=viem` and no flag set, because the bank is the default now. Two agents
+entered, a house bot won, two seats were emptied and stayed empty, and the round reconciled.
+
+![Two seats emptied on Base Sepolia, and nobody to fill them](media/bank-live-wreck.png)
+
+The lineup showed Marrow holding 971 chips and turning Tally down, Atlas and Delta in, and
+three agents excluded in plain words: two short on stake, one "has 29 chips but not enough left
+over for fees, so it is short on gas". The wreck screen carried both dead agents with their
+causes, their arrival lines and the same sentence twice: "sits down with nothing. The operator
+had none to give."
+
 ## Marrow, deciding
 
 Six live decisions, all refusals, in its own voice:
@@ -131,6 +145,7 @@ covers its payout and that the bank covers its loans.
 | `r-e7e9ff15a985871b` | agent-delta | 12 | yes | $0.0086 |
 | `r-ef5afe20a285e6d2` | bot-01 | 9 | yes | $0.0093 |
 | `r-6c4b616706d25a54` | bot-10 | 8 | yes | $0.0126 |
+| `r-857a4c79369a0c04` | bot-09 | 8 | yes | in the browser |
 
 A bank round costs about a cent of SERV: six agent decisions plus one per loan request, at
 roughly $0.0086 with no lending and $0.0126 with four borrowers asking.
