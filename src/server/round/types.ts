@@ -11,6 +11,7 @@ import type { TransferLedger } from "../ledger";
 import type { PlanStore } from "./planStore";
 import type { PrizeSplit } from "./prize";
 import type { RolloverStore } from "./rollover";
+import type { DebtStore } from "./debt";
 import type { ReconcileResult } from "../reconcile";
 import type { CostMeter, ServClient } from "../serv/client";
 import type { TransferOutcome } from "../transfers";
@@ -31,6 +32,13 @@ export interface FlowContext {
    * that is money.
    */
   rollover: RolloverStore;
+  /**
+   * What each seat's current occupant owes the bank.
+   *
+   * Required, like the rollover store: a missing debt store would quietly
+   * forget what agents owe, and that is money.
+   */
+  debts: DebtStore;
   chain: Chain;
   wallets: Wallets;
   ledger: TransferLedger;
@@ -94,6 +102,10 @@ export interface RoundRun {
   entries: TransferOutcome[];
   /** Loans the bank settled this round, before entries were collected. */
   loans: TransferOutcome[];
+  /** Interest charged this round, per agent, in wei. */
+  interest: Array<{ agentId: string; chargedWei: bigint; rateBps: number }>;
+  /** What a winner handed straight to the bank, before it kept anything. */
+  repayment: { agentId: string; interestWei: bigint; principalWei: bigint; outcome: TransferOutcome } | null;
   payout: TransferOutcome | null;
   /**
    * Set when a house bot won. Eighteen of the twenty four entrants have no

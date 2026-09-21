@@ -15,7 +15,9 @@ import { heuristicDecision } from "../decisions/heuristic";
 import { log } from "../log";
 import { fromWei, sumWei } from "../money";
 import { reconcile } from "../reconcile";
-import { collectEntry, disburseLoan, payWinner, type TransferOutcome } from "../transfers";
+import { collectEntry, disburseLoan, payWinner, repayBank, type TransferOutcome } from "../transfers";
+import { repay } from "@/economy/rules";
+import { totalOwed } from "./debt";
 import { splitPrize, type PrizeSplit } from "./prize";
 import { bankEnabled } from "@/config/economy";
 import { splitCappedPrize } from "@/economy/prize";
@@ -56,6 +58,30 @@ export async function runRound(ctx: FlowContext, plan: RoundPlan, progress: RunP
   // impossible on a chain where nonces are left to the node. It is also the
   // slowest part of a round, so each confirmation is reported as it lands
   // rather than all of them at the end.
+  // Interest first, before this round's lending. Once per round on principal
+  // outstanding at the start of it, simple rather than compound, whether or
+  // not the agent entered: a debt costs the same to carry whether you play or
+  // sit.
+  //
+  // Before the disbursement below, deliberately. A loan taken this round has
+  // not been carried for a round yet, and charging it on arrival would take
+  // interest for time that has not passed.
+  //
+  // Idempotent by round id inside the store, so settling the same round twice
+  // charges once.
+  const interest: Array<{ agentId: string; chargedWei: bigint; rateBps: number }> = [];
+  if (bankEnabled()) {
+    for (const snapshot of plan.snapshots) {
+      const walletId = snapshot.profile.id;
+      const identityId = ctx.debts.currentIdentity(walletId);
+      const { debt, chargedWei } = ctx.debts.accrue(walletId, identityId, plan.roundId);
+      if (chargedWei > 0n) {
+        interest.push({ agentId: walletId, chargedWei, rateBps: debt.rateBps });
+        log.info("interest charged", { roundId: plan.roundId, agentId: walletId, chargedWei: chargedWei.toString(), rateBps: debt.rateBps, owedWei: totalOwed(debt).toString() });
+      }
+    }
+  }
+
   // The bank pays out first. An agent that borrowed to reach its stake has to
   // be holding the chips before that stake is taken off it, and the plan
   // already says exactly who is owed what.
@@ -67,6 +93,7 @@ export async function runRound(ctx: FlowContext, plan: RoundPlan, progress: RunP
       if (!borrower) continue;
       const outcome = await disburseLoan(transferCtx, plan.roundId, loan.agentId, bank, borrower, loan.principalWei, loan.rateBps);
       loans.push(outcome);
+      if (outcome.applied) ctx.debts.addLoan(loan.agentId, ctx.debts.currentIdentity(loan.agentId), loan.principalWei, loan.rateBps);
       progress.onLoan?.(loan.agentId, outcome);
       log.info("loan disbursed", { roundId: plan.roundId, agentId: loan.agentId, principalWei: loan.principalWei.toString(), rateBps: loan.rateBps, txHash: outcome.txHash });
     }
@@ -134,6 +161,35 @@ export async function runRound(ctx: FlowContext, plan: RoundPlan, progress: RunP
   // spent on a transfer that never landed.
   ctx.rollover.record(plan.roundId, rolloverInWei, prize.nextRolloverWei);
 
+  // Winnings answer to the bank first. The pot has paid the winner, so the
+  // chips are in its wallet; what it owes goes straight back out before it is
+  // treated as keeping anything.
+  let repayment: RoundRun["repayment"] = null;
+  if (bankEnabled() && bank && payout && winnerAgent) {
+    const walletId = winnerAgent.agentId;
+    const identityId = ctx.debts.currentIdentity(walletId);
+    const owed = ctx.debts.get(walletId, identityId);
+    if (totalOwed(owed) > 0n) {
+      // The rules module decides the split, interest before principal. This
+      // only carries it out.
+      const split = repay({ principalWei: owed.principalWei, interestWei: owed.interestWei }, payout.amountWei);
+      const handedBackWei = split.interestPaidWei + split.principalPaidWei;
+      if (handedBackWei > 0n) {
+        const wallet = ctx.wallets.agents.get(walletId)!;
+        const outcome = await repayBank(transferCtx, plan.roundId, walletId, wallet, bank, handedBackWei);
+        if (outcome.applied) ctx.debts.settle(walletId, identityId, split.principalPaidWei, split.interestPaidWei);
+        repayment = { agentId: walletId, interestWei: split.interestPaidWei, principalWei: split.principalPaidWei, outcome };
+        log.info("winnings garnished", {
+          roundId: plan.roundId,
+          agentId: walletId,
+          interestWei: split.interestPaidWei.toString(),
+          principalWei: split.principalPaidWei.toString(),
+          keptWei: split.leftoverWei.toString(),
+        });
+      }
+    }
+  }
+
   ctx.bankroll.invalidate();
   const after: Record<string, bigint> = {};
   await ctx.bankroll.warm(ctx.chain, watchedWallets);
@@ -160,9 +216,12 @@ export async function runRound(ctx: FlowContext, plan: RoundPlan, progress: RunP
       ...entries.filter((e) => e.applied).map((e) => ({ address: e.from, amountWei: e.feeWei ?? 0n })),
       ...loans.filter((l) => l.applied).map((l) => ({ address: l.from, amountWei: l.feeWei ?? 0n })),
       ...(payout?.applied ? [{ address: payout.from, amountWei: payout.feeWei ?? 0n }] : []),
+      ...(repayment?.outcome.applied ? [{ address: repayment.outcome.from, amountWei: repayment.outcome.feeWei ?? 0n }] : []),
     ],
     loans: loans.map((l) => ({ address: l.to, amountWei: l.amountWei })),
     appliedLoans: loans.filter((l) => l.applied).map((l) => ({ address: l.to, amountWei: l.amountWei })),
+    repayments: repayment ? [{ address: repayment.outcome.from, amountWei: repayment.outcome.amountWei }] : [],
+    appliedRepayments: repayment?.outcome.applied ? [{ address: repayment.outcome.from, amountWei: repayment.outcome.amountWei }] : [],
     ...(bank ? { bankAddress: bank.address } : {}),
     // No house contribution any more: a seat that did not pay adds nothing to
     // the prize. What the pot brought in from previous rounds does, and it is
@@ -227,7 +286,7 @@ export async function runRound(ctx: FlowContext, plan: RoundPlan, progress: RunP
     payoutMinorUnits: fromWei(prizeWei),
   });
 
-  return { plan, round, entries, loans, payout, retained, prize, rolloverInWei, reconciliation };
+  return { plan, round, entries, loans, interest, repayment, payout, retained, prize, rolloverInWei, reconciliation };
 }
 
 export { heuristicDecision };

@@ -12,7 +12,16 @@ const PART = /^[A-Za-z0-9_-]{1,64}$/;
  * wallet. It is a transfer like any other and carries the same identity, so a
  * retry of the same round and agent can never disburse twice.
  */
-export type TransferKind = "entry" | "payout" | "loan";
+/**
+ * loan       the bank paying out an approved advance
+ * repayment  a winner paying its creditor out of what it just won
+ * seizure    the bank taking what a wrecked agent still holds
+ * refill     operator capital funding a replacement into an empty seat
+ *
+ * Every one carries the same round id, agent id and kind identity, so a
+ * retry of the same event can never move money twice.
+ */
+export type TransferKind = "entry" | "payout" | "loan" | "repayment" | "seizure" | "refill";
 
 export function idempotencyKey(roundId: string, agentId: string, kind: TransferKind): string {
   for (const [name, value] of [["roundId", roundId], ["agentId", agentId], ["kind", kind]] as const) {
