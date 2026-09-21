@@ -72,11 +72,34 @@ export const CREDIT_TERMS = {
   maxPrincipalStakes: 5n,
   /** A single loan may take a quarter of the treasury. */
   maxTreasuryShareBps: 2_500,
-  /** Simple interest per round on outstanding principal. */
-  interestBps: 500,
-  /** Total debt above eight seats wrecks the agent. */
-  debtCeilingStakes: 8n,
-  /** Replacement agents are born clean until the simulator says otherwise. */
+  /**
+   * Simple interest per round on outstanding principal.
+   *
+   * A round is a minute of play, not a month, so this reads high and is not.
+   * What it sets is how long an agent that stops repaying survives: at five
+   * stakes of principal it adds half a stake a round, and the ceiling is one
+   * stake above the principal cap, so it has two rounds to win its way back.
+   * At the 5 per cent this started at, the ceiling never fired at all in two
+   * thousand rounds: an agent always ran out of balance first and was wrecked
+   * for being broke instead.
+   */
+  interestBps: 1_000,
+  /**
+   * Total debt above six seats wrecks the agent.
+   *
+   * One stake above the principal cap, deliberately. Set it far above and the
+   * condition is dead config: the simulator measured zero ceiling wrecks in
+   * two thousand rounds at eight stakes.
+   */
+  debtCeilingStakes: 6n,
+  /**
+   * Replacement agents are born clean.
+   *
+   * Born in debt halves what the operator spends replacing wrecked agents,
+   * 208 chips against 520 over two thousand rounds, but the debt has to be
+   * funded by a bank, and there is no bank wallet in this build. Revisit it
+   * with one.
+   */
   replacementDebtStakes: 0n,
 } as const;
 

@@ -33,10 +33,19 @@ describe("credit terms", () => {
     const large = economyConfig(1_000n);
     expect(small.minLoanWei).toBe(10n);
     expect(small.maxPrincipalWei).toBe(50n);
-    expect(small.debtCeilingWei).toBe(80n);
+    expect(small.debtCeilingWei).toBe(60n);
     expect(large.maxPrincipalWei).toBe(5_000n);
-    expect(large.debtCeilingWei).toBe(8_000n);
+    expect(large.debtCeilingWei).toBe(6_000n);
     expect(large.stakeWei).toBe(1_000n);
+  });
+
+  it("keeps the ceiling within reach of the principal cap, or it is dead config", () => {
+    // Set it far above and an agent always runs out of balance first and is
+    // wrecked for being broke. The simulator measured zero ceiling wrecks in
+    // two thousand rounds when it sat three stakes clear.
+    const c = economyConfig(10n);
+    expect(c.debtCeilingWei).toBeGreaterThan(c.maxPrincipalWei);
+    expect(c.debtCeilingWei - c.maxPrincipalWei).toBeLessThanOrEqual(2n * c.stakeWei);
   });
 
   it("leaves a replacement agent clean by default", () => {

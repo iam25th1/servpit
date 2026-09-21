@@ -13,6 +13,7 @@
     "extract-assets": "tsx scripts/extract-assets.ts",
     "reel-report": "tsx scripts/reel-distribution.ts",
     "sim": "tsx scripts/sim.ts",
+    "sim:economy": "tsx scripts/sim-economy.ts",
     "round": "tsx scripts/round.ts",
     "generate-wallets": "tsx scripts/generate-wallets.ts",
     "fund-wallets": "tsx scripts/fund-wallets.ts"
