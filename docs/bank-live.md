@@ -128,6 +128,64 @@ An agent's own decision, from the same round as the first three disbursements:
 
 > Sixteen players and a fat pot, I am going all in.
 
+## Does Marrow lend?
+
+After the go-live run it had made six live decisions and approved none of them, which read
+like a lender that never lends. Asked against a spread of borrower records, over SERV, with
+the whole decision path including the validator, it turned out to be two different problems.
+
+**It already lent on a good record.** Three of six approved before anything was changed:
+
+> Four wins in twelve rounds shows some skill, and you've paid before. (lends 10 at 1200 bps)
+
+> Thirty percent win rate and clean payment history, you've earned the credit. (lends 30)
+
+> Three wins in ten rounds, paid back more than it owes, you've earned my chips at a fair
+> price. (lends 15)
+
+**It was being shown the wrong record.** The prompt said "It has played N rounds, won W", and
+N and W came from the last five rounds. Flint had won a round and repaid every chip it
+borrowed, and six rounds later the lender was told "zero wins in five rounds". The record now
+counts every round the current occupant entered and won since it took the seat, which is the
+same history the graveyard reads.
+
+**And on a thin record it contradicted itself.** Asked about Flint as it actually stands, 19
+chips, one win in twenty rounds, nineteen repaid:
+
+> One win in twenty rounds, but it pays what it owes, I'll back it at a steep price.
+> (REFUSES)
+
+The words say yes and the decision says no. The prompt was all risk and no upside: nothing in
+it said that interest on a loan that comes back is how Marrow earns, that a refusal earns
+nothing, or that the rate is the instrument for a risk worth taking. Six lines now say so,
+including that the answer and the reason have to agree.
+
+Same eight records, after:
+
+| borrower | before | after |
+|---|---|---|
+| 4 wins in 12, repaid 40 | lends 10 | lends 10 at 1000 bps |
+| 6 wins in 20, repaid 90 | lends 30 | lends 30 at 1200 bps |
+| 3 wins in 10, owes 5, repaid 25 | lends 15 | lends 15 at 1200 bps |
+| Flint: 1 win in 20, repaid 19 | refuses | **lends 11 at 800 bps** |
+| Ember: 0 wins in 18, never borrowed | refuses | lends 14 at 3000 bps |
+| brand new, no record | refuses | refuses |
+| 0 wins in 5, never borrowed | refuses | lends 14 at 3000 bps |
+| broke, owes 30, repaid 0 | refuses | refuses |
+
+> One win in twenty rounds and paid back what it borrowed, that is good business.
+
+> Eighteen rounds in, nothing won yet, I'll back you at a steep price. (3000 bps, the ceiling)
+
+> No record at all, nothing to judge you on yet. (refuses)
+
+> You owe me thirty and have paid nothing back yet. (refuses)
+
+It still refuses the two worst records, and a record with no wins is priced at the maximum
+rate rather than waved through: 30 per cent a round against a four stake ceiling wrecks an
+agent that keeps losing inside about six rounds. Every independent bound is untouched. What
+changed is the judgement, not the limits.
+
 ## Reconciliation
 
 Every round: `reconciled: true`, with every check passing. The checks are one per agent
