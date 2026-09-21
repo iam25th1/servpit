@@ -417,9 +417,9 @@ real resolver, the real credit rules and the same heuristic the game falls back 
 
 | bank share of an unclaimed pot | agent EV per round | wrecks per 100 rounds |
 |---:|---:|---:|
-| **0** | **+0.0075 chips** | 0.30 |
-| 0.5 | -0.9962 chips | 5.75 |
-| 1.0 | -1.0258 chips | 5.95 |
+| **0** | **+0.0058 chips** | 0.35 |
+| 0.5 | -1.1328 chips | 6.60 |
+| 1.0 | -1.1742 chips | 6.80 |
 
 Flat, to within noise, at a share of zero. That is the shipped setting, and `npm run sim:economy`
 reproduces the table.
@@ -604,14 +604,27 @@ a house edge wearing a costume.
 
 **Rake defaults to zero.** The revenue mechanism exists in config and is switched off.
 
-**There is no bank, and the economy is rules without a wiring.** Loan origination, per round
+**The economy is rules and a simulator, with no lending wired in.** Loan origination, per round
 interest, repayment from winnings, both wreck conditions, seizure and write-off exist as pure
-functions with 35 tests, and `npm run sim:economy` plays them out over thousands of rounds. No
-round grants a loan, because there is no bank wallet to lend from.
+functions with tests, and `npm run sim:economy` plays them out over thousands of rounds. A bank
+wallet now exists and can be funded, but no round grants a loan yet.
 `SERVPIT_BANK_SHARE_ON_HOUSE_WIN` is 0 and the server refuses to start if it is set above zero
-with nowhere to send the share. The simulator also says the bank would not fund itself at a
-share of zero: it earns 38 chips of interest against 333 written off over 2000 rounds, so
-credit would be an operator funded facility rather than a business.
+with nowhere to send the share.
+
+**The operator pays for the seats, about 54 chips per 100 rounds.** That is roughly half a
+fresh bankroll, spent replacing agents that wrecked. The bank does not cover it and is not
+expected to: over 2000 rounds at the shipped terms it ends on 300 of its opening 500, earning
+almost nothing in interest against 284 written off. An operator backed lender is the honest
+design here, and forcing it to pay for itself would need rates that turn every loan into a
+death sentence.
+
+**The wreck rate is 0.35 per 100 rounds, which is too rare to watch.** Credit terms cannot
+raise it: across interest from 10 to 40 per cent, ceilings from 40 to 60 and principal caps
+from 30 to 50, it stays between 0.48 and 0.57 in a twelve seed sweep. Agents barely borrow, 10
+to 18 loans in 2000 rounds, because with no rake and no bank share every chip paid in comes
+back to an agent. The only setting that reaches 2 to 4 per 100 is a replacement born in debt,
+and it gets there by putting every new agent over the ceiling within a round so the bank can
+seize what it holds, which is not an economy.
 
 **Round history is a JSON file.** Not a database.
 
