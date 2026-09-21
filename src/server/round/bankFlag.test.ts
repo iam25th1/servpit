@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_SERV } from "@/config/serv";
-import { stakeWeiFrom, toChips } from "@/config/stake";
+import { stakeWeiFrom, toChips, weiPerChip } from "@/config/stake";
 import { BankrollCache } from "../bankroll";
 import { TransferLedger } from "../ledger";
 import { CostMeter, ServClient, type ChatTransport } from "../serv/client";
@@ -27,12 +27,15 @@ import { overReached } from "./wrecks";
 import { NAMED_AGENTS } from "@/config/agents";
 import { ORIGINAL_FACES, REPLACEMENTS } from "@/config/replacements";
 import { totalOwed } from "./debt";
+import { wreckMoments } from "@/app/play/screens/wreckMoment";
 
 const FUNDED_WEI = 100_000_000_000_000n;
 let dir: string;
 
 beforeEach(() => {
-  delete process.env.SERVPIT_BANK_ENABLED;
+  // Off unless a test says otherwise. The default is on now, so "off" is a
+  // setting a test has to ask for rather than the absence of one.
+  process.env.SERVPIT_BANK_ENABLED = "false";
 });
 
 afterEach(() => {
@@ -89,7 +92,7 @@ async function harness(transport?: ChatTransport) {
   };
 }
 
-describe("with the bank off, which is the default", () => {
+describe("with the bank switched off", () => {
   it("charges every seat the same, however much an agent asked for", async () => {
     const seat = stakeWeiFrom();
     const { ctx } = await harness(greedyTransport(toChips(seat) * 3));
@@ -742,3 +745,96 @@ describe("a loan for a seat that is not taken", () => {
     expect(run.reconciliation.ok).toBe(true);
   });
 });
+
+// Going live means the money can run out for real. Neither of these is an
+// error: a bank with nothing to lend is a bank that says no, and an operator
+// with nothing to stake a seat with leaves the seat empty. A round that fails
+// because the pit ran out of money is a round that took chips off agents and
+// then could not finish.
+describe("when the money runs out", () => {
+  async function pit(options: { bankWei: bigint; operatorWei: bigint; balanceWei?: bigint; lends?: boolean }) {
+    process.env.SERVPIT_BANK_ENABLED = "true";
+    const seat = stakeWeiFrom();
+    dir = mkdtempSync(join(tmpdir(), "servpit-dry-"));
+    // Everything opens empty and is funded on purpose, so a wallet meant to
+    // be dry is dry rather than holding the chain's opening float.
+    const chain = new FakeChain({ initialBalanceWei: 0n });
+    const wallets = await openWallets(chain, new WalletRegistry(join(dir, "wallets.json"), "fake"), { bank: true, operator: true });
+    for (const agent of wallets.agents.values()) chain.fund(agent.address, options.balanceWei ?? seat / 2n);
+    chain.fund(wallets.bank!.address, options.bankWei);
+    chain.fund(wallets.operator!.address, options.operatorWei);
+    const debts = new DebtStore(join(dir, "debts.json"), "fake");
+    const ctx = {
+      chain,
+      wallets,
+      ledger: new TransferLedger(join(dir, "ledger.json"), "fake"),
+      store: new RoundStore(join(dir, "rounds.json"), "fake"),
+      bankroll: new BankrollCache({ ttlMs: 0, now: () => 0 }),
+      meter: new CostMeter(DEFAULT_SERV.pricing),
+      rollover: new RolloverStore(join(dir, "rollover.json"), "fake"),
+      debts,
+      wreckStore: new WreckStore(join(dir, "wrecks.json"), "fake"),
+      serv: new ServClient({ ...DEFAULT_SERV, backoffMs: 0 }, duplexTransport(toChips(seat), { approve: options.lends ?? true, amount: options.lends === false ? 0 : toChips(seat), rateBps: 500 })),
+      entrants: 24,
+    };
+    return { chain, wallets, debts, ctx, seat };
+  }
+
+  it("denies every loan when the bank is empty, and the round still settles", async () => {
+    const { ctx, chain, wallets } = await pit({ bankWei: 0n, operatorWei: 0n });
+    const plan = await planRound(ctx, "dry-bank");
+    expect(plan.loans).toHaveLength(0);
+    expect(plan.refusals.length).toBeGreaterThan(0);
+    for (const refusal of plan.refusals) expect(refusal.reason.length).toBeGreaterThan(0);
+
+    const run = await runRound(ctx, plan);
+    expect(run.loans).toHaveLength(0);
+    expect(run.reconciliation.ok).toBe(true);
+    expect(chain.balanceOf(wallets.bank!.address)).toBe(0n);
+  });
+
+  it("leaves a wrecked seat empty when the operator is empty, and says so plainly", async () => {
+    // The bank has money and says no, so the agents are wrecked for want of
+    // credit rather than for want of a lender.
+    const { ctx, chain, wallets, seat } = await pit({ bankWei: seatMultiple(200), operatorWei: 0n, lends: false });
+    const run = await runRound(ctx, await planRound(ctx, "dry-operator"));
+
+    expect(run.wrecks.length).toBeGreaterThan(0);
+    expect(run.replacements.length).toBe(run.wrecks.length);
+    for (const r of run.replacements) expect(r.fundedWei).toBe(0n);
+    expect(chain.balanceOf(wallets.operator!.address)).toBe(0n);
+    expect(run.reconciliation.ok).toBe(true);
+
+    // What the player is told. The sentence is the wreck screen's, built from
+    // the same figures.
+    const moments = wreckMoments(
+      run.wrecks.map((w) => ({ ...w, face: null, overReached: overReached(w) })),
+      run.replacements.map((r) => ({ walletId: r.walletId, name: r.name, face: r.face, arrival: "", fundedWei: r.fundedWei.toString() })),
+      weiPerChip(),
+    );
+    for (const moment of moments) expect(moment.heir?.staked).toMatch(/sits down with nothing\. The operator had none to give\./);
+    expect(seat).toBeGreaterThan(0n);
+  });
+
+  it("funds the next replacement as soon as the operator has chips, with nothing else changed", async () => {
+    const { ctx, chain, wallets, seat } = await pit({ bankWei: seatMultiple(200), operatorWei: 0n, lends: false });
+    const first = await runRound(ctx, await planRound(ctx, "before-funding"));
+    expect(first.replacements.length).toBeGreaterThan(0);
+    for (const r of first.replacements) expect(r.fundedWei).toBe(0n);
+
+    // The only change: somebody funds the operator wallet.
+    chain.fund(wallets.operator!.address, seat * 500n);
+    ctx.bankroll.invalidate();
+
+    const second = await runRound(ctx, await planRound(ctx, "after-funding"));
+    const funded = second.replacements.filter((r) => r.fundedWei > 0n);
+    expect(funded.length).toBeGreaterThan(0);
+    for (const r of funded) expect(r.outcome?.txHash).toMatch(/^0x[0-9a-f]{64}$/);
+    expect(second.reconciliation.ok).toBe(true);
+  });
+});
+
+/** Stakes as wei, for a harness that wants a bank with something in it. */
+function seatMultiple(stakes: number): bigint {
+  return stakeWeiFrom() * BigInt(stakes);
+}

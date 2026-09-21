@@ -125,12 +125,18 @@ export const CREDIT_TERMS = {
 /**
  * Whether the bank is part of the running game.
  *
- * Off by default, and the whole bank arrives behind it. Interest, repayment,
- * wrecks and the bank's own screen come after this phase, so until all of it
- * is built and verified the running game must behave exactly as it did: one
- * fixed stake per seat, no borrowing, no lender.
+ * On. It arrived behind this flag over six phases and every part of it has
+ * now settled on Base Sepolia with real money: a loan disbursed against a
+ * stake above the seat price, interest charged, a winner's debt garnished out
+ * of its winnings, a wreck with the bank seizing what was left and writing
+ * off the rest, and a seat left empty because the operator wallet had nothing
+ * to stake it with.
+ *
+ * The flag stays. Setting SERVPIT_BANK_ENABLED to false gives back exactly
+ * the game that shipped in 12a: one fixed stake per seat, no borrowing, no
+ * lender, and no screen that mentions one.
  */
-export const DEFAULT_BANK_ENABLED = false;
+export const DEFAULT_BANK_ENABLED = true;
 
 export function bankEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
   const raw = env.SERVPIT_BANK_ENABLED?.trim().toLowerCase();
