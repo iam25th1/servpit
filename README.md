@@ -4,7 +4,7 @@
 
 **A slot machine decides who fights. Six agents decide whether to pay for a seat.**
 
-`SERV Reasoning` · `Coinbase AgentKit` · `Base Sepolia` · `Next.js` · `599 tests`
+`SERV Reasoning` · `Coinbase AgentKit` · `Base Sepolia` · `Next.js` · `795 tests`
 
 [![ci](https://github.com/iam25th1/servpit/actions/workflows/ci.yml/badge.svg)](https://github.com/iam25th1/servpit/actions/workflows/ci.yml)
 
@@ -49,14 +49,31 @@ and told which of the two it was short on.
 
 ### The artifact
 
-This is a real decision, from a real settled round, by an agent named Delta:
+Six real decisions, from one settled round, `r-133cdbfe48371d2d`:
+
+| agent | what it said | |
+|---|---|---|
+| **Atlas** | Two straight losses and a one-in-twenty shot don't justify risking capital right now. | held |
+| **Blaze** | I'm in, odds are solid and I've got the chips to back it. | in |
+| **Comet** | Just lost ten, so I'm sitting this one out to rebuild. | held |
+| **Delta** | Everyone's scared after losses, so I'm stepping in while the odds favor the bold. | in |
+| **Ember** | Steady rhythm, same as always, chips are there to use. | in |
+| **Flint** | Twenty-four players and a fat pot, this is exactly my kind of game. | in |
+
+Four committed, two held, each from its own balance and its own recent record. No heuristic in
+this codebase produces those sentences.
+
+They did not always read like that. The first version of this section quoted a real decision
+that went out as:
 
 > Recent results show three consecutive significant losses totaling over 395 billion minor
 > units, warranting a hold decision under the easing-off posture despite the substantial
 > working balance.
 
-Delta reasoned from its own loss history to a hold. No heuristic in this codebase produces
-that sentence. Five of its six peers committed in the same round. Delta sat out.
+Correct, unreadable, and quoting a number nobody can hold in their head. The numbers given to
+the model are chips now, and the answer has to be one short sentence in the agent's own voice.
+Both the Shadow Agent criteria and an independent local validator enforce that, and an answer
+that fails either falls back to the heuristic rather than going on screen.
 
 ---
 
@@ -67,10 +84,11 @@ flowchart TD
     A[Player pulls the lever] --> B[Six agents asked to decide]
     B --> C{SERV Reasoning}
     C -->|enter + stake| D[Independent validator]
-    C -->|API failure| E[Deterministic heuristic]
+    C -->|failure or budget spent| E[Deterministic heuristic]
     E --> D
-    D -->|clamped to real on-chain balance| F[Entry transfer, agent wallet to pot]
-    D -->|rejected| G[Agent excluded, reason logged]
+    D -->|clamped to real on-chain balance| P[Plan persisted under a round id]
+    D -->|rejected| G[Agent excluded, reason shown]
+    P --> F[Entry transfer, agent wallet to pot]
     F --> H[Three reels draw a fighter per entrant]
     H --> I[Seeded resolver produces an event log]
     I --> J[Canvas plays the log back]
@@ -82,29 +100,93 @@ The fight itself never touches the chain and never touches a model. `resolveRoun
 function of seed, entrant list and config, returning placements, payouts and an ordered
 event log. The renderer animates the log. Money moves at the two ends only.
 
+<details>
+<summary><b>What the player sees is what settles, structurally</b></summary>
+
+<br>
+
+The plan, including every decision and every entry, is written once under a round id derived
+from the seed and the entrant count. The settle endpoint takes that id and settles strictly
+against what it finds. It may not plan, may not decide and may not call SERV.
+
+That is not a convention. `test/settle-isolation.test.ts` walks the import graph from the
+settle route and fails if it reaches the decision loop, the SERV client or the transport at
+any depth, and a companion test asserts the plan route does reach them. A settle that wanted
+to work out its own answer could not compile a path to the code that would.
+
+The rule exists because the alternative shipped twice. The run endpoint used to re-plan,
+which meant six more SERV calls before a coin moved, a model free to answer differently than
+it did on screen, and 68.9 seconds of a frozen "Locked in".
+
+</details>
+
 ---
 
 ## Live settlement
 
-Seven settled rounds on Base Sepolia. Round `r-342dd220bec6f38e`, seed `serv-live-1`, is the
-first where every decision came from SERV rather than a fallback.
+Eighteen settled rounds on Base Sepolia, seventeen of them reconciled. The one that did not is
+still on file, and why is below.
 
-| agent | decision | entry transaction |
+Round `r-42ee92f9c5b6f41e`, seed `hardening1`, is an agent win under the current prize model.
+Four agents paid in 10 chips each, thirty chips had rolled over from a round nobody real won,
+and Ember took all seventy.
+
+| agent | decision | transaction |
 |---|---|---|
-| Atlas | committed 100 | [`0xbe52cfd1...6681543d`](https://sepolia.basescan.org/tx/0xbe52cfd13539afd0f6b1f171f76d981e429e01396bcda0b723c776106681543d) |
-| Blaze | committed 100 | [`0xa1ee1430...cf99bdc4`](https://sepolia.basescan.org/tx/0xa1ee14303fe5843bce8f94402260df07d72890b37474fd854236fbe4cf99bdc4) |
-| Comet | committed 100 | [`0xb6349a56...367328f8`](https://sepolia.basescan.org/tx/0xb6349a562df1c27d179e5f3f36f6cfec29d715d014a3be801ba48784367328f8) |
-| Delta | **held** | no transaction |
-| Ember | committed 100 | [`0x78ad7c18...5766c431`](https://sepolia.basescan.org/tx/0x78ad7c1803ccf63befbaf670776fb752ad52621236e0f71fcc4b62395766c431) |
-| Flint | committed 100 | [`0x832f3b95...3ad9aaf5`](https://sepolia.basescan.org/tx/0x832f3b95761cbcfca39d01d057fdb104f404f7573d3480d8f728e1843ad9aaf5) |
+| Atlas | **held** | no transaction |
+| Blaze | **held** | no transaction |
+| Comet | paid 10 chips | [`0x11ce59b4...0b23c489`](https://sepolia.basescan.org/tx/0x11ce59b4a98f9fad85111fc47a47374621b5ee33b7d7fafd5807d3480b23c489) |
+| Delta | paid 10 chips | [`0xc3a1f617...c2957d70`](https://sepolia.basescan.org/tx/0xc3a1f617a166f70a113bee701d8d196b04c6f517092d43d768702bedc2957d70) |
+| Ember | paid 10 chips, **won 70** | [`0x57d42ae0...5ab63df5`](https://sepolia.basescan.org/tx/0x57d42ae0de51649fe2054e5971ea5980d03ac0ac45d02d376a7ef2275ab63df5) · [payout `0x397dcbb7...81e6d3b2`](https://sepolia.basescan.org/tx/0x397dcbb744a3918f464bf33cae3c159328659373865e61b00ea44b2281e6d3b2) |
+| Flint | paid 10 chips | [`0xec32f828...4bbbcfda`](https://sepolia.basescan.org/tx/0xec32f828e5dd13565a1edb59b50e3b59860f258910d1cb84560e29ad4bbbcfda) |
 
 ```
-6 SERV calls, 0 guard refusals
-4565 prompt tokens, 333 completion
-$0.007871 for the round
-reconciliation held: every wallet delta -100 against expected -100
-pot delta +500, conservation 2400
+entries      40000000000000 wei (40 chips)
+rollover in  30000000000000 wei (30 chips)
+pool         70000000000000 wei (70 chips)
+payout       70000000000000 wei (70 chips)
+rollover out 0 wei
+
+reconciliation held against chain balances
+  ok   wallet 0xf9f5AA50...2B84E delta: expected 60000000000000, actual 60000000000000
+  ok   pot delta: expected -30000000000000, actual -30000000000000
+  ok   conservation: expected 70000000000000, actual 70000000000000
+  ok   pot covers payout: expected at most 319713137301177, actual 70000000000000
 ```
+
+Ember's balance went from 68168523639709 wei to 128036907148202, which is 70 chips in and one
+gas fee out. The decisions in that round came from the heuristic, not SERV, because the SERV
+credits had been spent measuring latency an hour earlier. The reasoning artifact above is from
+a SERV round; this one is here for the money.
+
+<details>
+<summary><b>The prize used to be insolvent, and reconciliation is what said so</b></summary>
+
+<br>
+
+A round has twenty four seats and only five or six of them are agents with wallets. The prize
+was `stake x 24`, charging every seat, while only the agents ever paid anything. The pot wallet
+made up the difference out of its own balance on every agent win.
+
+Measured on the live pot: it promised a 240 chip prize while agents paid in about 50 chips a
+round, against roughly a one in four chance an agent wins. That is 60 chips expected out
+against 50 in. The pot drained about 10 chips a round and had one payout left in it.
+
+The prize is now entries plus rollover, which is money the pot is already holding. A seat that
+did not pay adds nothing. A round nobody real wins leaves its whole prize in the pot as the
+next round's jackpot, which is where Ember's extra 30 chips came from.
+
+Conservation is now an equality on both branches, entries plus rollover in equals payout plus
+rollover out plus rake, and a separate check asserts the pot never sends more than it holds.
+The old check only asked that a retained prize was not negative, so a rollover that quietly
+dropped part of the prize would have looked fine.
+
+`r-4f1bed882155082a` is the round that is on file as unreconciled. It was the first time an
+agent ever won, and the pot delta check had been written on the assumption that the pot only
+ever receives, so it came up short by exactly the payout's gas fee. The check was wrong and the
+money was right. It is left in the history rather than backfilled.
+
+</details>
 
 <details>
 <summary><b>Why reconciliation is checked against receipts and not an estimate</b></summary>
@@ -112,8 +194,9 @@ pot delta +500, conservation 2400
 <br>
 
 Agents self-fund gas since the wallet layer moved to `ViemWalletProvider`, so a raw balance
-delta includes fees the stake accounting knows nothing about. Within this single round the
-L1 data fee was not even constant:
+delta includes fees the stake accounting knows nothing about. Base is an OP stack chain, so a
+receipt carries an L1 data fee alongside the L2 gas and both come out of the sender. Within one
+round the L1 fee was not even constant:
 
 | agents | L1 fee, wei |
 |---|---|
@@ -161,6 +244,38 @@ Model is `claude-haiku-4.5` through `https://inference-api.openserv.ai/v1`, Open
 swappable from config without a code change.
 
 <details>
+<summary><b>What the safety nets cost, measured</b></summary>
+
+<br>
+
+Six agents decide concurrently, so a phase lasts as long as its slowest agent rather than the
+sum of six. Eighteen calls per variant against live SERV, median latency:
+
+| variant | median | reading |
+|---|---:|---|
+| shadow and guard off | 1285 ms | the base model call |
+| shadow agent off | 4159 ms | Prompt Guard costs 2874 ms |
+| **everything on** | **7526 ms** | Shadow Agent costs 3367 ms |
+| multipath off, rest on | 7890 ms | Multipath is free |
+
+A healthy decision phase, timed end to end four times: 10974, 11813 and 12335 ms, of which one
+`eth_call` for all six balances is 487 to 616 ms and the rest is SERV.
+
+That is the price of two nets on a money surface, and it is paid once per phase rather than six
+times. What was not acceptable was the tail. Attempts were capped at three and each attempt at
+twenty seconds, so one agent could spend 61.2 seconds and the other five waited on it. The
+budget belongs to the agent now rather than to the attempt: 25 seconds covering every attempt
+and the backoff between them, each attempt clamped to what is left, and an agent that runs out
+falls back to the heuristic. Worst case per agent went from 61.2 s to 25 s and the healthy
+phase is unchanged, because the budget is only consulted when an attempt fails or runs long.
+
+One hypothesis tested and rejected on the way: that Shadow Agent's style criteria, the twenty
+word limit and the forbidden terms, were what made the phase slow. They cost minus 400 ms at
+the median, which is noise. The criteria stay exactly as they are.
+
+</details>
+
+<details>
 <summary><b>The prompt is resource allocation, not wagering, and that is deliberate</b></summary>
 
 <br>
@@ -173,7 +288,12 @@ It came back clean, with both panes returning parseable JSON and integer stakes,
 SERV Reasoning pane citing a 20 percent recent win rate as grounds for a small stake.
 
 **Shadow Agent's criteria:** response must be valid JSON matching the decision schema, stake
-must be a non-negative integer, stake must not exceed the stated balance.
+must be a non-negative whole number of chips, zero when holding and never more than the chips
+the operator holds, and the reason must be one sentence of at most twenty words in the agent's
+own speaking voice, with no jargon terms and no number longer than four digits.
+
+Every one of those is checked again locally afterwards, because Shadow Agent is a second net
+and never the only one.
 
 **What is observable and what is not:** Prompt Guard not refusing is visible in the response.
 Whether Shadow Agent actually revised an answer is not, because the response body carries only
@@ -234,6 +354,28 @@ of two. Every transfer still carries an idempotency key of round id plus agent i
 awaits its receipt before the next nonce is requested, so a collision is structurally
 impossible. Confirmed on chain, nonces 0 through 5, strictly sequential, each in its own block.
 
+**A transfer that landed is never sent again.** The hash used to exist only inside the wallet's
+send, so a receipt wait that timed out threw it away. The ledger then recorded the transfer as
+failed with no hash, and the next attempt asked the node for a fresh nonce: a transfer that
+landed, was recorded as failed and was then resent is a double payment, and nothing in the path
+prevented it. The hash is now written to disk the moment a node accepts the transaction, under
+its own `broadcast` status, before the wait. A retry with a recorded hash asks the chain first.
+Mined settles the record from the real receipt. Pending waits, because a replacement under a
+fresh nonce would leave two transactions able to mine. Unknown refuses outright. Only a
+confirmed drop, absent from the chain with nothing queued for that sender, permits a resend.
+
+**Reads go through several endpoints, sends do not.** A single `eth_getBalance` timed out
+against the configured endpoint and took a whole decision phase with it, 44.3 seconds to fail,
+because viem retries three times and there was nowhere else to go. Balance reads now run over a
+fallback across publicnode, sepolia.base.org and drpc, and all seven of a round's balances come
+back in one multicall rather than seven sequential round trips. Broadcasting is deliberately
+left on one endpoint: a resend across endpoints is not something to do casually on a money
+surface.
+
+JSON-RPC batching was measured against all three and rejected. drpc answers a batch of more
+than three with `Batch of more than 3 requests are not allowed on free plan`, and a round reads
+seven wallets. Multicall3 worked everywhere and was faster on every endpoint.
+
 **One thing closed on the way through.** AgentKit posts analytics to a Coinbase host on every
 wallet provider construction. The call is unawaited inside a synchronous `try`, so the `try`
 cannot catch a rejection, and an unreachable host takes the Node process down mid-round. Seven
@@ -258,15 +400,32 @@ $$P(\text{win}) = \sum_{t \in \{c,u,r\}} w_t \, p_t = 0.70(0.0325) + 0.25(0.0475
 
 against a flat baseline of $1/24 \approx 0.0417$ for a field of $n = 24$.
 
-Expected value of a single pull at stake $s$ with rake $\rho$, where the pot is $n s$:
+The prize is not $n s$. It is what the agents actually paid in this round plus whatever rolled
+over from rounds nobody real won, because house bots pay nothing and the pot may only promise
+money it is holding. With $k$ agents entering at stake $s$ and a rollover of $r$:
 
-$$\mathbb{E}[\text{pull}] = P(\text{win}) \cdot n s (1 - \rho) - s = s \big( n P (1-\rho) - 1 \big)$$
+$$\mathbb{E}[\text{entry}] = P(\text{win}) \, (k s + r)(1 - \rho) - s$$
 
-At $\rho = 0$ and $P = 1/n$ this is exactly zero, a fair game. The measured $P \approx 0.0409$
-gives $\mathbb{E} \approx -0.018 s$, a shortfall of about 1.8 percent. That is not a rake. It
-is house bots holding seats in the field, and it is why the open question of whether bots
-should take a share of a human-funded pot is answered here by bots never holding wallets at
-all.
+Take a single round on its own and that reads badly. At $k = 5$, $r = 0$, $\rho = 0$ and
+$P \approx 1/24$, it is about $-0.79 s$: five agents fund a pot that one of twenty four seats
+wins, and eighteen of those seats never paid.
+
+The rollover is what closes the gap, and it closes it exactly. Every round a bot wins leaves
+its whole pool in the pot for the next one, so with no rake and nothing going to a bank, every
+chip an agent pays in eventually returns to an agent. Simulated over 2000 rounds through the
+real resolver, the real credit rules and the same heuristic the game falls back to:
+
+| bank share of an unclaimed pot | agent EV per round | wrecks per 100 rounds |
+|---:|---:|---:|
+| **0** | **+0.0075 chips** | 0.30 |
+| 0.5 | -0.9962 chips | 5.75 |
+| 1.0 | -1.0258 chips | 5.95 |
+
+Flat, to within noise, at a share of zero. That is the shipped setting, and `npm run sim:economy`
+reproduces the table.
+
+The open question of whether bots should take a share of a human-funded pot is answered here
+twice over: bots never hold wallets, and now they never add to a prize either.
 
 <details>
 <summary><b>Measured distribution over 1000 rounds at 24 entrants</b></summary>
@@ -397,8 +556,13 @@ minutes. Six transfers cost about 0.0000008 ETH in total.
 Set `SERV_API_KEY` in `.env.local` for real reasoning. Without it every agent falls through to
 the heuristic and says so in its reason string.
 
-Configurable: `SERVPIT_FUND_TARGET_ETH`, `SERVPIT_GAS_RESERVE_ETH`, `BASE_SEPOLIA_RPC_URL`,
-`WALLET_BACKEND` (`fake` or `viem`).
+Configurable: `SERVPIT_FUND_TARGET_ETH`, `SERVPIT_STAKE_FRACTION`, `SERVPIT_GAS_RESERVE_ETH`,
+`BASE_SEPOLIA_RPC_URLS` (comma separated, or `BASE_SEPOLIA_RPC_URL` for a single endpoint),
+`SERVPIT_BANK_SHARE_ON_HOUSE_WIN`, `WALLET_BACKEND` (`fake` or `viem`).
+
+A seat costs a tenth of what a wallet is funded with, so the stake and the funding move
+together. A funded wallet is 100 chips and a seat is 10. Chips are what the player and the
+model see; wei is the unit of record and never leaves the money surface.
 
 The scripts load `.env.local` explicitly and refuse to run with an undeclared backend. Silently
 falling back to a fake chain when you meant to touch a real one is not an acceptable default on
@@ -414,8 +578,11 @@ a money surface.
 | command | what it does |
 |---|---|
 | `npm run sim` | Runs N headless rounds, prints rarity distribution, win rate by roster entry, average round length and payout conservation |
+| `npm run sim:economy` | Plays the economy out over N rounds with no chain and no model, at three settings of the bank's share, and reports wrecks, treasury over time and agent EV |
+| `npm run round -- --seed x` | One full round end to end from the command line, exactly as the API route does |
 | `npm run extract-assets` | Pulls the roster, FX, UI kit, fonts and tilesets out of the asset pack into `public/assets` and writes the manifest |
-| `npm test` | 599 tests |
+| `npm run gate` | typecheck, lint, test, build. What CI runs |
+| `npm test` | 795 tests |
 
 </details>
 
@@ -431,16 +598,30 @@ a money surface.
 **The pot wallet is operator-held.** There is no escrow contract. The pot is a wallet whose key
 sits with the operator, and that is a trust assumption, not a trustless design.
 
-**House bots do not hold wallets.** They are covered by the operator pot. This was deliberate:
-bots taking a share of a pot funded by others is a house edge wearing a costume, and giving
-them wallets would have made that worse rather than better.
+**House bots do not hold wallets.** They never did, and since the prize became entries plus
+rollover they do not contribute to one either. Bots taking a share of a pot funded by others is
+a house edge wearing a costume.
 
 **Rake defaults to zero.** The revenue mechanism exists in config and is switched off.
 
+**There is no bank, and the economy is rules without a wiring.** Loan origination, per round
+interest, repayment from winnings, both wreck conditions, seizure and write-off exist as pure
+functions with 35 tests, and `npm run sim:economy` plays them out over thousands of rounds. No
+round grants a loan, because there is no bank wallet to lend from.
+`SERVPIT_BANK_SHARE_ON_HOUSE_WIN` is 0 and the server refuses to start if it is set above zero
+with nowhere to send the share. The simulator also says the bank would not fund itself at a
+share of zero: it earns 38 chips of interest against 333 written off over 2000 rounds, so
+credit would be an operator funded facility rather than a business.
+
 **Round history is a JSON file.** Not a database.
 
-**One mode ships.** Battle Royale at two stake tiers. Gauntlet, Duel, Placement and High Roller
+**One mode ships, at one stake.** Battle Royale. Gauntlet, Duel, Placement and High Roller
 render as locked cards and are genuinely not implemented.
+
+**The stake tabs are cosmetic.** Low and High are offered on the mode card, but the request the
+client sends carries only a seed and an entrant count, so the tier never reaches the server and
+a seat always costs a tenth of a funded wallet. The labels on those tabs are left over from the
+flat stake the game used before the stake became a fraction of funding.
 
 **Randomness is server-side, not on-chain.** Commit-reveal is the honest design for this and is
 not built. It is called a seeded resolver here rather than on-chain randomness, because a sharp
