@@ -323,6 +323,30 @@ The graveyard is reachable from the menu and keeps everyone: face, name, rounds 
 peak balance, what it owed at the end, and whether it over-reached or ran out of credit. Eight
 slabs to a page, because the stage is a fixed 1280 by 720 and does not scroll.
 
+### The pit playing itself
+
+`SERVPIT_ARENA_MODE` is off, and with it off the lever is what starts a round, exactly as it
+always has been. With it on, a worker plays one every `SERVPIT_ROUND_INTERVAL_SECONDS`
+(default 3600) and both lever routes refuse with one sentence, because there is one writer and
+it is not the browser.
+
+```bash
+SERVPIT_ARENA_MODE=true npm run arena     # start it
+touch data/arena-paused                   # pause it, without a restart
+rm data/arena-paused                      # start it again
+curl localhost:3000/api/arena             # what it is doing now
+curl -N localhost:3000/api/arena/stream   # one event per phase change
+```
+
+A round takes about a minute of wall clock when nobody borrows: 10 seconds reading balances,
+34 for six agents to decide in parallel, 11 to settle the entries on chain, and ten for the
+fight itself. Each loan request adds about 16 seconds, because the lender is asked one
+borrower at a time.
+
+Nothing that decides the fight is readable before the fight is being shown. The resolver is
+deterministic, so the seed is the winner, and it stays on the server until the moment the
+fight starts.
+
 ### What a round costs
 
 About a cent of SERV: six agent decisions plus one for every loan the bank is asked about.

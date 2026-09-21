@@ -20,6 +20,9 @@ import { ArenaStore, type ArenaPhase, type ArenaRound, type ArenaState, type Pha
 
 const sleepMs = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
 
+/** Whether an interval produced a round or a reason there was not one. */
+export type ArenaOutcome = "played" | "rested";
+
 export interface LoopOptions {
   ctx: ServerContext;
   store: ArenaStore;
@@ -35,7 +38,7 @@ export interface LoopOptions {
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
   /** Injected by tests. The real one is playArenaRound. */
-  play?: (ctx: ServerContext, store: ArenaStore, nextAt: number) => Promise<void>;
+  play?: (ctx: ServerContext, store: ArenaStore, nextAt: number) => Promise<ArenaOutcome | void>;
 }
 
 /**
@@ -70,8 +73,12 @@ export async function runArenaLoop(options: LoopOptions): Promise<{ played: numb
           counts.rested += 1;
           log.warn("arena resting on funds", { reason: funds.reason });
         } else {
-          await play(ctx, store, nextAt);
-          counts.played += 1;
+          // A round that rests because nobody could cover a seat is not a
+          // round played, and counting it as one would make an empty pit look
+          // busy in the only numbers an operator sees.
+          const outcome = (await play(ctx, store, nextAt)) ?? "played";
+          if (outcome === "rested") counts.rested += 1;
+          else counts.played += 1;
         }
       }
     } catch (e) {
@@ -140,7 +147,7 @@ function failed(store: ArenaStore, reason: string, nextAt: number): void {
  * phase starts: the seed, the log and the placements all decide the winner,
  * and the resolver is deterministic.
  */
-export async function playArenaRound(ctx: ServerContext, store: ArenaStore, nextAt: number): Promise<void> {
+export async function playArenaRound(ctx: ServerContext, store: ArenaStore, nextAt: number): Promise<ArenaOutcome> {
   const flow = ctx.flow;
   const seed = `arena-${Date.now().toString(36)}`;
   const link = (hash: string | null | undefined): string | null => (ctx.chain.settles && hash ? basescanTx(ctx.chain.network, hash) : null);
@@ -238,7 +245,7 @@ export async function playArenaRound(ctx: ServerContext, store: ArenaStore, next
     const current = store.read();
     store.write({ round, last: current.last, paused: current.paused, nextRoundAt: new Date(nextAt).toISOString() });
     log.info("arena rested, nobody entered", { roundId: plan.roundId });
-    return;
+    return "rested";
   }
 
   const run = await runRound(flow, plan, {
@@ -308,6 +315,7 @@ export async function playArenaRound(ctx: ServerContext, store: ArenaStore, next
   const settled = store.read();
   store.write({ round, last: round, paused: settled.paused, nextRoundAt: new Date(nextAt).toISOString() });
   log.info("arena round complete", { roundId: plan.roundId, winner: run.round.placements[0], reconciled: run.reconciliation.ok, durationMs });
+  return "played";
 }
 
 /** Entrant id to display name, for the fight's own nameplates. */
