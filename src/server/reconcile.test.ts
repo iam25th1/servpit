@@ -171,3 +171,62 @@ describe("reconcile with self funded gas", () => {
     expect(() => reconcile(input)).toThrow(RangeError);
   });
 });
+
+describe("the round an agent wins, where the pot pays gas too", () => {
+  const FUNDED = 100_000_000_000_000n;
+  const ENTRY_FEE = 132_252_136_428n;
+  const PAYOUT_FEE = 154_831_917_459n;
+
+  /** Two agents pay in, one of them wins, and the pot sends the prize. */
+  const won = (): ReconcileInput => ({
+    potAddress: "0xpot",
+    before: { "0xpot": FUNDED, "0xa": FUNDED, "0xb": FUNDED },
+    after: {
+      // Took 200 in, paid 500 out, and paid the fee on that payout.
+      "0xpot": FUNDED + 200n - 500n - PAYOUT_FEE,
+      "0xa": FUNDED - 100n + 500n - ENTRY_FEE,
+      "0xb": FUNDED - 100n - ENTRY_FEE,
+    },
+    entries: [
+      { address: "0xa", amountWei: 100n },
+      { address: "0xb", amountWei: 100n },
+    ],
+    payouts: [{ address: "0xa", amountWei: 500n }],
+    feesWei: [
+      { address: "0xa", amountWei: ENTRY_FEE },
+      { address: "0xb", amountWei: ENTRY_FEE },
+      { address: "0xpot", amountWei: PAYOUT_FEE },
+    ],
+    houseContributionWei: 300n,
+    rakeWei: 0n,
+  });
+
+  it("holds when the pot's own fee is accounted for", () => {
+    // Every settled round until now was won by a house bot, so the pot only
+    // ever received and never paid gas. The first agent win came up short by
+    // exactly the payout's fee.
+    expect(reconcile(won()).checks.filter((c) => !c.ok)).toEqual([]);
+  });
+
+  it("still fails when the pot paid out the wrong amount", () => {
+    const input = won();
+    input.after["0xpot"] = FUNDED + 200n - 400n - PAYOUT_FEE;
+    const r = reconcile(input);
+    expect(r.ok).toBe(false);
+    expect(r.checks.filter((c) => !c.ok).map((c) => c.name)).toContain("pot delta");
+  });
+
+  it("still fails when the pot's fee is claimed larger than it was", () => {
+    const input = won();
+    input.feesWei = input.feesWei!.map((f) => (f.address === "0xpot" ? { ...f, amountWei: PAYOUT_FEE + 1n } : f));
+    expect(reconcile(input).checks.filter((c) => !c.ok).map((c) => c.name)).toEqual(["pot delta"]);
+  });
+
+  it("charges the pot nothing on a round it did not pay out", () => {
+    const input = won();
+    input.payouts = [];
+    input.after = { "0xpot": FUNDED + 200n, "0xa": FUNDED - 100n - ENTRY_FEE, "0xb": FUNDED - 100n - ENTRY_FEE };
+    input.feesWei = input.feesWei!.filter((f) => f.address !== "0xpot");
+    expect(reconcile(input).checks.find((c) => c.name === "pot delta")!.ok).toBe(true);
+  });
+});

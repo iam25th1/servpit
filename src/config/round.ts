@@ -50,7 +50,8 @@ export const DEFAULT_ROUND: RoundConfig = {
   damageVariancePct: 20,
   minDamage: 1,
   mode: battleRoyale,
-  stakeTiers: { low: 100, high: 1000 },
+  // Chips. A funded wallet is 100, so a low seat is a tenth of one.
+  stakeTiers: { low: 10, high: 100 },
   stakeTier: "low",
   rakeBps: 0,
 };

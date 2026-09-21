@@ -170,7 +170,13 @@ export async function runRound(ctx: FlowContext, plan: RoundPlan, progress: RunP
     progress.onEntry?.(entrant.agentId, outcome);
   }
 
-  const round = resolveRound(plan.seed, plan.entrants, DEFAULT_ROUND);
+  // The engine's stake must be the same number the chain moved, in chips.
+  // They diverged once and the round collected 60000000000000 wei of entries
+  // and paid out 2400.
+  const round = resolveRound(plan.seed, plan.entrants, {
+    ...DEFAULT_ROUND,
+    stakeTiers: { ...DEFAULT_ROUND.stakeTiers, [DEFAULT_ROUND.stakeTier]: toChips(plan.stakeWei) },
+  });
   const winnerEntrantId = round.placements[0];
   const winnerAgent = plan.entering.find((e) => e.entrantId === winnerEntrantId);
   const prize = round.payouts.find((p) => p.entrantId === winnerEntrantId)?.amount ?? 0;
@@ -204,8 +210,8 @@ export async function runRound(ctx: FlowContext, plan: RoundPlan, progress: RunP
     // deltas are zero on both sides.
     //
     // The fee is charged to the sender: an entry costs the agent, a payout
-    // costs the pot. The pot is not checked per wallet, so its fee is read
-    // and simply never used, which is correct rather than an oversight.
+    // costs the pot. The pot's fee matters on any round it actually pays a
+    // winner, which no settled round did until an agent finally won one.
     feesWei: [
       ...entries.filter((e) => e.applied).map((e) => ({ address: e.from, amountWei: e.feeWei ?? 0n })),
       ...(payout?.applied ? [{ address: payout.from, amountWei: payout.feeWei ?? 0n }] : []),
