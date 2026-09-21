@@ -12,7 +12,6 @@
 // current opportunity. That framing is deliberate; do not rewrite it in
 // wagering language.
 
-import { createHash } from "node:crypto";
 import { toChips } from "@/config/stake";
 import { log } from "../log";
 import type { CostMeter, ServClient } from "../serv/client";
@@ -195,30 +194,9 @@ export function validateDecision(content: string, snapshot: AgentSnapshot): Vali
   return { ok: true, decision: { enter, stake, reason: reason.trim().slice(0, MAX_REASON) } };
 }
 
-/** Deterministic fallback and the strategy for unnamed bots. No SERV call. */
-export function heuristicDecision(snapshot: AgentSnapshot, round: RoundContext): Decision {
-  const p = snapshot.profile;
-  const stake = Number(snapshot.stakeWei);
-  if (snapshot.balanceWei < snapshot.stakeWei * BigInt(p.minBankrollMultiple)) {
-    return { enter: false, stake: 0, reason: `heuristic: balance ${snapshot.balanceWei} is below the ${p.minBankrollMultiple}x allocation floor this posture keeps` };
-  }
-  const last = snapshot.recentOutcomes[snapshot.recentOutcomes.length - 1];
-  let chance = p.baseEnterChance;
-  if (last?.entered) chance += last.netWei > 0n ? p.afterWinShift : p.afterLossShift;
-  if (p.strategy === "opportunist") chance += round.participants >= 24 ? 15 : -15;
-  chance = Math.max(0, Math.min(100, chance));
+import { heuristicDecision } from "./heuristic";
 
-  const digest = createHash("sha256").update(`heuristic/${round.roundId}/${p.id}`).digest();
-  const roll = digest.readUInt16BE(0) % 100;
-  const enter = roll < chance;
-  return {
-    enter,
-    stake: enter ? stake : 0,
-    reason: enter
-      ? `heuristic: ${p.strategy} posture commits at ${chance} percent with ${round.participants} participants`
-      : `heuristic: ${p.strategy} posture holds at ${chance} percent this period`,
-  };
-}
+export { heuristicDecision };
 
 export interface DecisionDeps {
   client?: ServClient;

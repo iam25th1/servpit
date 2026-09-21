@@ -3,12 +3,13 @@
 // so it is idempotent by round id: the same seed and entrant count key the
 // same transfers and a retry never double pays.
 
-import { getServerContext } from "@/server/context";
+import { getSettleContext } from "@/server/settleContext";
 import { basescanAddress } from "@/server/money";
 import { weiPerChip } from "@/config/stake";
 import { toWei } from "@/server/money";
 import { entrantNames } from "@/server/round/entrantNames";
-import { planRound, roundIdFor, runRound } from "@/server/round/flow";
+import { roundIdFor } from "@/server/round/types";
+import { runRound } from "@/server/round/settle";
 import { parseRoundRequest } from "../plan/params";
 
 export const runtime = "nodejs";
@@ -24,7 +25,7 @@ export async function POST(request: Request): Promise<Response> {
   const parsed = parseRoundRequest(body);
   if (!parsed.ok) return Response.json({ error: parsed.error }, { status: 400 });
 
-  const ctx = await getServerContext();
+  const ctx = await getSettleContext();
   const flow = { ...ctx.flow, entrants: parsed.entrants };
 
   // The plan this round was quoted with, if it is still good. Re-planning
@@ -38,7 +39,11 @@ export async function POST(request: Request): Promise<Response> {
     async start(controller) {
       const line = (value: unknown): void => controller.enqueue(encoder.encode(`${JSON.stringify(value)}\n`));
       try {
-        const plan = flow.plans?.get(roundId) ?? (await planRound(flow, parsed.seed));
+        // Strictly the plan that was quoted. This route does not plan, does
+        // not decide and does not call SERV: a guard test asserts it cannot
+        // even import the code that would. A missing plan stops the settle.
+        if (!flow.plans) throw new Error("no plan store, refusing to settle a round that was never quoted");
+        const plan = flow.plans.require(roundId);
         const link = (address: string) => (ctx.chain.settles ? basescanAddress(ctx.chain.network, address) : null);
         const byId = new Map(plan.decisions.map((d) => [d.agentId, d.name]));
 
