@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createBalanceReader, ViemChain, type BalanceReader, type WalletProviderLike } from "./viem";
+import { createBalanceReader, ViemChain, type ChainReader, type WalletProviderLike } from "./viem";
 
 const KEY_A = ("0x" + "11".repeat(32)) as `0x${string}`;
 const KEY_B = ("0x" + "22".repeat(32)) as `0x${string}`;
@@ -23,18 +23,21 @@ function stubProvider(address: string, balance = 1_000_000n) {
 }
 
 /** Balances come from the fallback reader now, not from AgentKit's provider. */
-const stubReader = (balances: Record<string, bigint>): BalanceReader & { calls: number } => {
+const stubReader = (balances: Record<string, bigint>): ChainReader & { calls: number } => {
   const reader = {
     calls: 0,
     async readBalances(addresses: readonly string[]) {
       reader.calls += 1;
       return addresses.map((a) => balances[a] ?? 0n);
     },
+    async checkBroadcast() {
+      return { state: "dropped" } as const;
+    },
   };
   return reader;
 };
 
-const chainWith = (providers: Record<string, WalletProviderLike>, keys: Record<string, `0x${string}`> = { atlas: KEY_A, pot: KEY_B }, reader?: BalanceReader) =>
+const chainWith = (providers: Record<string, WalletProviderLike>, keys: Record<string, `0x${string}`> = { atlas: KEY_A, pot: KEY_B }, reader?: ChainReader) =>
   new ViemChain(
     { keys, rpcUrls: ["https://example.invalid"] },
     (walletId) => {
@@ -92,7 +95,7 @@ describe("ViemChain wiring", () => {
 describe("ViemChain balances and transfers", () => {
   it("reads the balance from the chain every time, never from a cached copy", async () => {
     let balance = 500n;
-    const chain = chainWith({ atlas: stubProvider(ADDR_A).provider }, { atlas: KEY_A }, { readBalances: async (a) => a.map(() => balance) });
+    const chain = chainWith({ atlas: stubProvider(ADDR_A).provider }, { atlas: KEY_A }, { readBalances: async (a: readonly string[]) => a.map(() => balance), checkBroadcast: async () => ({ state: "dropped" }) as const });
     const wallet = await chain.open("atlas");
     expect(await wallet.getBalance()).toBe(500n);
     balance = 900n;

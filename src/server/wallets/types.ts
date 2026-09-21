@@ -20,6 +20,26 @@ export interface TxReceipt {
   feeWei: bigint;
 }
 
+/**
+ * What the chain knows about a transaction this system broadcast.
+ *
+ * The distinction that matters is between "we do not know" and "it is gone".
+ * Resending on the first is how a transfer gets paid twice.
+ */
+export type BroadcastState =
+  | { state: "mined"; receipt: TxReceipt }
+  | { state: "reverted"; txHash: string }
+  /** In a mempool. It can still land, so it must not be replaced. */
+  | { state: "pending" }
+  /**
+   * Not mined, not in any mempool this chain can see, and the sender has
+   * nothing queued. As settled as an RPC can make it, and the only state in
+   * which a resend is allowed.
+   */
+  | { state: "dropped" }
+  /** Unknown to the chain while the sender still has work queued. Never resend. */
+  | { state: "unknown" };
+
 export interface Wallet {
   readonly id: string;
   readonly address: string;
@@ -29,8 +49,17 @@ export interface Wallet {
    * Sends the calls and resolves once they are on chain. A smart wallet could
    * batch them; an externally owned account sends them in order. The receipt
    * describes the last one.
+   *
+   * onBroadcast fires with the hash the moment the transaction is accepted by
+   * the node, before the wait for its receipt. A receipt wait that times out
+   * must not lose the hash: without it the caller cannot tell a transfer that
+   * landed from one that never left, and resending is a double payment.
    */
-  send(calls: readonly Call[], idempotencyKey: string): Promise<TxReceipt>;
+  send(calls: readonly Call[], idempotencyKey: string, onBroadcast?: (txHash: string) => void): Promise<TxReceipt>;
+  /** Waits again for a transaction already broadcast. */
+  awaitReceipt(txHash: string): Promise<TxReceipt>;
+  /** What became of a transaction this wallet broadcast. */
+  checkBroadcast(txHash: string): Promise<BroadcastState>;
 }
 
 export interface Chain {
@@ -58,4 +87,5 @@ export interface Chain {
 }
 
 export const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
+export const TX_HASH = /^0x[0-9a-fA-F]{64}$/;
 export const WALLET_ID = /^[A-Za-z0-9_-]{1,64}$/;

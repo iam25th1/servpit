@@ -17,7 +17,7 @@ import { baseSepolia } from "viem/chains";
 import { DEFAULT_RPC_URLS } from "@/config/rpc";
 import { log } from "../log";
 import { guardAgentKitAnalytics } from "./analyticsGuard";
-import { ADDRESS, WALLET_ID, type Call, type Chain, type TxReceipt, type Wallet } from "./types";
+import { ADDRESS, TX_HASH, WALLET_ID, type BroadcastState, type Call, type Chain, type TxReceipt, type Wallet } from "./types";
 
 type Hex = `0x${string}`;
 
@@ -105,10 +105,15 @@ export interface ViemChainConfig {
 export type ProviderFactory = (walletId: string, privateKey: Hex, rpcUrl?: string) => WalletProviderLike;
 
 /** The slice of a viem public client this module uses, so tests can stub it. */
-export interface BalanceReader {
+export interface ChainReader {
   /** One entry per address, in order. null where the chain could not answer. */
   readBalances(addresses: readonly string[]): Promise<Array<bigint | null>>;
+  /** What became of a transaction, read through the same fallback endpoints. */
+  checkBroadcast(txHash: string, from: string): Promise<BroadcastState>;
 }
+
+/** @deprecated kept so an existing import keeps compiling. */
+export type BalanceReader = ChainReader;
 
 /**
  * Reads balances through every endpoint in turn.
@@ -133,6 +138,38 @@ export function createBalanceReader(rpcUrls: readonly string[] = DEFAULT_RPC_URL
   }) as PublicClient;
 
   return {
+    /**
+     * What became of a transaction we broadcast.
+     *
+     * A receipt settles it. A transaction the chain still knows about is
+     * pending and must be left alone. Absent from both, the sender's queue
+     * decides: nothing queued means nothing of ours can still land, which is
+     * the only case where a resend is allowed. Anything else is unknown, and
+     * unknown is never a licence to send the same money again.
+     */
+    async checkBroadcast(txHash, from) {
+      try {
+        const receipt = await client.getTransactionReceipt({ hash: txHash as Hex });
+        if (receipt.status === "success") {
+          return { state: "mined", receipt: { txHash: receipt.transactionHash, status: "complete", feeWei: feeFromReceipt(receipt as unknown as ChainReceipt) } };
+        }
+        return { state: "reverted", txHash: receipt.transactionHash };
+      } catch {
+        // No receipt yet. Not an answer on its own.
+      }
+      try {
+        await client.getTransaction({ hash: txHash as Hex });
+        return { state: "pending" };
+      } catch {
+        // Unknown to the chain.
+      }
+      const [mined, queued] = await Promise.all([
+        client.getTransactionCount({ address: from as Hex, blockTag: "latest" }),
+        client.getTransactionCount({ address: from as Hex, blockTag: "pending" }),
+      ]);
+      return mined === queued ? { state: "dropped" } : { state: "unknown" };
+    },
+
     async readBalances(addresses) {
       if (addresses.length === 0) return [];
       // allowFailure, so one address the chain will not answer for costs that
@@ -171,13 +208,13 @@ export class ViemChain implements Chain {
    */
   readonly gasReserveWei: bigint;
   private readonly providers = new Map<string, WalletProviderLike>();
-  private readonly reader: BalanceReader;
+  private readonly reader: ChainReader;
   private readonly rpcUrls: readonly string[];
 
   constructor(
     private readonly config: ViemChainConfig,
     private readonly factory: ProviderFactory = defaultFactory,
-    reader?: BalanceReader,
+    reader?: ChainReader,
   ) {
     this.gasReserveWei = config.gasReserveWei ?? DEFAULT_GAS_RESERVE_WEI;
     this.rpcUrls = config.rpcUrls && config.rpcUrls.length > 0 ? config.rpcUrls : DEFAULT_RPC_URLS;
@@ -218,7 +255,7 @@ export class ViemChain implements Chain {
         if (balance === undefined) throw new Error(`could not read the balance of ${walletAddress}`);
         return balance;
       },
-      send: async (calls: readonly Call[], idempotencyKey: string): Promise<TxReceipt> => {
+      send: async (calls: readonly Call[], idempotencyKey: string, onBroadcast?: (txHash: string) => void): Promise<TxReceipt> => {
         for (const call of calls) {
           if (!ADDRESS.test(call.to)) throw new RangeError(`transfer destination must be an address, got ${call.to}`);
         }
@@ -228,6 +265,11 @@ export class ViemChain implements Chain {
         let last: TxReceipt | undefined;
         for (const call of calls) {
           const hash = await provider.sendTransaction({ to: call.to as Hex, value: call.value, data: call.data });
+          // Reported before the wait, not after. The wait can time out against
+          // a transaction that is already in a block, and a hash lost that way
+          // leaves the caller unable to tell a transfer that landed from one
+          // that never left.
+          onBroadcast?.(hash);
           const receipt = await provider.waitForTransactionReceipt(hash);
           if (receipt.status !== "success") {
             throw new Error(`transaction ${hash} ${receipt.status} for ${idempotencyKey}`);
@@ -236,6 +278,19 @@ export class ViemChain implements Chain {
         }
         if (!last) throw new RangeError("send needs at least one call");
         return last;
+      },
+      awaitReceipt: async (txHash: string): Promise<TxReceipt> => {
+        if (!TX_HASH.test(txHash)) throw new RangeError("txHash must be 32 bytes of hex");
+        const receipt = await provider.waitForTransactionReceipt(txHash as Hex);
+        if (receipt.status !== "success") throw new Error(`transaction ${txHash} ${receipt.status}`);
+        return { txHash: receipt.transactionHash, status: "complete", feeWei: feeFromReceipt(receipt) };
+      },
+      checkBroadcast: async (txHash: string): Promise<BroadcastState> => {
+        if (!TX_HASH.test(txHash)) throw new RangeError("txHash must be 32 bytes of hex");
+        // Through the fallback reader, not through AgentKit's single endpoint.
+        // Deciding whether money already moved is the last read that should
+        // depend on one host answering.
+        return this.reader.checkBroadcast(txHash, walletAddress);
       },
     };
   }

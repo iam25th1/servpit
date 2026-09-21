@@ -5,12 +5,18 @@
 
 import { createHash } from "node:crypto";
 import { sumWei } from "../money";
-import { ADDRESS, WALLET_ID, type Chain, type TxReceipt, type Wallet } from "./types";
+import { ADDRESS, TX_HASH, WALLET_ID, type Chain, type TxReceipt, type Wallet } from "./types";
 
 export interface FakeChainOptions {
   initialBalanceWei?: bigint;
   /** Lets a test exercise the gas reserve path without a real chain. */
   gasReserveWei?: bigint;
+  /**
+   * Makes the wait for a receipt fail after the transaction has been
+   * broadcast, which is the case a real chain produces on a slow endpoint and
+   * the one that used to lose the hash.
+   */
+  receiptWaitFails?: (txHash: string) => boolean;
 }
 
 export class FakeChain implements Chain {
@@ -26,7 +32,10 @@ export class FakeChain implements Chain {
   private readonly receipts = new Map<string, TxReceipt>();
   private readonly initial: bigint;
 
-  constructor(options: FakeChainOptions = {}) {
+  /** Transactions broadcast but whose receipt wait was made to fail. */
+  private readonly broadcast = new Map<string, TxReceipt>();
+
+  constructor(private readonly options: FakeChainOptions = {}) {
     this.initial = options.initialBalanceWei ?? 0n;
     this.gasReserveWei = options.gasReserveWei ?? 0n;
   }
@@ -43,7 +52,7 @@ export class FakeChain implements Chain {
         this.balanceReads++;
         return this.balances.get(addr) ?? 0n;
       },
-      send: async (calls, idempotencyKey) => {
+      send: async (calls, idempotencyKey, onBroadcast) => {
         const seen = this.receipts.get(idempotencyKey);
         if (seen) return seen;
         const total = sumWei(calls.map((c) => c.value));
@@ -52,13 +61,32 @@ export class FakeChain implements Chain {
         this.balances.set(addr, balance - total);
         for (const c of calls) this.balances.set(c.to, (this.balances.get(c.to) ?? 0n) + c.value);
         this.applied++;
-        const digest = createHash("sha256").update(`fake-tx/${idempotencyKey}`).digest("hex");
+        // Every resend of the same idempotency key would be a different
+        // transaction on a real chain, so the hash varies with how many times
+        // this wallet has actually broadcast.
+        const digest = createHash("sha256").update(`fake-tx/${idempotencyKey}/${this.applied}`).digest("hex");
         // The fake chain charges nothing, so a wallet's balance delta is its
         // stake movement exactly, which is what it was on the real chain too
         // until agents stopped being sponsored.
         const receipt: TxReceipt = { txHash: `0x${digest.slice(0, 64)}`, status: "complete", feeWei: 0n };
+        onBroadcast?.(receipt.txHash);
+        this.broadcast.set(receipt.txHash, receipt);
+        if (this.options.receiptWaitFails?.(receipt.txHash)) {
+          throw new Error("The request took too long to respond. Details: The request timed out.");
+        }
         this.receipts.set(idempotencyKey, receipt);
         return receipt;
+      },
+      awaitReceipt: async (txHash) => {
+        const receipt = this.broadcast.get(txHash);
+        if (!receipt) throw new Error(`no transaction ${txHash}`);
+        if (this.options.receiptWaitFails?.(txHash)) throw new Error("The request took too long to respond. Details: The request timed out.");
+        return receipt;
+      },
+      checkBroadcast: async (txHash) => {
+        if (!TX_HASH.test(txHash)) throw new RangeError("txHash must be 32 bytes of hex");
+        const receipt = this.broadcast.get(txHash);
+        return receipt ? { state: "mined", receipt } : { state: "dropped" };
       },
     };
   }
