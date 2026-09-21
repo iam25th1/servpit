@@ -485,7 +485,7 @@ export function GameShell(props: GameShellProps) {
             {transferRows(run.transfers).map((row) => (
               <li key={`${row.kind}-${row.label}`} className={styles.transferRow} data-transfer-row="">
                 <span className={styles.transferLabel}>{row.label}</span>
-                <span className={styles.transferAmount}>{row.amountWei}</span>
+                <span className={styles.transferAmount}>{chips(BigInt(row.amountWei))}</span>
                 {row.explorable ? (
                   <a className={styles.transferHash} href={row.link ?? undefined} target="_blank" rel="noreferrer">
                     {row.hashShort}
