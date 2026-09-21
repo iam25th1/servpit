@@ -9,6 +9,7 @@ import {
   seize,
   totalDebt,
   wreckReason,
+  fundStake,
   type Agent,
   type EconomyConfig,
 } from "./rules";
@@ -19,6 +20,7 @@ const config = (overrides: Partial<EconomyConfig> = {}): EconomyConfig => ({
   maxPrincipalWei: 500n,
   maxTreasuryShareBps: 2_500,
   interestBps: 1_000,
+  maxLoanWei: 500n,
   debtCeilingWei: 600n,
   stakeWei: 10n,
   replacementDebtWei: 0n,
@@ -273,5 +275,100 @@ describe("the module is pure", () => {
     applyWinnings(before, 500n);
     seize(before);
     expect(before).toEqual(snapshot);
+  });
+});
+
+describe("fundStake", () => {
+  const rich = (): Agent => agent({ balanceWei: 100n, debt: NO_DEBT });
+
+  it("needs no loan when the balance already covers the stake exactly", () => {
+    const a = agent({ balanceWei: 30n, debt: NO_DEBT });
+    const r = fundStake(config(), 1_000n, a, 30n);
+    expect(r.funded).toBe(true);
+    if (!r.funded) return;
+    expect(r.loanWei).toBe(0n);
+    expect(r.agent).toBe(a);
+    expect(r.treasuryWei).toBe(1_000n);
+    expect(totalDebt(r.agent.debt)).toBe(0n);
+  });
+
+  it("borrows exactly one chip for a stake one chip over the balance", () => {
+    const a = agent({ balanceWei: 30n, debt: NO_DEBT });
+    const r = fundStake(config({ minLoanWei: 1n }), 1_000n, a, 31n);
+    expect(r.funded).toBe(true);
+    if (!r.funded) return;
+    expect(r.loanWei).toBe(1n);
+    expect(r.agent.balanceWei).toBe(31n);
+    expect(r.agent.debt.principalWei).toBe(1n);
+    expect(r.treasuryWei).toBe(999n);
+  });
+
+  it("lends to an agent that is not broke, which is the whole point", () => {
+    // Credit used to happen only when a balance could not cover a seat. An
+    // agent with a hundred chips putting up three hundred is confident, not
+    // cornered.
+    const r = fundStake(config({ maxLoanWei: 500n, maxPrincipalWei: 500n, debtCeilingWei: 600n }), 1_000n, rich(), 300n);
+    expect(r.funded).toBe(true);
+    if (!r.funded) return;
+    expect(r.loanWei).toBe(200n);
+    expect(r.agent.balanceWei).toBe(300n);
+  });
+
+  it("refuses a loan that would put the agent over the ceiling, before writing it", () => {
+    const a = agent({ balanceWei: 0n, debt: { principalWei: 550n, interestWei: 0n } });
+    const r = fundStake(config({ maxLoanWei: 500n, maxPrincipalWei: 1_000n, debtCeilingWei: 600n }), 10_000n, a, 100n);
+    expect(r.funded).toBe(false);
+    if (r.funded) return;
+    expect(r.reason).toBe("the loan would breach the debt ceiling");
+    // Nothing partially applied.
+    expect(r.agent).toBe(a);
+    expect(r.treasuryWei).toBe(10_000n);
+  });
+
+  it("refuses a single advance above the loan limit", () => {
+    const r = fundStake(config({ maxLoanWei: 50n }), 10_000n, rich(), 200n);
+    expect(r.funded).toBe(false);
+    if (r.funded) return;
+    expect(r.reason).toBe("above the single loan limit");
+  });
+
+  it("refuses rather than half funding a stake the bank cannot cover", () => {
+    // A quarter of 100 is 25, and the agent needs 200. A smaller loan is not
+    // the stake it asked for.
+    const r = fundStake(config({ maxLoanWei: 500n, maxPrincipalWei: 500n, debtCeilingWei: 600n }), 100n, rich(), 300n);
+    expect(r.funded).toBe(false);
+    if (r.funded) return;
+    expect(r.reason).toBe("the bank cannot cover the whole stake");
+    expect(r.treasuryWei).toBe(100n);
+  });
+
+  it("passes the bank's own refusal through", () => {
+    const r = fundStake(config({ maxLoanWei: 500n }), 0n, rich(), 300n);
+    expect(r.funded).toBe(false);
+    if (r.funded) return;
+    expect(r.reason).toBe("treasury cannot cover the minimum");
+  });
+
+  it("leaves a losing leveraged agent owing the principal and then the interest", () => {
+    // The stake is gone, the loan is not, and the next round charges for it.
+    const terms = config({ maxLoanWei: 500n, maxPrincipalWei: 500n, debtCeilingWei: 600n, interestBps: 1_000 });
+    const funded = fundStake(terms, 1_000n, rich(), 300n);
+    expect(funded.funded).toBe(true);
+    if (!funded.funded) return;
+
+    // Loses the round: the stake leaves and nothing comes back.
+    const lost: Agent = { ...funded.agent, balanceWei: funded.agent.balanceWei - 300n };
+    expect(lost.balanceWei).toBe(0n);
+    expect(totalDebt(lost.debt)).toBe(200n);
+
+    const charged = accrueInterest(terms, lost);
+    expect(charged.debt.interestWei).toBe(20n);
+    expect(totalDebt(charged.debt)).toBe(220n);
+    expect(charged.balanceWei).toBe(0n);
+  });
+
+  it("refuses a stake of nothing or a negative treasury", () => {
+    expect(() => fundStake(config(), 1_000n, rich(), 0n)).toThrow(/greater than zero/);
+    expect(() => fundStake(config(), -1n, rich(), 10n)).toThrow(/non negative/);
   });
 });

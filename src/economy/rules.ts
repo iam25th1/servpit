@@ -18,6 +18,14 @@ export interface EconomyConfig {
   maxTreasuryShareBps: number;
   /** Simple interest per round on outstanding principal, in basis points. */
   interestBps: number;
+  /**
+   * Most one loan may be, whatever the agent asks for.
+   *
+   * Separate from maxPrincipalWei, which is the total an agent may owe. This
+   * bounds a single advance, so one confident round cannot put an agent at
+   * its ceiling in a single step.
+   */
+  maxLoanWei: bigint;
   /** Total debt above this wrecks the agent. */
   debtCeilingWei: bigint;
   /** What a seat costs. An agent holding less than this cannot play. */
@@ -206,4 +214,55 @@ export function replacementAgent(config: EconomyConfig, id: string, fundingWei: 
   assertMinor(fundingWei, "fundingWei");
   assertMinor(config.replacementDebtWei, "replacementDebtWei");
   return { id, balanceWei: fundingWei, debt: { principalWei: config.replacementDebtWei, interestWei: 0n } };
+}
+
+export type StakeDenial = LoanDenial | "the loan would breach the debt ceiling" | "above the single loan limit" | "the bank cannot cover the whole stake";
+
+export type StakeFunding =
+  | { funded: true; loanWei: bigint; agent: Agent; treasuryWei: bigint }
+  | { funded: false; reason: StakeDenial; agent: Agent; treasuryWei: bigint };
+
+/**
+ * Funds a stake an agent has chosen, borrowing the difference if it has to.
+ *
+ * This is the change that makes credit something an agent uses rather than
+ * something it falls into. Borrowing used to happen only when a balance could
+ * not cover a seat, which measured 10 to 18 loans in 2000 rounds: agents
+ * almost never ended up broke enough to ask. An agent that wants to put up
+ * more than it holds asks for the difference, and it asks because it is
+ * confident rather than because it is cornered.
+ *
+ * It stays two sided. The agent names the stake, and every bound here belongs
+ * to the bank: the single loan limit, the principal ceiling inside
+ * originateLoan, the share of the treasury one loan may take, and the debt
+ * ceiling checked below.
+ *
+ * Nothing is partially applied. A denial returns the agent and the treasury
+ * exactly as they came in, and a loan that cannot cover the whole stake is a
+ * denial rather than a smaller loan, because a stake half funded is not a
+ * stake the agent asked for.
+ */
+export function fundStake(config: EconomyConfig, treasuryWei: bigint, agent: Agent, stakeWei: bigint): StakeFunding {
+  assertMinor(treasuryWei, "treasuryWei");
+  assertMinor(stakeWei, "stakeWei");
+  assertMinor(config.maxLoanWei, "maxLoanWei");
+  if (stakeWei === 0n) throw new RangeError("stakeWei must be greater than zero");
+
+  const deny = (reason: StakeDenial): StakeFunding => ({ funded: false, reason, agent, treasuryWei });
+
+  const shortfallWei = stakeWei - agent.balanceWei;
+  if (shortfallWei <= 0n) return { funded: true, loanWei: 0n, agent, treasuryWei };
+
+  if (shortfallWei > config.maxLoanWei) return deny("above the single loan limit");
+
+  // Refused before it is written. A loan that puts an agent over the ceiling
+  // wrecks it on arrival, which is a death sentence with a loan agreement
+  // attached rather than credit.
+  if (totalDebt(agent.debt) + shortfallWei > config.debtCeilingWei) return deny("the loan would breach the debt ceiling");
+
+  const outcome = originateLoan(config, treasuryWei, agent, shortfallWei);
+  if (!outcome.approved) return deny(outcome.reason);
+  if (outcome.amountWei < shortfallWei) return deny("the bank cannot cover the whole stake");
+
+  return { funded: true, loanWei: outcome.amountWei, agent: outcome.agent, treasuryWei: outcome.treasuryWei };
 }
