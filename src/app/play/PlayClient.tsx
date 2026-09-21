@@ -31,7 +31,7 @@ import { BootScreen } from "./screens/BootScreen";
 import { TitleScreen } from "./screens/TitleScreen";
 import { GameShell } from "./screens/GameShell";
 import type { EntryShape } from "./screens/GameShell";
-import type { DecidedShape } from "./screens/lineupRows";
+import type { DecidedShape, OccupantShape } from "./screens/lineupRows";
 import { UiKitProvider } from "@/ui/UiKit";
 import { createResponsiveScope, playTransition } from "@/ui/transitions";
 import { Stage } from "@/ui/Stage";
@@ -357,8 +357,9 @@ export function PlayClient({ bankEnabled = false }: { bankEnabled?: boolean } = 
       let streamError: string | null = null;
       try {
         await readNdjson(response, (value) => {
-          const line = value as { type?: string; decision?: unknown; plan?: unknown; message?: string; error?: string };
-          if (line.type === "decision") dispatch({ type: "agentDecided", decision: line.decision });
+          const line = value as { type?: string; decision?: unknown; occupants?: unknown; plan?: unknown; message?: string; error?: string };
+          if (line.type === "occupants") dispatch({ type: "occupantsKnown", occupants: (line.occupants as unknown[]) ?? [] });
+          else if (line.type === "decision") dispatch({ type: "agentDecided", decision: line.decision });
           else if (line.type === "plan") dispatch({ type: "planLoaded", plan: line.plan });
           // The server sends a sentence written for the player. Anything else
           // on this line is not shown.
@@ -567,6 +568,7 @@ export function PlayClient({ bankEnabled = false }: { bankEnabled?: boolean } = 
             leverNote={leverNote}
             arena={arena}
             decided={state.decided as DecidedShape[]}
+            occupants={state.occupants as OccupantShape[]}
             entries={state.entries as EntryShape[]}
             slotCanvasRef={slotCanvasRef}
             arenaCanvasRef={arenaCanvasRef}

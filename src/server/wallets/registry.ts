@@ -2,8 +2,7 @@
 // restarts. Addresses only: no keys, no secrets, nothing an attacker could
 // use. Written atomically.
 
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { StoreFile, UNKNOWN_NETWORK } from "../store/file";
 import { ADDRESS, WALLET_ID } from "./types";
 
 export interface WalletRecord {
@@ -12,30 +11,32 @@ export interface WalletRecord {
   createdAt?: string;
 }
 
-interface FileShape {
-  version: 1;
-  wallets: Record<string, WalletRecord>;
-}
-
 export class WalletRegistry {
   private wallets: Record<string, WalletRecord> = {};
+  private readonly sync: StoreFile;
 
-  constructor(private readonly file: string) {
-    if (existsSync(file)) {
-      const parsed = JSON.parse(readFileSync(file, "utf8")) as Partial<FileShape>;
-      if (parsed && typeof parsed === "object" && parsed.wallets && typeof parsed.wallets === "object") {
-        for (const [id, rec] of Object.entries(parsed.wallets)) {
-          if (WALLET_ID.test(id) && rec && ADDRESS.test(rec.address) && typeof rec.network === "string") this.wallets[id] = rec;
-        }
-      }
+  /** Both contexts open wallets, so both write this file. */
+  constructor(file: string, network: string = UNKNOWN_NETWORK) {
+    this.sync = new StoreFile(file, network, (body) => this.load(body));
+    this.sync.read();
+  }
+
+  private load(body: Record<string, unknown> | null): void {
+    this.wallets = {};
+    const stored = body?.wallets;
+    if (!stored || typeof stored !== "object") return;
+    for (const [id, rec] of Object.entries(stored as Record<string, WalletRecord>)) {
+      if (WALLET_ID.test(id) && rec && ADDRESS.test(rec.address) && typeof rec.network === "string") this.wallets[id] = rec;
     }
   }
 
   get(id: string): WalletRecord | undefined {
+    this.sync.read();
     return Object.prototype.hasOwnProperty.call(this.wallets, id) ? this.wallets[id] : undefined;
   }
 
   all(): Record<string, WalletRecord> {
+    this.sync.read();
     return { ...this.wallets };
   }
 
@@ -43,15 +44,12 @@ export class WalletRegistry {
     if (!WALLET_ID.test(id)) throw new RangeError(`wallet id must match ${WALLET_ID}`);
     if (!ADDRESS.test(record.address)) throw new RangeError("address must be 20 bytes of hex");
     if (typeof record.network !== "string" || record.network.length < 1) throw new RangeError("network must be a string");
+    this.sync.read();
     this.wallets[id] = { address: record.address, network: record.network, createdAt: new Date().toISOString() };
     this.flush();
   }
 
   private flush(): void {
-    mkdirSync(dirname(this.file), { recursive: true });
-    const body: FileShape = { version: 1, wallets: this.wallets };
-    const tmp = `${this.file}.tmp`;
-    writeFileSync(tmp, JSON.stringify(body, null, 2) + "\n");
-    renameSync(tmp, this.file);
+    this.sync.write({ version: 1, wallets: this.wallets });
   }
 }

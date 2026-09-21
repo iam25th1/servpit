@@ -49,6 +49,12 @@ export interface FlowContext {
   bankroll: BankrollCache;
   meter: CostMeter;
   serv?: ServClient;
+  /**
+   * The file that says a settle is running. Optional so a test context can
+   * leave it out and run without the lock; every context that serves a player
+   * sets it.
+   */
+  settleLockFile?: string;
   entrants: number;
 }
 
@@ -135,7 +141,7 @@ export interface RoundRun {
   /** What the bank took off them. */
   seizures: TransferOutcome[];
   /** Who took each emptied seat, and what the operator put in it. */
-  replacements: Array<{ walletId: string; identityId: string; name: string; face: string | null; fundedWei: bigint; outcome: TransferOutcome | null }>;
+  replacements: Array<{ walletId: string; identityId: string; name: string; face: string | null; occupantId: string; fundedWei: bigint; outcome: TransferOutcome | null }>;
   payout: TransferOutcome | null;
   /**
    * Set when a house bot won. Eighteen of the twenty four entrants have no

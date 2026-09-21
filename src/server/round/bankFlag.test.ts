@@ -21,9 +21,10 @@ import { RolloverStore } from "./rollover";
 import { DebtStore } from "./debt";
 import { WreckStore } from "./wrecks";
 import { RoundStore } from "./store";
-import { planRound, runRound } from "./flow";
+import { planRound, runRound, seatOccupants } from "./flow";
 import { TAPPED_OUT } from "./plan";
 import { overReached } from "./wrecks";
+import { NAMED_AGENTS } from "@/config/agents";
 import { ORIGINAL_FACES, REPLACEMENTS } from "@/config/replacements";
 import { totalOwed } from "./debt";
 
@@ -609,6 +610,36 @@ describe("replacement", () => {
       expect(ORIGINAL_FACES).not.toContain(r.face);
     }
     expect(run.reconciliation.ok).toBe(true);
+  });
+
+  it("gives every emptied seat a different occupant, so no two share a face", async () => {
+    // Six seats emptied in one round used to produce six of the same person:
+    // the pool was walked by generation, and every seat was on generation two.
+    const { ctx } = await doomed();
+    const run = await runRound(ctx, await planRound(ctx, "refill"));
+
+    expect(new Set(run.replacements.map((r) => r.occupantId)).size).toBe(run.replacements.length);
+    expect(new Set(run.replacements.map((r) => r.name)).size).toBe(run.replacements.length);
+    expect(new Set(run.replacements.map((r) => r.face)).size).toBe(run.replacements.length);
+  });
+
+  it("shows the replacement in the next round's lineup, never the agent it replaced", async () => {
+    const { ctx } = await doomed();
+    const dead = await planRound(ctx, "refill");
+    const run = await runRound(ctx, dead);
+    const replaced = new Map(run.replacements.map((r) => [r.walletId, r]));
+
+    const next = await planRound(ctx, "after-refill");
+    for (const decision of next.decisions) {
+      const heir = replaced.get(decision.agentId)!;
+      expect(decision.name).toBe(heir.name);
+      expect(decision.face).toBe(heir.face);
+      expect(NAMED_AGENTS.some((original) => original.id === decision.agentId && original.name === decision.name)).toBe(false);
+    }
+    // And the same thing the lineup panel is handed before anybody decides.
+    const seated = seatOccupants(ctx);
+    expect(new Set(seated.map((s) => s.face)).size).toBe(seated.length);
+    for (const seat of seated) expect(seat.name).toBe(replaced.get(seat.agentId)!.name);
   });
 
   it("never lets a new agent inherit a dead one's debt", async () => {

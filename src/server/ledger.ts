@@ -5,8 +5,7 @@
 // key as the second net. A key can never be reused for a different amount,
 // destination or party.
 
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { StoreFile, UNKNOWN_NETWORK } from "./store/file";
 import type { TransferKind } from "./idempotency";
 import { log, redact } from "./log";
 import { assertWei } from "./money";
@@ -37,6 +36,23 @@ export interface TransferRecord {
   /** Only set by records written before the wallet layer moved to plain accounts. */
   userOpHash?: string;
   txHash?: string;
+  /**
+   * The nonce this transfer was sent under, read before it was sent.
+   *
+   * What makes a resend safe. One transaction per nonce can ever mine, so
+   * sending the same transfer again under the same nonce either replaces the
+   * original or loses to it, and the money moves once either way. Absent on a
+   * record written before nonces were kept, and on a transfer that never
+   * reached the point of being sent.
+   */
+  nonce?: number;
+  /**
+   * Every hash this transfer has been broadcast as, oldest first.
+   *
+   * A resend under the same nonce produces a second hash, and either of them
+   * can be the one that mines. Both have to be asked about.
+   */
+  hashes?: string[];
   /**
    * Fee the sender paid, from the receipt. Absent on a record written before
    * fees were tracked, and zero on a chain that does not charge.
@@ -71,35 +87,37 @@ export interface TransferInput {
 // bigint has no JSON form, so both amounts persist as decimal strings.
 type Stored = Omit<TransferRecord, "amountWei" | "feeWei"> & { amountWei: string; feeWei?: string };
 
-interface FileShape {
-  version: 1;
-  transfers: Record<string, Stored>;
-}
-
 export class TransferLedger {
   private records = new Map<string, TransferRecord>();
+  private readonly sync: StoreFile;
 
-  constructor(private readonly file: string) {
-    if (existsSync(file)) {
-      const parsed = JSON.parse(readFileSync(file, "utf8")) as Partial<FileShape>;
-      for (const stored of Object.values(parsed.transfers ?? {})) {
-        if (stored && typeof stored.key === "string" && /^\d+$/.test(stored.amountWei)) {
-          this.records.set(stored.key, {
-            ...stored,
-            amountWei: BigInt(stored.amountWei),
-            feeWei: stored.feeWei === undefined ? undefined : BigInt(stored.feeWei),
-          });
-        }
+  constructor(file: string, network: string = UNKNOWN_NETWORK) {
+    this.sync = new StoreFile(file, network, (body) => this.load(body));
+    this.sync.read();
+  }
+
+  private load(body: Record<string, unknown> | null): void {
+    this.records = new Map();
+    const stored = (body?.transfers ?? {}) as Record<string, Stored>;
+    for (const record of Object.values(stored)) {
+      if (record && typeof record.key === "string" && /^\d+$/.test(record.amountWei)) {
+        this.records.set(record.key, {
+          ...record,
+          amountWei: BigInt(record.amountWei),
+          feeWei: record.feeWei === undefined ? undefined : BigInt(record.feeWei),
+        });
       }
     }
   }
 
   get(key: string): TransferRecord | undefined {
+    this.sync.read();
     const r = this.records.get(key);
     return r ? { ...r } : undefined;
   }
 
   forRound(roundId: string): TransferRecord[] {
+    this.sync.read();
     return [...this.records.values()].filter((r) => r.roundId === roundId).map((r) => ({ ...r }));
   }
 
@@ -112,6 +130,7 @@ export class TransferLedger {
    * principal advanced and nothing has yet reduced it.
    */
   principalOwed(agentId: string): bigint {
+    this.sync.read();
     let owed = 0n;
     for (const r of this.records.values()) {
       if (r.kind === "loan" && r.agentId === agentId && r.status === "complete") owed += r.amountWei;
@@ -121,6 +140,7 @@ export class TransferLedger {
 
   /** Every loan settled to an agent, oldest first. */
   loansFor(agentId: string): TransferRecord[] {
+    this.sync.read();
     return [...this.records.values()].filter((r) => r.kind === "loan" && r.agentId === agentId).map((r) => ({ ...r }));
   }
 
@@ -129,6 +149,10 @@ export class TransferLedger {
     if (input.amountWei === 0n) throw new RangeError("amountWei must be greater than zero");
     if (!ADDRESS.test(input.to)) throw new RangeError("to must be an address");
 
+    // Whatever is on file now. A settle in another process may have written
+    // this very key, and resending money on a stale copy is the failure this
+    // ledger exists to prevent.
+    this.sync.read();
     const existing = this.records.get(input.key);
     if (existing) {
       const same =
@@ -172,19 +196,44 @@ export class TransferLedger {
     record.status = "pending";
     record.error = undefined;
     record.updatedAt = now;
+    // The nonce this will go out under, read before anything is sent and
+    // written down with the record. A resend needs it, and reading it after
+    // the fact means a process that dies at the wrong moment can never
+    // establish which slot the money is in.
+    //
+    // A record that already has one keeps it: this is the same transfer, and
+    // going out under a second nonce is exactly the double payment the rest
+    // of this file is built to prevent.
+    if (record.nonce === undefined) {
+      try {
+        record.nonce = await input.from.nextNonce();
+      } catch (e) {
+        // Not fatal on its own. Without it a transfer whose fate the chain
+        // will not give up cannot be resent, which is where this started.
+        log.warn("could not read the nonce before sending", { key: record.key, error: redact(e instanceof Error ? e.message : String(e)) });
+      }
+    }
+    const resending = record.nonce !== undefined && (record.hashes?.length ?? 0) > 0;
     this.records.set(record.key, record);
     this.flush();
 
     try {
-      const receipt = await input.from.send([{ to: input.to, value: input.amountWei }], input.key, (txHash) => {
-        // Written to disk the moment a node accepts it, before the wait. If
-        // the process dies here the hash is still on file, which is the whole
-        // point: a retry can ask the chain about it instead of guessing.
-        record.status = "broadcast";
-        record.txHash = txHash;
-        record.updatedAt = new Date().toISOString();
-        this.flush();
-        log.info("transfer broadcast, waiting for its receipt", { key: record.key, kind: record.kind, from: record.from, to: record.to, txHash });
+      const receipt = await input.from.send([{ to: input.to, value: input.amountWei }], input.key, {
+        // Only on a resend. A first send takes the next nonce itself, which is
+        // the one just read, and asking for it explicitly would mean sending
+        // through a path that exists for resends.
+        ...(resending ? { nonce: record.nonce } : {}),
+        onBroadcast: (txHash) => {
+          // Written to disk the moment a node accepts it, before the wait. If
+          // the process dies here the hash is still on file, which is the whole
+          // point: a retry can ask the chain about it instead of guessing.
+          record.status = "broadcast";
+          record.txHash = txHash;
+          record.hashes = [...(record.hashes ?? []), txHash];
+          record.updatedAt = new Date().toISOString();
+          this.flush();
+          log.info("transfer broadcast, waiting for its receipt", { key: record.key, kind: record.kind, from: record.from, to: record.to, txHash, nonce: record.nonce ?? null });
+        },
       });
       record.status = "complete";
       record.txHash = receipt.txHash;
@@ -209,31 +258,50 @@ export class TransferLedger {
   /**
    * Asks the chain what became of a transfer that was already broadcast.
    *
-   * Returns the settled record when the answer is final, and undefined only
-   * when the chain confirms the transaction is gone, which is the one case
-   * where sending the same money again is safe.
+   * Returns the settled record when the answer is final, and undefined when
+   * sending again is safe. Every hash this transfer has been broadcast as is
+   * asked about, not only the latest: a resend produces a second hash and
+   * either of them can be the one that mines.
    */
   private async settleBroadcast(record: TransferRecord, wallet: Wallet): Promise<TransferRecord | undefined> {
-    const txHash = record.txHash!;
-    const state = await wallet.checkBroadcast(txHash);
+    const hashes = record.hashes && record.hashes.length > 0 ? record.hashes : [record.txHash!];
+    let pendingHash: string | undefined;
+    let unaccountable = false;
 
-    if (state.state === "mined") {
-      record.status = "complete";
-      record.txHash = state.receipt.txHash;
-      record.feeWei = state.receipt.feeWei;
-      record.error = undefined;
-      record.updatedAt = new Date().toISOString();
-      this.flush();
-      log.info("transfer had already landed, not resending", { key: record.key, txHash: record.txHash });
-      return { ...record };
+    for (const txHash of hashes) {
+      const state = await wallet.checkBroadcast(txHash);
+
+      if (state.state === "mined") {
+        record.status = "complete";
+        record.txHash = state.receipt.txHash;
+        record.feeWei = state.receipt.feeWei;
+        record.error = undefined;
+        record.updatedAt = new Date().toISOString();
+        this.flush();
+        log.info("transfer had already landed, not resending", { key: record.key, txHash: record.txHash });
+        return { ...record };
+      }
+
+      if (state.state === "reverted") {
+        // It is on chain and it moved nothing. Safe to say failed, and not
+        // safe to send again without someone deciding to.
+        record.status = "failed";
+        record.error = `transaction ${txHash} reverted`;
+        record.updatedAt = new Date().toISOString();
+        this.flush();
+        throw new Error(`transfer ${record.key} reverted on chain as ${txHash}`);
+      }
+
+      if (state.state === "pending") pendingHash ??= txHash;
+      if (state.state === "unknown") unaccountable = true;
     }
 
-    if (state.state === "pending") {
+    if (pendingHash !== undefined) {
       // Still in a mempool, so it can land at any moment. Wait for it rather
       // than replacing it: a replacement under a fresh nonce would leave both
       // able to mine.
-      log.warn("transfer still pending, waiting rather than resending", { key: record.key, txHash });
-      const receipt = await wallet.awaitReceipt(txHash);
+      log.warn("transfer still pending, waiting rather than resending", { key: record.key, txHash: pendingHash });
+      const receipt = await wallet.awaitReceipt(pendingHash);
       record.status = "complete";
       record.txHash = receipt.txHash;
       record.feeWei = receipt.feeWei;
@@ -243,39 +311,34 @@ export class TransferLedger {
       return { ...record };
     }
 
-    if (state.state === "reverted") {
-      // It is on chain and it moved nothing. Safe to say failed, and not safe
-      // to send again without someone deciding to.
-      record.status = "failed";
-      record.error = `transaction ${txHash} reverted`;
-      record.updatedAt = new Date().toISOString();
-      this.flush();
-      throw new Error(`transfer ${record.key} reverted on chain as ${txHash}`);
+    if (unaccountable) {
+      // The chain will not say what became of it. Without a nonce there is
+      // nothing to do but refuse: a fresh one would leave two transactions
+      // able to mine and the money could move twice.
+      if (record.nonce === undefined) {
+        record.status = "broadcast";
+        record.updatedAt = new Date().toISOString();
+        this.flush();
+        throw new Error(`transfer ${record.key} was broadcast as ${record.txHash} and the chain cannot yet say what became of it, and no nonce was recorded for it. Refusing to send it again.`);
+      }
+      // With one, it is safe. One transaction per nonce can ever mine, so
+      // this either replaces what was sent or loses to it. Either way the
+      // money moves once, and this stops being a transfer that can never be
+      // resolved.
+      log.warn("transfer unaccountable, sending again under the same nonce", { key: record.key, nonce: record.nonce, hashes: hashes.length });
+      return undefined;
     }
 
-    if (state.state === "unknown") {
-      // The chain does not know this transaction and the sender still has work
-      // queued, so ours may yet appear. Refusing is the only safe answer.
-      record.status = "broadcast";
-      record.updatedAt = new Date().toISOString();
-      this.flush();
-      throw new Error(`transfer ${record.key} was broadcast as ${txHash} and the chain cannot yet say what became of it. Refusing to send it again.`);
-    }
-
-    log.warn("transfer was dropped by the chain, sending again", { key: record.key, droppedTxHash: txHash });
+    log.warn("transfer was dropped by the chain, sending again", { key: record.key, droppedTxHash: record.txHash });
     record.txHash = undefined;
     return undefined;
   }
 
   private flush(): void {
-    mkdirSync(dirname(this.file), { recursive: true });
     const transfers: Record<string, Stored> = {};
-    for (const [k, r] of this.records) {
-      transfers[k] = { ...r, amountWei: r.amountWei.toString(), feeWei: r.feeWei === undefined ? undefined : r.feeWei.toString() };
+    for (const [key, r] of this.records) {
+      transfers[key] = { ...r, amountWei: r.amountWei.toString(), feeWei: r.feeWei === undefined ? undefined : r.feeWei.toString() };
     }
-    const body: FileShape = { version: 1, transfers };
-    const tmp = `${this.file}.tmp`;
-    writeFileSync(tmp, JSON.stringify(body, null, 2) + "\n");
-    renameSync(tmp, this.file);
+    this.sync.write({ version: 1, transfers });
   }
 }

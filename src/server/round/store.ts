@@ -1,8 +1,7 @@
 // Round history: what each agent decided, why, and what its balance did.
 // Feeds the reasoning surface and the next round's recent outcomes.
 
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { StoreFile, UNKNOWN_NETWORK } from "../store/file";
 
 export interface StoredAgentRound {
   agentId: string;
@@ -38,33 +37,40 @@ export interface StoredRound {
   servMicroCents: number;
 }
 
-interface FileShape {
-  version: 1;
-  rounds: StoredRound[];
-}
-
 const MAX_ROUNDS = 200;
 
 export class RoundStore {
   private rounds: StoredRound[] = [];
+  private readonly sync: StoreFile;
 
-  constructor(private readonly file: string) {
-    if (existsSync(file)) {
-      const parsed = JSON.parse(readFileSync(file, "utf8")) as Partial<FileShape>;
-      if (Array.isArray(parsed.rounds)) this.rounds = parsed.rounds.filter((r) => r && typeof r.roundId === "string");
-    }
+  /**
+   * Written by whichever context settles and read by the one that plans, so
+   * it rereads rather than trusting the copy it opened with. An agent's
+   * recent outcomes are what its next decision is built on, and a plan route
+   * holding a snapshot from process start was deciding on a history that had
+   * stopped moving.
+   */
+  constructor(file: string, network: string = UNKNOWN_NETWORK) {
+    this.sync = new StoreFile(file, network, (body) => {
+      const rounds = body?.rounds;
+      this.rounds = Array.isArray(rounds) ? (rounds as StoredRound[]).filter((r) => r && typeof r.roundId === "string") : [];
+    });
+    this.sync.read();
   }
 
   get(roundId: string): StoredRound | undefined {
+    this.sync.read();
     return this.rounds.find((r) => r.roundId === roundId);
   }
 
   recent(limit = 20): StoredRound[] {
+    this.sync.read();
     return this.rounds.slice(-limit).reverse();
   }
 
   /** Outcomes for one agent, oldest first. */
   outcomesFor(agentId: string, limit = 5): Array<{ roundId: string; entered: boolean; netWei: bigint }> {
+    this.sync.read();
     const out: Array<{ roundId: string; entered: boolean; netWei: bigint }> = [];
     for (const round of this.rounds.slice(-limit)) {
       const agent = round.agents.find((a) => a.agentId === agentId);
@@ -82,6 +88,7 @@ export class RoundStore {
    * A null birth round means it has been there from the beginning.
    */
   historyFor(agentId: string, bornAtRound: string | null, baseStakeChips: number): { peakBalanceWei: bigint; recentStakeMultiples: number[]; roundsSurvived: number; wins: number } {
+    this.sync.read();
     const from = bornAtRound === null ? 0 : Math.max(0, this.rounds.findIndex((r) => r.roundId === bornAtRound));
     let peakBalanceWei = 0n;
     const recentStakeMultiples: number[] = [];
@@ -103,13 +110,11 @@ export class RoundStore {
   }
 
   save(round: StoredRound): void {
+    this.sync.read();
     const i = this.rounds.findIndex((r) => r.roundId === round.roundId);
     if (i >= 0) this.rounds[i] = round;
     else this.rounds.push(round);
     if (this.rounds.length > MAX_ROUNDS) this.rounds = this.rounds.slice(-MAX_ROUNDS);
-    mkdirSync(dirname(this.file), { recursive: true });
-    const tmp = `${this.file}.tmp`;
-    writeFileSync(tmp, JSON.stringify({ version: 1, rounds: this.rounds } satisfies FileShape, null, 2) + "\n");
-    renameSync(tmp, this.file);
+    this.sync.write({ version: 1, rounds: this.rounds });
   }
 }

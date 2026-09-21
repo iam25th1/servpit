@@ -16,7 +16,7 @@ import { log } from "@/server/log";
 import { internalDetail, publicError } from "@/server/publicError";
 import type { AgentDecision } from "@/server/decisions/types";
 import { basescanAddress } from "@/server/money";
-import { planRound, type RoundPlan } from "@/server/round/flow";
+import { planRound, seatOccupants, type RoundPlan } from "@/server/round/flow";
 import { TAPPED_OUT } from "@/server/round/plan";
 import { parseRoundRequest } from "./params";
 
@@ -95,6 +95,9 @@ export async function POST(request: Request): Promise<Response> {
     async start(controller) {
       const line = (value: unknown): void => controller.enqueue(encoder.encode(`${JSON.stringify(value)}\n`));
       try {
+        // First, so the panel names every seat's occupant while it waits
+        // rather than naming whoever used to sit there.
+        line({ type: "occupants", occupants: seatOccupants(flow) });
         const plan = await planRound(
           flow,
           parsed.seed,

@@ -16,8 +16,7 @@
 // Phase 12 adds a second decision phase for loans with exactly the same
 // exposure, which is why this is structural rather than another patch.
 
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { StoreFile, UNKNOWN_NETWORK } from "../store/file";
 import type { RoundPlan } from "./flow";
 
 /** A plan as it survives a restart. bigint has no JSON form. */
@@ -26,11 +25,6 @@ interface StoredPlan {
   quotedAt: string;
   /** The whole plan, with every bigint written as a decimal string. */
   plan: unknown;
-}
-
-interface FileShape {
-  version: 1;
-  plans: StoredPlan[];
 }
 
 /** Long enough to read the lineup and pull the lever. */
@@ -76,18 +70,29 @@ export class PlanStore {
   private plans: StoredPlan[] = [];
   private readonly ttlMs: number;
   private readonly now: () => number;
+  private readonly sync: StoreFile;
 
-  constructor(private readonly file: string, options: PlanStoreOptions = {}) {
+  /**
+   * Written by the route that plans and read by the route that settles, which
+   * build separate contexts in one process. Read once at construction, the
+   * settle side could only ever find plans that existed when it was built: the
+   * first round of a process settled and every round after it was refused with
+   * "that round is no longer on the table", which is a plan that was quoted
+   * being called expired.
+   */
+  constructor(file: string, options: PlanStoreOptions = {}, network: string = UNKNOWN_NETWORK) {
     this.ttlMs = options.ttlMs ?? DEFAULT_PLAN_TTL_MS;
     this.now = options.now ?? Date.now;
-    if (existsSync(file)) {
-      const parsed = JSON.parse(readFileSync(file, "utf8")) as Partial<FileShape>;
-      if (Array.isArray(parsed.plans)) this.plans = parsed.plans.filter((p) => p && typeof p.planId === "string");
-    }
+    this.sync = new StoreFile(file, network, (body) => {
+      const plans = body?.plans;
+      this.plans = Array.isArray(plans) ? (plans as StoredPlan[]).filter((p) => p && typeof p.planId === "string") : [];
+    });
+    this.sync.read();
   }
 
   /** Records the plan a round was quoted with. */
   put(plan: RoundPlan): void {
+    this.sync.read();
     this.plans = this.plans.filter((p) => p.planId !== plan.roundId);
     this.plans.push({ planId: plan.roundId, quotedAt: new Date(this.now()).toISOString(), plan: encode(plan) });
     if (this.plans.length > MAX_PLANS) this.plans = this.plans.slice(-MAX_PLANS);
@@ -102,6 +107,7 @@ export class PlanStore {
    * second opinion is exactly what this exists to prevent.
    */
   require(planId: string): RoundPlan {
+    this.sync.read();
     const found = this.plans.find((p) => p.planId === planId);
     if (!found) throw new PlanNotQuoted(planId);
     if (this.now() - Date.parse(found.quotedAt) > this.ttlMs) throw new PlanNotQuoted(planId);
@@ -119,11 +125,6 @@ export class PlanStore {
   }
 
   private flush(): void {
-    const body: FileShape = { version: 1, plans: this.plans };
-    const dir = dirname(this.file);
-    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-    const staging = join(dir, `.plans-${process.pid}.tmp`);
-    writeFileSync(staging, JSON.stringify(body, null, 2), { mode: 0o600 });
-    renameSync(staging, this.file);
+    this.sync.write({ version: 1, plans: this.plans });
   }
 }

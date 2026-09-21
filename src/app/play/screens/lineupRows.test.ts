@@ -46,3 +46,42 @@ describe("lineupRows", () => {
     expect(decidedCount(rows)).toBe(NAMED_AGENTS.length);
   });
 });
+
+describe("a seat outlives the agent in it", () => {
+  // The bug this covers: the row took its name from the roster, so a seat
+  // whose original had been carried out showed the dead agent's name under
+  // the replacement's face. One row, two identities.
+  const seat = NAMED_AGENTS[0].id;
+  const original = NAMED_AGENTS[0].name;
+
+  it("shows the occupant's name and face once it has decided", () => {
+    const rows = lineupRows([{ agentId: seat, name: "Onyx", enter: true, stake: 10, reason: "In.", face: "NinjaDark" }]);
+    const row = rows.find((r) => r.agentId === seat)!;
+    expect(row.name).toBe("Onyx");
+    expect(row.name).not.toBe(original);
+    expect(row.face).toBe("NinjaDark");
+  });
+
+  it("shows the occupant's name while it is still deciding", () => {
+    const rows = lineupRows([], [{ agentId: seat, name: "Vex", face: "NinjaFire" }]);
+    const row = rows.find((r) => r.agentId === seat)!;
+    expect(row.state).toBe("waiting");
+    expect(row.name).toBe("Vex");
+    expect(row.face).toBe("NinjaFire");
+  });
+
+  it("prefers the decision to the occupant line, which is older", () => {
+    const rows = lineupRows(
+      [{ agentId: seat, name: "Tally", enter: false, stake: 0, reason: "Out.", face: "KnightGold" }],
+      [{ agentId: seat, name: "Vex", face: "NinjaFire" }],
+    );
+    expect(rows.find((r) => r.agentId === seat)!.name).toBe("Tally");
+    expect(rows.find((r) => r.agentId === seat)!.face).toBe("KnightGold");
+  });
+
+  it("falls back to the roster for a seat nobody has spoken for", () => {
+    const row = lineupRows([])[0];
+    expect(row.name).toBe(original);
+    expect(row.face).toBeNull();
+  });
+});

@@ -17,7 +17,7 @@ import { baseSepolia } from "viem/chains";
 import { DEFAULT_RPC_URLS } from "@/config/rpc";
 import { log } from "../log";
 import { guardAgentKitAnalytics } from "./analyticsGuard";
-import { ADDRESS, TX_HASH, WALLET_ID, type BroadcastState, type Call, type Chain, type TxReceipt, type Wallet } from "./types";
+import { ADDRESS, TX_HASH, WALLET_ID, type BroadcastState, type Call, type Chain, type SendOptions, type TxReceipt, type Wallet } from "./types";
 
 type Hex = `0x${string}`;
 
@@ -59,6 +59,16 @@ export interface WalletProviderLike {
   getBalance(): Promise<bigint>;
   sendTransaction(transaction: { to: Hex; value: bigint; data?: Hex }): Promise<Hex>;
   waitForTransactionReceipt(hash: Hex): Promise<ChainReceipt>;
+  /**
+   * Sends under an exact nonce.
+   *
+   * Separate from sendTransaction because AgentKit's provider cannot do it:
+   * it builds its own transaction parameters and a nonce handed to it is
+   * dropped without a word, which on a resend is the difference between
+   * replacing a transfer and paying it twice. The ordinary path still goes
+   * through AgentKit; only a resend comes through here.
+   */
+  sendTransactionWithNonce?(transaction: { to: Hex; value: bigint; data?: Hex }, nonce: number): Promise<Hex>;
 }
 
 /**
@@ -110,6 +120,10 @@ export interface ChainReader {
   readBalances(addresses: readonly string[]): Promise<Array<bigint | null>>;
   /** What became of a transaction, read through the same fallback endpoints. */
   checkBroadcast(txHash: string, from: string): Promise<BroadcastState>;
+  /** The nonce the next transaction from this address will use. */
+  nextNonce(address: string): Promise<number>;
+  /** The nonce a broadcast transaction carries, or null when the chain has lost it. */
+  nonceOf(txHash: string): Promise<number | null>;
 }
 
 /** @deprecated kept so an existing import keeps compiling. */
@@ -170,6 +184,25 @@ export function createBalanceReader(rpcUrls: readonly string[] = DEFAULT_RPC_URL
       return mined === queued ? { state: "dropped" } : { state: "unknown" };
     },
 
+    /**
+     * Pending rather than latest: it counts what this sender already has in
+     * flight, which is the nonce the next one will take.
+     */
+    async nextNonce(address) {
+      return client.getTransactionCount({ address: address as Hex, blockTag: "pending" });
+    },
+
+    async nonceOf(txHash) {
+      try {
+        const tx = await client.getTransaction({ hash: txHash as Hex });
+        return typeof tx.nonce === "number" ? tx.nonce : null;
+      } catch {
+        // The chain cannot see it, so it cannot say. Not an error: this is
+        // asked about transactions whose fate is in question.
+        return null;
+      }
+    },
+
     async readBalances(addresses) {
       if (addresses.length === 0) return [];
       // allowFailure, so one address the chain will not answer for costs that
@@ -189,8 +222,42 @@ export function createBalanceReader(rpcUrls: readonly string[] = DEFAULT_RPC_URL
 const defaultFactory: ProviderFactory = (_walletId, privateKey, rpcUrl) => {
   const account = privateKeyToAccount(privateKey);
   const walletClient = createWalletClient({ account, chain: baseSepolia, transport: http(rpcUrl) });
-  return new ViemWalletProvider(walletClient, rpcUrl ? { rpcUrl } : undefined) as unknown as WalletProviderLike;
+  const provider = new ViemWalletProvider(walletClient, rpcUrl ? { rpcUrl } : undefined) as unknown as WalletProviderLike;
+  const publicClient = createPublicClient({ chain: baseSepolia, transport: http(rpcUrl, { timeout: RPC_TIMEOUT_MS }) });
+  return {
+    ...provider,
+    getAddress: () => provider.getAddress(),
+    getBalance: () => provider.getBalance(),
+    sendTransaction: (transaction) => provider.sendTransaction(transaction),
+    waitForTransactionReceipt: (hash) => provider.waitForTransactionReceipt(hash),
+    // The one path AgentKit cannot serve. Fees are estimated the same way it
+    // does, because a resend that nobody will mine is a transfer stuck
+    // forever under a nonce nothing else can use.
+    sendTransactionWithNonce: async (transaction, nonce) => {
+      const fees = await publicClient.estimateFeesPerGas();
+      const gas = await publicClient.estimateGas({ account, to: transaction.to, value: transaction.value, data: transaction.data });
+      return walletClient.sendTransaction({
+        account,
+        chain: baseSepolia,
+        to: transaction.to,
+        value: transaction.value,
+        data: transaction.data,
+        nonce,
+        gas,
+        maxFeePerGas: fees.maxFeePerGas,
+        maxPriorityFeePerGas: fees.maxPriorityFeePerGas,
+      });
+    },
+  };
 };
+
+/** A provider that cannot send under a nonce cannot resend, and says so. */
+async function sendWithNonce(provider: WalletProviderLike, transaction: { to: Hex; value: bigint; data?: Hex }, nonce: number): Promise<Hex> {
+  if (!provider.sendTransactionWithNonce) {
+    throw new Error("this wallet cannot send under a chosen nonce, so a transfer of unknown fate cannot be resent safely");
+  }
+  return provider.sendTransactionWithNonce(transaction, nonce);
+}
 
 export class ViemChain implements Chain {
   readonly kind = "viem" as const;
@@ -255,21 +322,30 @@ export class ViemChain implements Chain {
         if (balance === undefined) throw new Error(`could not read the balance of ${walletAddress}`);
         return balance;
       },
-      send: async (calls: readonly Call[], idempotencyKey: string, onBroadcast?: (txHash: string) => void): Promise<TxReceipt> => {
+      send: async (calls: readonly Call[], idempotencyKey: string, options?: SendOptions): Promise<TxReceipt> => {
         for (const call of calls) {
           if (!ADDRESS.test(call.to)) throw new RangeError(`transfer destination must be an address, got ${call.to}`);
+        }
+        if (options?.nonce !== undefined && calls.length !== 1) {
+          // A resend is one transfer. Several calls under one nonce is not a
+          // thing an account can do, and silently sending the rest under
+          // fresh nonces is how the same money moves twice.
+          throw new RangeError("a nonce can only be given for a single call");
         }
         // An EOA has no batching, so each call is its own transaction sent in
         // order. The ledger's idempotency key still covers the whole transfer;
         // it is simply no longer echoed to the chain.
         let last: TxReceipt | undefined;
         for (const call of calls) {
-          const hash = await provider.sendTransaction({ to: call.to as Hex, value: call.value, data: call.data });
+          const hash =
+            options?.nonce === undefined
+              ? await provider.sendTransaction({ to: call.to as Hex, value: call.value, data: call.data })
+              : await sendWithNonce(provider, { to: call.to as Hex, value: call.value, data: call.data }, options.nonce);
           // Reported before the wait, not after. The wait can time out against
           // a transaction that is already in a block, and a hash lost that way
           // leaves the caller unable to tell a transfer that landed from one
           // that never left.
-          onBroadcast?.(hash);
+          options?.onBroadcast?.(hash);
           const receipt = await provider.waitForTransactionReceipt(hash);
           if (receipt.status !== "success") {
             throw new Error(`transaction ${hash} ${receipt.status} for ${idempotencyKey}`);
@@ -278,6 +354,11 @@ export class ViemChain implements Chain {
         }
         if (!last) throw new RangeError("send needs at least one call");
         return last;
+      },
+      nextNonce: async () => this.reader.nextNonce(walletAddress),
+      nonceOf: async (txHash: string) => {
+        if (!TX_HASH.test(txHash)) throw new RangeError("txHash must be 32 bytes of hex");
+        return this.reader.nonceOf(txHash);
       },
       awaitReceipt: async (txHash: string): Promise<TxReceipt> => {
         if (!TX_HASH.test(txHash)) throw new RangeError("txHash must be 32 bytes of hex");
