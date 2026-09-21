@@ -13,7 +13,7 @@
 import { createHash } from "node:crypto";
 import { NAMED_AGENTS } from "@/config/agents";
 import { DEFAULT_ROUND } from "@/config/round";
-import { stakeWeiFrom } from "@/config/stake";
+import { stakeWeiFrom, toChips } from "@/config/stake";
 import { resolveRound, type Entrant, type RoundResult } from "@/engine/resolveRound";
 import type { BankrollCache } from "../bankroll";
 import { decideForAgents, heuristicDecision } from "../decisions/decide";
@@ -119,8 +119,16 @@ export async function planRound(ctx: FlowContext, seed: string, onDecided?: (dec
   for (const decision of run.decisions) {
     const snapshot = snapshots.find((s) => s.profile.id === decision.agentId)!;
     if (decision.decision.enter && snapshot.balanceWei < required) {
+      // Plain words and chips: this line is shown to the player, not only
+      // logged. "short on gas" and "short on stake" stay as the two cases so
+      // an operator can still tell them apart at a glance.
       const shortfall = ctx.chain.gasReserveWei > 0n && snapshot.balanceWei >= stakeWei ? "gas" : "stake";
-      const reason = `balance ${snapshot.balanceWei} wei cannot cover the ${stakeWei} wei allocation plus ${ctx.chain.gasReserveWei} wei of gas (short on ${shortfall})`;
+      const held = toChips(snapshot.balanceWei);
+      const seat = toChips(stakeWei);
+      const reason =
+        shortfall === "gas"
+          ? `has ${held} chips but not enough left over for fees, so it is short on gas`
+          : `has ${held} chips, and a seat costs ${seat}, so it is short on stake`;
       log.warn("entry blocked by on chain balance", { agentId: decision.agentId, reason });
       decisions.push({ ...decision, decision: { enter: false, stake: 0, reason: `excluded: ${reason}` }, rejection: decision.rejection ? `${decision.rejection}; ${reason}` : reason });
       continue;

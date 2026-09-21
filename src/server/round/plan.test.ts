@@ -23,7 +23,8 @@ const enterTransport = () =>
       model: "claude-haiku-4.5",
       // The stake is derived, so the fixture states it rather than hardcoding
       // a number that stops being this round's allocation.
-      choices: [{ index: 0, message: { role: "assistant", content: `{"enter":true,"stake":${stakeWeiFrom()},"reason":"balance covers this allocation across 24 participants"}` }, finish_reason: "stop" }],
+      // Chips, and a reason in the register the validator now requires.
+      choices: [{ index: 0, message: { role: "assistant", content: `{"enter":true,"stake":${toChips(stakeWeiFrom())},"reason":"Plenty in the tank, I am in."}` }, finish_reason: "stop" }],
       usage: { prompt_tokens: 800, completion_tokens: 60, total_tokens: 860 },
     }),
   }) as unknown as ChatTransport;
@@ -41,7 +42,7 @@ async function harness(options: { balanceWei?: bigint; transport?: ChatTransport
   return { chain, wallets, ledger, store, bankroll, meter, ctx: { chain, wallets, ledger, store, bankroll, meter, serv: client, entrants: 24 } };
 }
 
-import { stakeWeiFrom } from "@/config/stake";
+import { stakeWeiFrom, toChips } from "@/config/stake";
 
 /** What a wallet is funded with, which the stake is a tenth of. */
 const FUNDED_WEI = 100_000_000_000_000n;
@@ -76,7 +77,9 @@ describe("planRound", () => {
     expect(plan.entering.map((e) => e.agentId)).not.toContain("atlas");
     const atlasDecision = plan.decisions.find((d) => d.agentId === "atlas")!;
     expect(atlasDecision.decision.enter).toBe(false);
-    expect(atlasDecision.rejection ?? "").toMatch(/balance|cover/i);
+    // Drained to 10 wei, which is no chips at all, so the model's answer is
+    // refused on the balance before the exclusion path is even reached.
+    expect(atlasDecision.rejection ?? "").toMatch(/chips|short on/i);
     expect(chain.balanceReads).toBeGreaterThan(0);
   });
 

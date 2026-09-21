@@ -5,6 +5,7 @@
 
 import { getServerContext } from "@/server/context";
 import { basescanAddress } from "@/server/money";
+import { weiPerChip } from "@/config/stake";
 import { entrantNames } from "@/server/round/entrantNames";
 import { planRound, roundIdFor, runRound } from "@/server/round/flow";
 import { parseRoundRequest } from "../plan/params";
@@ -74,6 +75,7 @@ export async function POST(request: Request): Promise<Response> {
             rakeWei: run.round.rake.toString(),
             potAddress: ctx.wallets.pot.address,
             potLink: link(ctx.wallets.pot.address),
+            weiPerChip: weiPerChip().toString(),
             reconciled: run.reconciliation.ok,
             checks: run.reconciliation.checks,
             servCalls: plan.servCalls,

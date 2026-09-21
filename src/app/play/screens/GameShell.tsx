@@ -74,6 +74,8 @@ interface RunShape {
   /** True when the chain settles for real, so a hash is worth linking. */
   settles: boolean;
   reconciled: boolean;
+  /** Wei one chip is worth, so the screen never assumes a funding target. */
+  weiPerChip?: string;
   /** Per check detail, so a failure can name what went wrong. */
   checks?: ReconcileCheck[];
   agents: RunAgent[];
@@ -394,6 +396,13 @@ export function GameShell(props: GameShellProps) {
     const coinPathRef = useRef<SVGPathElement>(null);
     const prize = BigInt(run.potWei) - BigInt(run.rakeWei);
     const note = reconciliationNote(run.reconciled, run.checks);
+    // Chips, not wei. Nobody can read 10000000000000, and the agents are no
+    // longer speaking in it either.
+    const per = run.weiPerChip ? BigInt(run.weiPerChip) : 1n;
+    const chips = (wei: bigint): string => {
+      const whole = wei < 0n ? -wei / per : wei / per;
+      return `${wei < 0n ? "-" : ""}${whole}`;
+    };
     const meters = swingMeters(run.agents.map((a) => ({ agentId: a.agentId, changeWei: BigInt(a.balanceAfterWei) - BigInt(a.balanceBeforeWei) })));
     const winnerName = entrantLabel(run.winner, run.agents);
 
@@ -442,7 +451,7 @@ export function GameShell(props: GameShellProps) {
         <NinePatch sprite="panelAlt" scale={uiScale} className={styles.winner} data-anim="winner-panel">
           <img className={styles.winnerFace} src={facesetPath(winnerCharacter(run))} alt="" width={38 * 2} height={38 * 2} />
           <h2 className={`${styles.winnerName} ${styles.nameplate}`}>{winnerName}</h2>
-          <p className={styles.winnerPot}>{prize.toString()} taken</p>
+          <p className={styles.winnerPot}>{chips(prize)} chips taken</p>
           <p className={styles.sideNote}>{note.text}</p>
           {note.failed.length > 0 && (
             <ul className={styles.reconcileFails}>
@@ -463,7 +472,7 @@ export function GameShell(props: GameShellProps) {
                 <Meter value={meters.get(a.agentId) ?? 0} variant="mini" scale={5} label={`${a.name} swing this round`} />
                 <span className={`${styles.delta} ${change > 0n ? styles.up : styles.down}`}>
                   {change >= 0n ? "+" : ""}
-                  {change.toString()}
+                  {chips(change)}
                 </span>
               </div>
             );

@@ -13,6 +13,7 @@
 // wagering language.
 
 import { createHash } from "node:crypto";
+import { toChips } from "@/config/stake";
 import { log } from "../log";
 import type { CostMeter, ServClient } from "../serv/client";
 import type { AgentDecision, AgentSnapshot, Decision, RoundContext } from "./types";
@@ -71,33 +72,84 @@ export function schemaKeywords(node: unknown, found: Set<string> = new Set()): S
 
 const MAX_REASON = 400;
 
+/**
+ * Words the answer may not contain, and a number longer than four digits.
+ *
+ * The register is the point: an agent that says "Working balance of
+ * 99868301341612 minor units comfortably covers the 100 minor unit allocation
+ * under capital-preservation posture" is unreadable to a player. Shadow Agent
+ * is asked to reject these so SERV regenerates, and they are checked here too
+ * because Shadow Agent is a second net and never the only one.
+ */
+export const FORBIDDEN_WORDS = ["minor unit", "minor units", "wei", "allocation", "posture", "working balance"] as const;
+const LONG_NUMBER = /\d{5,}/;
+/** A reason longer than this is not one short sentence. */
+export const MAX_REASON_WORDS = 20;
+
+/** Why a reason is not usable, or null when it reads like a person. */
+export function reasonFault(reason: string): string | null {
+  const lower = reason.toLowerCase();
+  for (const word of FORBIDDEN_WORDS) {
+    // Word boundaries, so "allocation" is caught and "location" is not.
+    if (new RegExp(`\\b${word}\\b`).test(lower)) return `reason used the word "${word}"`;
+  }
+  const long = LONG_NUMBER.exec(reason);
+  if (long) return `reason quoted the raw number ${long[0]}`;
+  const words = reason.trim().split(/\s+/).filter(Boolean);
+  if (words.length > MAX_REASON_WORDS) return `reason ran to ${words.length} words, over the ${MAX_REASON_WORDS} word limit`;
+  return null;
+}
+
+/**
+ * The input framing is unchanged: a resource allocation problem, an operator
+ * with a budget deciding whether to commit to the current opportunity. That
+ * framing was tested in the SERV Playground before a line was written and
+ * this commit does not touch it.
+ *
+ * What changed is the register of the answer. It was coming back as "Working
+ * balance of 99868301341612 minor units comfortably covers the 100 minor unit
+ * allocation under capital-preservation posture", which is unreadable and
+ * quotes a number nobody can hold in their head. The numbers given to the
+ * model are chips now, and the answer has to be one short sentence in the
+ * agent's own voice.
+ */
 const SYSTEM = [
-  "You are an autonomous treasury operator managing a working balance across repeated opportunities.",
-  "Each period you are offered one opportunity with a fixed allocation size. You decide whether to commit that allocation or hold your balance.",
-  "Committing puts the allocation at risk: one participant receives the whole pooled amount and the rest receive nothing.",
-  "Judge the opportunity on your balance, the pooled amount, how many participants share it, and your recent results, under the posture you are given.",
-  "Reply with a single JSON object with exactly the keys enter, stake and reason. stake is the allocation in minor units, exactly the stated allocation when entering and 0 when holding.",
-  "Never propose an allocation larger than your stated balance. Keep reason to one sentence that names the balance figure or the participation count you relied on.",
+  "You are an autonomous operator managing a balance of chips across repeated opportunities.",
+  "Each period you are offered one opportunity at a fixed cost in chips. You decide whether to take it or keep your chips.",
+  "Taking it puts those chips at risk: one participant receives the whole pool and the rest receive nothing.",
+  "Judge it on your chips, the size of the pool, how many are taking part, and how your recent periods went, under the posture you are given.",
+  "Reply with a single JSON object with exactly the keys enter, stake and reason.",
+  "stake is the cost in chips, exactly the stated cost when you take it and 0 when you do not.",
+  "Never propose more chips than you hold.",
+  "reason is ONE short sentence, under twenty words, in your own voice, as if speaking aloud.",
+  "Never write the words minor units, wei, allocation, posture or working balance.",
+  "Never write a number longer than four digits.",
+  "Examples of the register, not to be copied: Lost three straight, sitting this one out. Plenty in the tank, I am in. Everyone is cautious, so I am going big.",
 ].join(" ");
 
 export function buildPrompt(snapshot: AgentSnapshot, round: RoundContext): { system: string; user: string } {
   const lines = [
-    `Operator: ${snapshot.profile.name}.`,
+    `You are ${snapshot.profile.name}.`,
     `Posture: ${snapshot.profile.descriptor}.`,
-    `Working balance: ${snapshot.balanceWei} minor units.`,
-    `Allocation offered this period: ${round.stakeWei} minor units.`,
-    `Pooled amount if every participant commits: ${round.poolWei} minor units across ${round.participants} participants.`,
+    `Voice: ${snapshot.profile.voice}`,
+    `You hold ${toChips(snapshot.balanceWei)} chips.`,
+    `This period costs ${toChips(round.stakeWei)} chips.`,
+    `The pool is ${toChips(round.poolWei)} chips if everyone takes part, shared between ${round.participants} of you.`,
   ];
   if (snapshot.recentOutcomes.length > 0) {
     const recent = snapshot.recentOutcomes
       .slice(-5)
-      .map((o) => `${o.entered ? "committed" : "held"} ${o.netWei >= 0n ? "+" : ""}${o.netWei}`)
+      .map((o) => {
+        const chips = toChips(o.netWei < 0n ? -o.netWei : o.netWei);
+        if (!o.entered) return "sat out";
+        return o.netWei >= 0n ? `won ${chips}` : `lost ${chips}`;
+      })
       .join(", ");
-    lines.push(`Recent results, oldest first: ${recent}.`);
+    lines.push(`Your last few periods, oldest first: ${recent}.`);
   } else {
-    lines.push("No recent results yet.");
+    lines.push("You have not played yet.");
   }
-  lines.push("Decide whether to commit this period's allocation.");
+  lines.push("Decide, and say why in one short sentence.");
   return { system: SYSTEM, user: lines.join("\n") };
 }
 
@@ -121,15 +173,21 @@ export function validateDecision(content: string, snapshot: AgentSnapshot): Vali
   if (typeof stake !== "number" || !Number.isSafeInteger(stake) || stake < 0) return { ok: false, reason: "stake was not a non negative integer" };
   if (typeof reason !== "string" || reason.trim().length === 0) return { ok: false, reason: "reason was empty" };
 
+  const fault = reasonFault(reason);
+  if (fault !== null) return { ok: false, reason: fault };
+
   // Bounds, checked against what the chain says, never against anything the
-  // model stated. The round stake is fixed, so entering means exactly it.
-  const stakeWei = BigInt(stake);
-  if (stakeWei > snapshot.balanceWei) {
-    return { ok: false, reason: `stake ${stake} exceeds on chain balance ${snapshot.balanceWei}` };
+  // model stated. The model answers in chips, so the comparison is in chips;
+  // the wei that actually moves is the round's own figure and is never taken
+  // from this response.
+  const balanceChips = toChips(snapshot.balanceWei);
+  const roundChips = toChips(snapshot.stakeWei);
+  if (stake > balanceChips) {
+    return { ok: false, reason: `stake ${stake} is more than the ${balanceChips} chips this wallet holds` };
   }
   if (enter) {
-    if (stakeWei !== snapshot.stakeWei) return { ok: false, reason: `stake ${stake} is not this round's allocation ${snapshot.stakeWei}` };
-    if (snapshot.balanceWei < snapshot.stakeWei) return { ok: false, reason: `balance ${snapshot.balanceWei} cannot cover the allocation ${snapshot.stakeWei}` };
+    if (stake !== roundChips) return { ok: false, reason: `stake ${stake} is not this round's ${roundChips} chips` };
+    if (snapshot.balanceWei < snapshot.stakeWei) return { ok: false, reason: `this wallet cannot cover the ${roundChips} chips a seat costs` };
   } else if (stake !== 0) {
     return { ok: false, reason: "stake must be 0 when not entering" };
   }

@@ -59,7 +59,11 @@ export const DEFAULT_SERV: ServConfig = {
   // response_format. They state the bound the schema can no longer carry,
   // including non negative outright rather than by implication.
   shadowHint:
-    "The reply must be a single JSON object with exactly the keys enter, stake and reason. stake must be a non negative integer number of minor units: never below zero, exactly zero when enter is false, and never greater than the stated balance. reason must name the balance figure or the participation count it relied on.",
+    "The reply must be a single JSON object with exactly the keys enter, stake and reason. " +
+    "stake must be a non negative whole number of chips: never below zero, exactly zero when enter is false, and never greater than the chips the operator holds. " +
+    "reason must be ONE sentence of at most twenty words, in the operator's own speaking voice. " +
+    "Reject and regenerate if reason contains any of these words: minor unit, minor units, wei, allocation, posture, working balance. " +
+    "Reject and regenerate if reason contains any number longer than four digits.",
   shadowMaxIterations: 3,
   temperature: 0.2,
   maxCompletionTokens: 400,

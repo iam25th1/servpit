@@ -10,6 +10,7 @@
 // another is on its second attempt. Holding everything until the last one
 // landed measured 61 seconds of an empty panel in the browser.
 
+import { toChips, weiPerChip } from "@/config/stake";
 import { getServerContext } from "@/server/context";
 import type { AgentDecision } from "@/server/decisions/types";
 import { basescanAddress } from "@/server/money";
@@ -47,6 +48,8 @@ function planShape(plan: RoundPlan, network: string, kind: string, costMicroCent
     network,
     backend: kind,
     stakeWei: plan.stakeWei.toString(),
+    stakeChips: toChips(plan.stakeWei),
+    weiPerChip: weiPerChip().toString(),
     entrants: plan.entrants.length,
     bots: plan.bots.length,
     servCalls: plan.servCalls,
