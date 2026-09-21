@@ -80,7 +80,16 @@ export const DEFAULT_SERV: ServConfig = {
     "Reject and regenerate if reason contains any number longer than four digits.",
   shadowMaxIterations: 3,
   temperature: 0.2,
-  maxCompletionTokens: 400,
+  // Measured across 36 live calls, a completion is about 33 tokens: one short
+  // sentence and three small numbers. This was 400, and SERV bills its 402
+  // against the estimated maximum cost rather than the actual one, so a
+  // ceiling nothing ever reached was refusing requests on an account that
+  // had the money for them. 120 is three and a half times the measured size.
+  //
+  // Lowering the Shadow Agent iteration count would cut the estimate further
+  // and is deliberately not done. It is a safety net on a money surface, and
+  // an empty account is not a reason to weaken one.
+  maxCompletionTokens: 120,
   // 15 s per attempt against a measured healthy maximum of 11.9 s, and 25 s
   // for the agent in total. Worst case per agent was 61.2 s.
   timeoutMs: 15_000,

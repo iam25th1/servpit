@@ -39,7 +39,10 @@ describe("ServClient request shape", () => {
     expect(shadow.hint.default).toBe(DEFAULT_SERV.shadowHint);
     expect(shadow.max_iterations.default).toBe(3);
     expect(body.temperature).toBe(0.2);
-    expect(body.max_completion_tokens).toBe(400);
+    // Three and a half times the measured completion size. SERV bills its
+    // 402 against the estimated maximum cost, so a ceiling nothing reaches
+    // still refuses requests the account can afford.
+    expect(body.max_completion_tokens).toBe(120);
   });
 
   it("omits disabled tools", async () => {
