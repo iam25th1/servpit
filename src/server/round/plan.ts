@@ -218,6 +218,9 @@ export async function planRound(
     // never states a loan amount and is never asked for one.
     let lentWei = 0n;
     if (decision.decision.enter && stakeMultiple > 1 && ctx.wallets.bank) {
+      const identityId = ctx.debts.currentIdentity(snapshot.profile.id);
+      const held = ctx.debts.get(snapshot.profile.id, identityId);
+      const history = ctx.store.historyFor(snapshot.profile.id, held.bornAtRound, toChips(stakeWei));
       // What it cannot cover itself: the stake plus the gas it has to keep
       // back, against what it actually holds.
       //
@@ -245,12 +248,16 @@ export async function planRound(
             name: snapshot.profile.name,
             balanceChips: toChips(snapshot.balanceWei),
             debtChips: toChips(snapshot.debtWei ?? 0n),
-            roundsPlayed: snapshot.recentOutcomes.length,
-            wins: snapshot.recentOutcomes.filter((o) => o.entered && o.netWei > 0n).length,
+            // The whole record of whoever is in the seat, not the last five
+            // rounds of it. A win that scrolled out of a five round window
+            // used to make a proven agent read as unproven, and the lender
+            // judges on exactly this.
+            roundsPlayed: history.roundsEntered,
+            wins: history.wins,
             // What this occupant has actually handed back. It was a zero
             // here, so the lender judged an agent that had repaid everything
             // exactly as it judged one that had never paid back a chip.
-            repaidChips: toChips(ctx.debts.get(snapshot.profile.id, ctx.debts.currentIdentity(snapshot.profile.id)).repaidWei),
+            repaidChips: toChips(held.repaidWei),
           },
           stakeChips: toChips(chosenWei),
           shortfallChips: toChips(shortfallWei),

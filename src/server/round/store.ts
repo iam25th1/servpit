@@ -86,13 +86,24 @@ export class RoundStore {
    * Everything a wreck record needs that is not a balance or a debt: how hard
    * it was pushing, how far it fell from its best, and how long it lasted.
    * A null birth round means it has been there from the beginning.
+   *
+   * The lender reads it too, for rounds entered and rounds won. It used to be
+   * told the last five rounds and nothing else, so an agent whose win was six
+   * rounds ago was introduced as having none: on Base Sepolia, Flint had won
+   * a round and repaid every chip it borrowed, and Marrow was told "zero wins
+   * in five rounds" and refused it.
    */
-  historyFor(agentId: string, bornAtRound: string | null, baseStakeChips: number): { peakBalanceWei: bigint; recentStakeMultiples: number[]; roundsSurvived: number; wins: number } {
+  historyFor(
+    agentId: string,
+    bornAtRound: string | null,
+    baseStakeChips: number,
+  ): { peakBalanceWei: bigint; recentStakeMultiples: number[]; roundsSurvived: number; roundsEntered: number; wins: number } {
     this.sync.read();
     const from = bornAtRound === null ? 0 : Math.max(0, this.rounds.findIndex((r) => r.roundId === bornAtRound));
     let peakBalanceWei = 0n;
     const recentStakeMultiples: number[] = [];
     let roundsSurvived = 0;
+    let roundsEntered = 0;
     let wins = 0;
     for (const round of this.rounds.slice(from)) {
       const agent = round.agents.find((a) => a.agentId === agentId);
@@ -103,10 +114,11 @@ export class RoundStore {
       }
       // A multiple of the seat price, which is what says how hard it was
       // pushing. The raw number of chips says nothing without the seat.
+      if (agent.entered) roundsEntered += 1;
       if (agent.entered && baseStakeChips > 0) recentStakeMultiples.push(agent.stake / baseStakeChips);
       if (round.winner === `agent-${agentId}`) wins += 1;
     }
-    return { peakBalanceWei, recentStakeMultiples: recentStakeMultiples.slice(-5), roundsSurvived, wins };
+    return { peakBalanceWei, recentStakeMultiples: recentStakeMultiples.slice(-5), roundsSurvived, roundsEntered, wins };
   }
 
   save(round: StoredRound): void {

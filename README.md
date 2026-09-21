@@ -262,11 +262,18 @@ to stake 26, Flint took
 [19](https://sepolia.basescan.org/tx/0xeced1705a98c69fa7dd3705b33ba8a98637fac62273a136abaf03be66d158b7e)
 to stake 26, and Delta took
 [2](https://sepolia.basescan.org/tx/0x1a2fb27c41cadd9c01136f3fd41b5e7976d9bf194b282e7a368d147a43de3579)
-to stake 29. Marrow's own refusals, over SERV, read like this:
+to stake 29.
 
-> No track record here, and I don't lend to ghosts.
+**Marrow's own decision, on chain.** In round `r-661405385c843da8` it read Flint's record,
+one win in twenty five rounds and every chip it had ever borrowed paid back, and
+[lent it 19 chips at 25 per cent a round](https://sepolia.basescan.org/tx/0x28dd1266c4dd69de324dac1ed3c9df10d25daf31982c600e6229ccee69fbd9ed):
 
-> Five rounds, zero wins, nothing repaid, you're drowning before you even bet.
+> One win in twenty-five rounds earns a shot, but the price is steep.
+
+In the same round it turned down two agents with no record at all, in the same voice, and
+those refusals are what ended them:
+
+> No record at all, nothing to judge on.
 
 ![The result screen, with the winner's debt taken off the top](docs/media/bank-result.png)
 
@@ -295,11 +302,20 @@ rather than a failure: a seizure can only send what the wallet can send after th
 and the reserve is two seats. An agent that has just played holds about the reserve and no
 more. So the bank writes off where it cannot seize, and the round carries on.
 
-**No replacement has been funded on the real chain.** The operator wallet
-`0xA0F963841EcC29b0663bb6eA583097cAA49835FC` is empty, so every emptied seat has stayed empty
-with a plain reason and the round has completed anyway, which is the behaviour this wanted to
-prove. Fund that wallet and the next wreck refills its seat with a real transfer, with no code
-or config change; that path is tested both ways against the local chain.
+**Both halves of an emptied seat have now run on the real chain.** While the operator wallet
+`0xA0F963841EcC29b0663bb6eA583097cAA49835FC` was empty, every wreck left its seat empty with a
+plain reason and the round completed anyway. Once it was funded, the next two wrecks seated
+somebody with real money and nothing else changed: no code, no config, no restart.
+
+| round | seat | who sat down | staked with |
+|---|---|---|---|
+| `r-661405385c843da8` | blaze | Vex | [100 chips](https://sepolia.basescan.org/tx/0x5ad08460481cb9473aa7fb2d10c6c34b589b998d49563c5cc8865b2f42a43639) |
+| `r-661405385c843da8` | comet | Tally | [100 chips](https://sepolia.basescan.org/tx/0x23d34fd92feb577059a1fa2216010b024b5f850c6d72b091e23888af5eb08287) |
+| `r-d3db7a5886eca47c` | flint | Rime | [100 chips](https://sepolia.basescan.org/tx/0xc6246b0e31b16f2dafefbdf1cbbeb0c25ae34fdd4d46257a4a20008221ef61d8) |
+
+Vex won its first round in the seat the operator paid for. Flint's seat came up because the
+loan Marrow made it ran its course: 19 chips at a quarter per round, two refusals to add to it
+as the debt compounded, and the ceiling at 42 owed.
 
 ![The graveyard](docs/media/bank-graveyard.png)
 
@@ -691,12 +707,11 @@ a house edge wearing a costume.
 
 **Rake defaults to zero.** The revenue mechanism exists in config and is switched off.
 
-**The bank is on, and two of its paths have never run on the real chain.** Loan origination,
-per round interest, repayment from winnings, both wreck conditions, write-off and replacement
-have all settled on Base Sepolia. A non zero seizure has not, and neither has a replacement
-funded by the operator: the first needs a wrecked agent holding more than the gas reserve,
-which these settings make rare, and the second needs somebody to fund the operator wallet.
-Both are tested against the local chain. `SERVPIT_BANK_SHARE_ON_HOUSE_WIN` is 0, nothing sends
+**The bank is on, and one of its paths has never run on the real chain.** Loan origination
+by Marrow itself, per round interest, repayment from winnings, both wreck conditions, write
+off and an operator funded replacement have all settled on Base Sepolia. A non zero seizure
+has not: it needs a wrecked agent holding more than the gas reserve, which these settings
+make rare. It is tested against the local chain. `SERVPIT_BANK_SHARE_ON_HOUSE_WIN` is 0, nothing sends
 the bank a share of a house win, and the server refuses to start if a share is set anyway.
 
 **The gas reserve is two seats, and it decides more than gas.** A seat costs 10 chips and
@@ -713,11 +728,12 @@ stake earned against the biggest stake in the field. The six agents have differe
 there: Blaze reaches every round and is wrecked most, Atlas never borrows and ends flat. With
 the flag off the game still pays one fixed stake per seat and an uncapped prize.
 
-**Marrow has approved nothing over SERV yet.** Six live decisions, all refusals, every one of
-them because the borrower was carrying a debt or had no wins in its last five rounds. The
-loans that have settled were approved by the deterministic lender while the model path was
-broken, which is fixed and documented in `docs/bank-live.md`. An approval in its own words is
-still to come.
+**Marrow lends, and its first approvals came after two fixes rather than one.** It was being
+shown the last five rounds of a borrower's record rather than all of it, so an agent whose win
+had scrolled out of that window read as unproven; and its prompt was all risk and no upside,
+so on a thin record it refused while writing "I'll back it at a steep price". Both are fixed
+and measured in `docs/bank-live.md`: three approvals out of eight records before, six after,
+with the two worst records still refused.
 
 **The fake chain's rollover outlives its balances.** `WALLET_BACKEND=fake` holds every balance
 in memory and starts again at each launch, while the rollover from a house win is a file that

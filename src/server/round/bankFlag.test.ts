@@ -838,3 +838,83 @@ describe("when the money runs out", () => {
 function seatMultiple(stakes: number): bigint {
   return stakeWeiFrom() * BigInt(stakes);
 }
+
+describe("the record the lender is shown", () => {
+  // Marrow judges on what it is told, and it was told the last five rounds.
+  // An agent whose win was six rounds ago was introduced as having none: on
+  // Base Sepolia, Flint had won a round and repaid every chip it borrowed,
+  // and the lender was told "zero wins in five rounds" and refused it.
+  it("counts every round the current occupant entered and won, not the last five", async () => {
+    process.env.SERVPIT_BANK_ENABLED = "true";
+    const seat = stakeWeiFrom();
+    dir = mkdtempSync(join(tmpdir(), "servpit-record-"));
+    const chain = new FakeChain({ initialBalanceWei: seat * 2n });
+    const wallets = await openWallets(chain, new WalletRegistry(join(dir, "wallets.json"), "fake"), { bank: true });
+    chain.fund(wallets.bank!.address, seat * 100n);
+    const store = new RoundStore(join(dir, "rounds.json"), "fake");
+    const debts = new DebtStore(join(dir, "debts.json"), "fake");
+
+    // Eight rounds on file: entered every one, won the first.
+    for (let i = 0; i < 8; i++) {
+      store.save({
+        roundId: `r-${i}`,
+        seed: `s-${i}`,
+        createdAt: new Date(Date.UTC(2026, 0, 1, 0, i)).toISOString(),
+        network: "fake",
+        entrants: 24,
+        winner: i === 0 ? "agent-atlas" : `bot-0${i}`,
+        potWei: "0",
+        rakeWei: "0",
+        agents: [
+          {
+            agentId: "atlas",
+            name: "Atlas",
+            strategy: "cautious",
+            address: wallets.agents.get("atlas")!.address,
+            entered: true,
+            stake: toChips(seat),
+            reason: "in",
+            source: "heuristic" as const,
+            balanceBeforeWei: seat.toString(),
+            balanceAfterWei: seat.toString(),
+          },
+        ],
+        reconciled: true,
+        servCalls: 0,
+        servMicroCents: 0,
+      });
+    }
+
+    const asked: string[] = [];
+    const ctx = {
+      chain,
+      wallets,
+      ledger: new TransferLedger(join(dir, "ledger.json"), "fake"),
+      store,
+      bankroll: new BankrollCache({ ttlMs: 0, now: () => 0 }),
+      meter: new CostMeter(DEFAULT_SERV.pricing),
+      rollover: new RolloverStore(join(dir, "rollover.json"), "fake"),
+      debts,
+      wreckStore: new WreckStore(join(dir, "wrecks.json"), "fake"),
+      serv: new ServClient({ ...DEFAULT_SERV, backoffMs: 0 }, {
+        create: vi.fn().mockImplementation(async (req: { messages: Array<{ content: string }> }) => {
+          const user = req.messages[1].content;
+          if (user.includes("wants to put up")) asked.push(user);
+          const content = user.includes("wants to put up")
+            ? JSON.stringify({ approve: true, amount: 1, rateBps: 500, reason: "You are good for it." })
+            : JSON.stringify({ enter: true, stake: toChips(seat) * 3, reason: "Going big." });
+          return { model: "claude-haiku-4.5", choices: [{ index: 0, message: { role: "assistant", content }, finish_reason: "stop" }], usage: {} };
+        }),
+      } as unknown as ChatTransport),
+      entrants: 24,
+    };
+
+    await planRound(ctx, "record");
+
+    const atlas = asked.find((a) => a.startsWith("Atlas"))!;
+    expect(atlas).toBeDefined();
+    // Eight rounds entered and one win, from a history the last five would
+    // have reported as five rounds and no wins at all.
+    expect(atlas).toMatch(/played 8 rounds, won 1/);
+  });
+});
