@@ -32,6 +32,18 @@ describe("key material never reaches the repository", () => {
     expect(isIgnored("data/wallets-base-sepolia.json")).toBe(true);
   });
 
+  /**
+   * A transaction hash is 32 bytes of hex and so is a private key. The one
+   * place a hash may legitimately appear in a tracked file is inside a block
+   * explorer link, which is a public record by definition. Those are removed
+   * before scanning; a bare literal anywhere else still fails.
+   *
+   * The same shape collision bit the logger in phase 3, where redaction by
+   * shape destroyed the transaction hashes it was meant to leave alone.
+   */
+  const EXPLORER_TX = /https:\/\/[a-z.]*basescan\.org\/tx\/0x[0-9a-fA-F]{64}\b/g;
+  const KEY_LITERAL = /\b0x[0-9a-fA-F]{64}\b/;
+
   it("no tracked file contains a private key literal", () => {
     const listed = execFileSync("git", ["ls-files", "-z"], { cwd: root, encoding: "utf8" }).split("\0").filter(Boolean);
     const offenders: string[] = [];
@@ -40,10 +52,24 @@ describe("key material never reaches the repository", () => {
       if (rel === "test/env-safety.test.ts" || rel === "test/secrets.test.ts" || rel === "package-lock.json") continue;
       const path = join(root, rel);
       if (!existsSync(path)) continue;
-      const body = readFileSync(path, "utf8");
-      if (/\b0x[0-9a-fA-F]{64}\b/.test(body)) offenders.push(`${rel}: 32 byte hex literal`);
+      const body = readFileSync(path, "utf8").replace(EXPLORER_TX, "");
+      if (KEY_LITERAL.test(body)) offenders.push(`${rel}: 32 byte hex literal`);
     }
     expect(offenders).toEqual([]);
+  });
+
+  it("still catches a bare key even in a file that also carries explorer links", () => {
+    // The exemption must not become a hole. A key sitting next to a link is
+    // exactly how one would slip through a lazier rule.
+    const key = `0x${"a".repeat(64)}`;
+    const link = `https://sepolia.basescan.org/tx/0x${"b".repeat(64)}`;
+    expect(KEY_LITERAL.test(`${link}\n${key}`.replace(EXPLORER_TX, ""))).toBe(true);
+    expect(KEY_LITERAL.test(link.replace(EXPLORER_TX, ""))).toBe(false);
+  });
+
+  it("does not exempt a hash on a host that merely looks like the explorer", () => {
+    const evil = `https://evil.test/basescan.org/tx/0x${"c".repeat(64)}`;
+    expect(KEY_LITERAL.test(evil.replace(EXPLORER_TX, ""))).toBe(true);
   });
 
   it("no key variable name appears in a built client bundle", () => {

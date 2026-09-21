@@ -71,6 +71,14 @@ describe("secrets never reach the client", () => {
     expect(offenders).toEqual([]);
   });
 
+  /**
+   * A transaction hash is 32 bytes of hex and so is a private key. A hash
+   * inside a block explorer link is a public record, so those are removed
+   * before scanning. A bare literal anywhere else still fails, which the
+   * companion test in env-safety.test.ts proves directly.
+   */
+  const EXPLORER_TX = /https:\/\/[a-z.]*basescan\.org\/tx\/0x[0-9a-fA-F]{64}\b/g;
+
   it("no tracked file contains a private key, mnemonic or api key literal", () => {
     const listed = execFileSync("git", ["ls-files", "-z"], { cwd: root, encoding: "utf8" }).split("\0").filter(Boolean);
     const offenders: string[] = [];
@@ -79,7 +87,7 @@ describe("secrets never reach the client", () => {
       if (rel === "test/secrets.test.ts" || rel === "package-lock.json") continue;
       const path = join(root, rel);
       if (!existsSync(path)) continue;
-      const body = readFileSync(path, "utf8");
+      const body = readFileSync(path, "utf8").replace(EXPLORER_TX, "");
       if (/\b0x[0-9a-fA-F]{64}\b/.test(body)) offenders.push(`${rel}: 64 hex literal`);
       if (/\bsk-[A-Za-z0-9_-]{20,}\b/.test(body)) offenders.push(`${rel}: api key literal`);
     }
