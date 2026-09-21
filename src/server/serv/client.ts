@@ -62,7 +62,14 @@ export interface CompleteOutput {
   latencyMs: number;
 }
 
-const NO_RETRY_STATUS = new Set([400, 401, 403, 404, 422]);
+/**
+ * Statuses that will not become a different answer on the next attempt.
+ *
+ * 402 is here because it was observed live: an account out of credits
+ * answered "Insufficient credits for this request" and every agent spent
+ * three attempts on it. Retrying a billing refusal is pure phase latency.
+ */
+const NO_RETRY_STATUS = new Set([400, 401, 402, 403, 404, 422]);
 
 function statusOf(e: unknown): number | undefined {
   if (e && typeof e === "object" && "status" in e) {
@@ -115,10 +122,25 @@ export class ServClient {
     if (tools) request.tools = tools;
 
     const started = Date.now();
+    // One agent may not hold the phase. Six of these run at once and the phase
+    // ends with the slowest, so a budget on the attempt alone is not a budget
+    // on anything: three attempts at the per attempt timeout is what an agent
+    // could cost the other five.
+    // The budget wins when it is tighter than the per attempt timeout. Taking
+    // the larger of the two would let a per attempt setting quietly override
+    // the bound on what one agent can cost the phase; each attempt is clamped
+    // to what is left instead.
+    const deadline = started + this.config.deadlineMs;
     let lastError: unknown;
+    let outOfTime = false;
     for (let attempt = 1; attempt <= Math.max(1, this.config.attempts); attempt++) {
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) {
+        outOfTime = true;
+        break;
+      }
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), this.config.timeoutMs);
+      const timer = setTimeout(() => controller.abort(), Math.min(this.config.timeoutMs, remaining));
       try {
         const response = await this.transport.create(request, { signal: controller.signal });
         const choice = response.choices?.[0];
@@ -134,12 +156,22 @@ export class ServClient {
         const retryable = status === undefined || !NO_RETRY_STATUS.has(status);
         log.warn("serv call failed", { attempt, status, retryable, error: e instanceof Error ? e.message : String(e) });
         if (!retryable || attempt >= Math.max(1, this.config.attempts)) break;
-        await sleep(this.config.backoffMs * attempt);
+        const backoffMs = this.config.backoffMs * attempt;
+        // No point sleeping into a deadline that will refuse the next attempt.
+        if (Date.now() + backoffMs >= deadline) {
+          outOfTime = true;
+          break;
+        }
+        await sleep(backoffMs);
       } finally {
         clearTimeout(timer);
       }
     }
     const message = lastError instanceof Error ? lastError.message : String(lastError);
+    const elapsed = Date.now() - started;
+    if (outOfTime) {
+      throw new ServError(`SERV did not answer within ${elapsed} ms, the agent's whole budget: ${message}`, this.config.attempts, lastError);
+    }
     throw new ServError(`SERV unreachable after ${this.config.attempts} attempts: ${message}`, this.config.attempts, lastError);
   }
 }
