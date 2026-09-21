@@ -4,7 +4,10 @@
 
 import { parseEther } from "viem";
 import { KEY_VARS, WALLET_IDS, keyVarFor } from "@/config/wallets";
+import { DEFAULT_RPC_URLS } from "@/config/rpc";
 import { registerSecret } from "./log";
+
+export { DEFAULT_RPC_URL, DEFAULT_RPC_URLS } from "@/config/rpc";
 
 type Hex = `0x${string}`;
 const PRIVATE_KEY = /^0x[0-9a-fA-F]{64}$/;
@@ -21,30 +24,35 @@ export interface ServerEnv {
   network: string;
   dataDir: string;
   /** Private key per wallet id. Present only on the viem backend. */
-  viem?: { keys: Record<string, Hex>; rpcUrl: string; gasReserveWei: bigint };
+  viem?: { keys: Record<string, Hex>; rpcUrls: string[]; gasReserveWei: bigint };
   serv?: { apiKey: string; model?: string };
   operatorToken?: string;
 }
 
-/**
- * The Base Sepolia endpoint.
- *
- * Default chosen by measurement rather than by reputation. Four endpoints
- * were given seven eth_getBalance calls back to back, which is the sweep the
- * funding script makes: publicnode answered all seven in 1.3 s, the chain's
- * own sepolia.base.org in 1.9 s, drpc in 3.3 s, and 1rpc.io returned
- * "unknown network" on every one. viem falls back to sepolia.base.org when
- * given nothing, which is what the funding run was using when it timed out.
- */
-export const DEFAULT_RPC_URL = "https://base-sepolia-rpc.publicnode.com";
-
-function rpcUrlFrom(env: NodeJS.ProcessEnv): string {
-  // RPC_URL stays honoured so an existing setup keeps working.
-  const raw = env.BASE_SEPOLIA_RPC_URL ?? env.RPC_URL;
-  const url = raw?.trim();
-  if (url === undefined || url.length === 0) return DEFAULT_RPC_URL;
-  if (!/^https?:\/\//.test(url)) throw new RangeError("BASE_SEPOLIA_RPC_URL must be an http or https url");
+function assertRpcUrl(url: string, source: string): string {
+  if (!/^https?:\/\//.test(url)) throw new RangeError(`${source} must be http or https urls, got ${url}`);
   return url;
+}
+
+/**
+ * Every endpoint to try, in order.
+ *
+ * BASE_SEPOLIA_RPC_URLS is a comma separated list. BASE_SEPOLIA_RPC_URL, and
+ * the older RPC_URL, still work as a single entry override so an existing
+ * setup keeps running unchanged.
+ */
+function rpcUrlsFrom(env: NodeJS.ProcessEnv): string[] {
+  // A value that is only separators and whitespace counts as unset, the same
+  // way a blank single entry always has.
+  const urls = (env.BASE_SEPOLIA_RPC_URLS ?? "")
+    .split(",")
+    .map((u) => u.trim())
+    .filter((u) => u.length > 0)
+    .map((u) => assertRpcUrl(u, "BASE_SEPOLIA_RPC_URLS"));
+  if (urls.length > 0) return urls;
+  const single = (env.BASE_SEPOLIA_RPC_URL ?? env.RPC_URL)?.trim();
+  if (single !== undefined && single.length > 0) return [assertRpcUrl(single, "BASE_SEPOLIA_RPC_URL")];
+  return [...DEFAULT_RPC_URLS];
 }
 
 /**
@@ -109,7 +117,7 @@ export function readEnv(env: NodeJS.ProcessEnv = process.env): ServerEnv {
     network: walletBackend === "viem" ? "base-sepolia" : "fake",
     dataDir: env.SERVPIT_DATA_DIR ?? "data",
     viem: walletBackend === "viem"
-      ? { keys, rpcUrl: rpcUrlFrom(env), gasReserveWei: gasReserveFrom(env) }
+      ? { keys, rpcUrls: rpcUrlsFrom(env), gasReserveWei: gasReserveFrom(env) }
       : undefined,
     serv: env.SERV_API_KEY ? { apiKey: env.SERV_API_KEY, model: env.SERV_MODEL } : undefined,
     operatorToken: env.OPERATOR_TOKEN,

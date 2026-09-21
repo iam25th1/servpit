@@ -24,6 +24,12 @@ export async function planRound(ctx: FlowContext, seed: string, onDecided?: (dec
   const roundId = roundIdFor(seed, ctx.entrants);
 
   ctx.bankroll.invalidate();
+  // Every balance in one chain request. It used to be one request per agent,
+  // sent one after another, which is six chances for a public endpoint to
+  // time out and take the whole decision phase with it.
+  const open = NAMED_AGENTS.map((profile) => ctx.wallets.agents.get(profile.id)).filter((w) => w !== undefined);
+  await ctx.bankroll.warm(ctx.chain, open);
+
   const snapshots: AgentSnapshot[] = [];
   for (const profile of NAMED_AGENTS) {
     const wallet = ctx.wallets.agents.get(profile.id);

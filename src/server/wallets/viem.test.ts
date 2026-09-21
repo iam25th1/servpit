@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { ViemChain, type WalletProviderLike } from "./viem";
+import { createBalanceReader, ViemChain, type BalanceReader, type WalletProviderLike } from "./viem";
 
 const KEY_A = ("0x" + "11".repeat(32)) as `0x${string}`;
 const KEY_B = ("0x" + "22".repeat(32)) as `0x${string}`;
@@ -22,12 +22,28 @@ function stubProvider(address: string, balance = 1_000_000n) {
   return { provider, sent, setBalance: (v: bigint) => { nextBalance = v; } };
 }
 
-const chainWith = (providers: Record<string, WalletProviderLike>, keys: Record<string, `0x${string}`> = { atlas: KEY_A, pot: KEY_B }) =>
-  new ViemChain({ keys, rpcUrl: "https://example.invalid" }, (walletId) => {
-    const p = providers[walletId];
-    if (!p) throw new Error(`no stub provider for ${walletId}`);
-    return p;
-  });
+/** Balances come from the fallback reader now, not from AgentKit's provider. */
+const stubReader = (balances: Record<string, bigint>): BalanceReader & { calls: number } => {
+  const reader = {
+    calls: 0,
+    async readBalances(addresses: readonly string[]) {
+      reader.calls += 1;
+      return addresses.map((a) => balances[a] ?? 0n);
+    },
+  };
+  return reader;
+};
+
+const chainWith = (providers: Record<string, WalletProviderLike>, keys: Record<string, `0x${string}`> = { atlas: KEY_A, pot: KEY_B }, reader?: BalanceReader) =>
+  new ViemChain(
+    { keys, rpcUrls: ["https://example.invalid"] },
+    (walletId) => {
+      const p = providers[walletId];
+      if (!p) throw new Error(`no stub provider for ${walletId}`);
+      return p;
+    },
+    reader ?? stubReader({ [ADDR_A]: 1_000_000n, [ADDR_B]: 2_000_000n }),
+  );
 
 describe("ViemChain wiring", () => {
   it("reports the base-sepolia network and a viem backend", () => {
@@ -64,7 +80,7 @@ describe("ViemChain wiring", () => {
   it("builds each provider once per wallet, not once per call", async () => {
     const a = stubProvider(ADDR_A);
     const factory = vi.fn().mockReturnValue(a.provider);
-    const chain = new ViemChain({ keys: { atlas: KEY_A }, rpcUrl: "https://example.invalid" }, factory);
+    const chain = new ViemChain({ keys: { atlas: KEY_A }, rpcUrls: ["https://example.invalid"] }, factory, stubReader({ [ADDR_A]: 1n }));
     const first = await chain.open("atlas");
     const second = await chain.open("atlas");
     await first.getBalance();
@@ -74,12 +90,12 @@ describe("ViemChain wiring", () => {
 });
 
 describe("ViemChain balances and transfers", () => {
-  it("reads the balance from the provider every time, never from a cached copy", async () => {
-    const a = stubProvider(ADDR_A, 500n);
-    const chain = chainWith({ atlas: a.provider });
+  it("reads the balance from the chain every time, never from a cached copy", async () => {
+    let balance = 500n;
+    const chain = chainWith({ atlas: stubProvider(ADDR_A).provider }, { atlas: KEY_A }, { readBalances: async (a) => a.map(() => balance) });
     const wallet = await chain.open("atlas");
     expect(await wallet.getBalance()).toBe(500n);
-    a.setBalance(900n);
+    balance = 900n;
     expect(await wallet.getBalance()).toBe(900n);
   });
 
@@ -117,5 +133,46 @@ describe("ViemChain balances and transfers", () => {
     const wallet = await chain.open("atlas");
     await expect(wallet.send([{ to: "not-an-address", value: 1n }], "key-4")).rejects.toThrow(/address/);
     expect(a.sent).toHaveLength(0);
+  });
+});
+
+describe("balance reads", () => {
+  it("reads every balance in one request rather than one per wallet", async () => {
+    const reader = stubReader({ [ADDR_A]: 11n, [ADDR_B]: 22n });
+    const chain = chainWith({ atlas: stubProvider(ADDR_A).provider, pot: stubProvider(ADDR_B).provider }, undefined, reader);
+    const balances = await chain.getBalances([ADDR_A, ADDR_B]);
+    expect(balances).toEqual({ [ADDR_A]: 11n, [ADDR_B]: 22n });
+    expect(reader.calls).toBe(1);
+  });
+
+  it("asks for each address once, however many times it was listed", async () => {
+    const reader = stubReader({ [ADDR_A]: 11n });
+    const chain = chainWith({ atlas: stubProvider(ADDR_A).provider }, { atlas: KEY_A }, reader);
+    await chain.getBalances([ADDR_A, ADDR_A, ADDR_A]);
+    expect(reader.calls).toBe(1);
+  });
+
+  it("does not go through AgentKit's provider, which has no fallback", async () => {
+    // AgentKit builds its own public client with one endpoint and viem's ten
+    // second default. A balance read that went through it would ignore every
+    // endpoint configured here, which is what took the decision phase down.
+    const a = stubProvider(ADDR_A, 999n);
+    const providerBalance = vi.spyOn(a.provider, "getBalance");
+    const chain = chainWith({ atlas: a.provider }, { atlas: KEY_A }, stubReader({ [ADDR_A]: 11n }));
+    const wallet = await chain.open("atlas");
+    expect(await wallet.getBalance()).toBe(11n);
+    expect(providerBalance).not.toHaveBeenCalled();
+  });
+
+  it("refuses to look up something that is not an address", async () => {
+    const chain = chainWith({ atlas: stubProvider(ADDR_A).provider }, { atlas: KEY_A });
+    await expect(chain.getBalances(["not-an-address"])).rejects.toThrow(/needs an address/);
+  });
+
+  it("builds a real reader over every endpoint it is given", () => {
+    // Construction only: the test has no network. It proves the list is
+    // accepted and that an empty list still produces a usable reader.
+    expect(createBalanceReader(["https://one.invalid", "https://two.invalid"])).toBeDefined();
+    expect(createBalanceReader([])).toBeDefined();
   });
 });
