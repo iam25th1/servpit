@@ -54,8 +54,12 @@ export const DEFAULT_SERV: ServConfig = {
   // Swap through SERV_MODEL for a demo recording, no code change.
   model: "claude-haiku-4.5",
   features: { promptGuard: true, shadowAgent: true, multipath: true, kronos: false },
+  // Shadow Agent's criteria, in prose rather than schema syntax, which is
+  // why they were unaffected by the validator rejecting numeric keywords in
+  // response_format. They state the bound the schema can no longer carry,
+  // including non negative outright rather than by implication.
   shadowHint:
-    "The reply must be a single JSON object with exactly the keys enter, stake and reason. stake must be an integer number of minor units, zero when enter is false, and never greater than the stated balance. reason must name the balance figure or the participation count it relied on.",
+    "The reply must be a single JSON object with exactly the keys enter, stake and reason. stake must be a non negative integer number of minor units: never below zero, exactly zero when enter is false, and never greater than the stated balance. reason must name the balance figure or the participation count it relied on.",
   shadowMaxIterations: 3,
   temperature: 0.2,
   maxCompletionTokens: 400,

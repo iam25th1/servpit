@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { NAMED_AGENTS } from "@/config/agents";
 import { DEFAULT_SERV } from "@/config/serv";
 import { CostMeter, ServClient, type ChatTransport } from "../serv/client";
-import { DECISION_SCHEMA, buildPrompt, decideForAgents, heuristicDecision, validateDecision } from "./decide";
+import { DECISION_SCHEMA, UNSUPPORTED_SCHEMA_KEYWORDS, buildPrompt, decideForAgents, heuristicDecision, schemaKeywords, validateDecision } from "./decide";
 import type { AgentSnapshot } from "./types";
 
 const snapshot = (patch: Partial<AgentSnapshot> = {}): AgentSnapshot => ({
@@ -199,5 +199,102 @@ describe("decideForAgents", () => {
     const out = await decideForAgents({ client: new ServClient({ ...DEFAULT_SERV, backoffMs: 0 }, transport), meter: new CostMeter(DEFAULT_SERV.pricing) }, broke, round);
     expect(out.decisions[0].decision.enter).toBe(false);
     expect(out.decisions[0].decision.stake).toBe(0);
+  });
+});
+
+describe("the response schema against SERV's validator", () => {
+  it("uses no keyword the validator rejects", () => {
+    // Every call failed with a 400 naming minimum. Probing the live
+    // validator showed the rejected set is the numeric ranges and only
+    // those, on both integer and number.
+    const used = schemaKeywords(DECISION_SCHEMA);
+    const banned = UNSUPPORTED_SCHEMA_KEYWORDS.filter((k) => used.has(k));
+    expect(banned).toEqual([]);
+  });
+
+  it("finds a rejected keyword however deeply it is nested, so the check is not vacuous", () => {
+    const nested = { type: "object", properties: { a: { type: "object", properties: { b: { type: "integer", minimum: 0 } } } } };
+    expect(schemaKeywords(nested).has("minimum")).toBe(true);
+    expect(UNSUPPORTED_SCHEMA_KEYWORDS.filter((k) => schemaKeywords(nested).has(k))).toEqual(["minimum"]);
+  });
+
+  it("keeps the types and the required fields, which are what strict mode needs", () => {
+    expect(DECISION_SCHEMA.required).toEqual(["enter", "stake", "reason"]);
+    expect(DECISION_SCHEMA.additionalProperties).toBe(false);
+    expect(DECISION_SCHEMA.properties.enter.type).toBe("boolean");
+    expect(DECISION_SCHEMA.properties.stake.type).toBe("integer");
+    expect(DECISION_SCHEMA.properties.reason.type).toBe("string");
+  });
+
+  it("still says in words what the removed keyword meant", () => {
+    // The bound is enforced by validateDecision. The description is what
+    // tells the model, and losing it would make a rejection more likely
+    // rather than less.
+    expect(DECISION_SCHEMA.properties.stake.description).toContain("never negative");
+  });
+});
+
+describe("the bounds the schema no longer expresses are still enforced", () => {
+  const snap = snapshot({ balanceWei: 10_000n });
+
+  it("rejects a negative stake, which is what minimum: 0 used to say", () => {
+    const r = validateDecision('{"enter":false,"stake":-1,"reason":"x"}', snap);
+    expect(r.ok).toBe(false);
+    expect(r.ok === false && r.reason).toBe("stake was not a non negative integer");
+  });
+
+  it("rejects a fractional stake, which is what type integer used to say", () => {
+    expect(validateDecision('{"enter":false,"stake":1.5,"reason":"x"}', snap).ok).toBe(false);
+  });
+
+  it("rejects a stake above the balance read from the chain", () => {
+    const r = validateDecision('{"enter":true,"stake":20000,"reason":"x"}', snap);
+    expect(r.ok).toBe(false);
+    expect(r.ok === false && r.reason).toContain("exceeds on chain balance");
+  });
+
+  it("rejects a stake that is not this round's allocation", () => {
+    expect(validateDecision('{"enter":true,"stake":5,"reason":"x"}', snap).ok).toBe(false);
+  });
+
+  it("rejects a non zero stake when holding", () => {
+    expect(validateDecision('{"enter":false,"stake":100,"reason":"x"}', snap).ok).toBe(false);
+  });
+});
+
+describe("the failure that shipped", () => {
+  const snaps = NAMED_AGENTS.map((profile, i) => snapshot({ profile, address: "0x" + String(i % 10).repeat(40) }));
+
+  /** The exact error SERV returned on every call before the schema was fixed. */
+  const schemaRejection = () => {
+    const e = new Error("400 response_format.json_schema.schema: For 'integer' type, property 'minimum' is not supported");
+    (e as unknown as { status: number }).status = 400;
+    return e;
+  };
+
+  it("falls back to the heuristic on a schema rejection and the round still proceeds", async () => {
+    const transport = { create: vi.fn().mockRejectedValue(schemaRejection()) } as unknown as ChatTransport;
+    const out = await decideForAgents({ client: new ServClient({ ...DEFAULT_SERV, attempts: 1, backoffMs: 0 }, transport), meter: new CostMeter(DEFAULT_SERV.pricing) }, snaps, round);
+    expect(out.decisions).toHaveLength(6);
+    for (const d of out.decisions) {
+      expect(d.source).toBe("heuristic");
+      expect(d.rejection).toContain("is not supported");
+      expect(d.decision).toEqual(heuristicDecision(snaps.find((s) => s.profile.id === d.agentId)!, round));
+    }
+    expect(out.rejections).toHaveLength(6);
+  });
+
+  it("does not retry a 400, because a rejected schema is rejected every time", async () => {
+    // Three attempts against a permanent error is three times the latency
+    // for the same answer.
+    const transport = { create: vi.fn().mockRejectedValue(schemaRejection()) } as unknown as ChatTransport;
+    await decideForAgents({ client: new ServClient({ ...DEFAULT_SERV, attempts: 3, backoffMs: 0 }, transport), meter: new CostMeter(DEFAULT_SERV.pricing) }, snaps, round);
+    expect((transport.create as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(6);
+  });
+
+  it("counts the call even when it failed, so the cost report cannot hide a broken run", async () => {
+    const transport = { create: vi.fn().mockRejectedValue(schemaRejection()) } as unknown as ChatTransport;
+    const out = await decideForAgents({ client: new ServClient({ ...DEFAULT_SERV, attempts: 1, backoffMs: 0 }, transport), meter: new CostMeter(DEFAULT_SERV.pricing) }, snaps, round);
+    expect(out.servCalls).toBe(6);
   });
 });
