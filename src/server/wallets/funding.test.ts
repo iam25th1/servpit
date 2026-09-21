@@ -48,3 +48,37 @@ describe("planFunding", () => {
     expect(() => planFunding("ghost", [b("atlas", 10n)], 100n, 0n)).toThrow(/ghost/);
   });
 });
+
+describe("a wallet with its own target", () => {
+  const balances = [
+    { id: "atlas", address: "0xa", balanceWei: 1_000n },
+    { id: "blaze", address: "0xb", balanceWei: 0n },
+    { id: "bank", address: "0xk", balanceWei: 0n },
+  ];
+
+  it("tops the named wallet to its own figure and everyone else to the default", () => {
+    // The bank holds a treasury to lend from rather than a seat, so the per
+    // agent target is the wrong number for it in both directions.
+    const plan = planFunding("atlas", balances, 100n, 0n, { bank: 500n });
+    expect(plan.transfers.find((t) => t.id === "blaze")?.amountWei).toBe(100n);
+    expect(plan.transfers.find((t) => t.id === "bank")?.amountWei).toBe(500n);
+    expect(plan.totalWei).toBe(600n);
+  });
+
+  it("skips a wallet already at its own target, so a rerun sends nothing", () => {
+    const funded = balances.map((b) => (b.id === "bank" ? { ...b, balanceWei: 500n } : b));
+    const plan = planFunding("atlas", funded, 100n, 0n, { bank: 500n });
+    expect(plan.skipped.map((s) => s.id)).toContain("bank");
+    expect(plan.transfers.map((t) => t.id)).not.toContain("bank");
+  });
+
+  it("leaves every other wallet alone when no override is given", () => {
+    const plan = planFunding("atlas", balances, 100n, 0n);
+    expect(plan.transfers.every((t) => t.amountWei === 100n)).toBe(true);
+  });
+
+  it("refuses a target that is not a positive amount", () => {
+    expect(() => planFunding("atlas", balances, 100n, 0n, { bank: 0n })).toThrow(/greater than zero/);
+    expect(() => planFunding("atlas", balances, 100n, 0n, { bank: -1n })).toThrow(/non negative/);
+  });
+});
