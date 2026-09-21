@@ -15,7 +15,7 @@ import type { Entrant } from "@/engine/resolveRound";
 import { resolveRound } from "@/engine/resolveRound";
 import { heuristicDecision } from "@/server/decisions/heuristic";
 import type { RoundOutcome } from "@/server/decisions/types";
-import { splitPrize } from "@/server/round/prize";
+import { clampStake, splitCappedPrize } from "./prize";
 import { accrueInterest, applyWinnings, originateLoan, replacementAgent, seize, totalDebt, wreckReason, type Agent, type EconomyConfig, type WreckReason } from "./rules";
 
 export interface SimConfig {
@@ -31,6 +31,8 @@ export interface SimConfig {
   treasury: bigint;
   /** An agent that cannot afford a seat borrows up to this many stakes. */
   borrowToStakes: bigint;
+  /** How many base stakes an agent may put on one seat. */
+  maxStakeMultiple: number;
   economy: EconomyConfig;
 }
 
@@ -65,6 +67,8 @@ export interface SimReport {
   agentBalances: bigint;
   /** Principal plus interest still owed to the bank at the end. */
   outstandingDebt: bigint;
+  /** Rounds where the winner's stake, not the pool, decided the payout. */
+  cappedRounds: number;
   /** What the agents gained or lost in total, net of what was injected. */
   agentNet: bigint;
   /** agentNet per agent per round, in chips. */
@@ -93,6 +97,8 @@ interface Seat {
   creditDenied: boolean;
   /** Bumped every time this seat's occupant is replaced. */
   generation: number;
+  /** What this seat put up this round, between the base stake and the ceiling. */
+  stakeWei: bigint;
 }
 
 const min = (a: bigint, b: bigint): bigint => (a < b ? a : b);
@@ -114,6 +120,7 @@ export function simulate(config: SimConfig): SimReport {
     recentOutcomes: [],
     creditDenied: false,
     generation: 0,
+    stakeWei: config.economy.stakeWei,
   }));
 
   let treasury = config.treasury;
@@ -136,6 +143,7 @@ export function simulate(config: SimConfig): SimReport {
   const treasurySeries: bigint[] = [];
   let treasuryMin = treasury;
   let treasuryMax = treasury;
+  let capped = 0;
   let cleanAgentRounds = 0;
   let indebtedAgentRounds = 0;
   let cleanDelta = 0n;
@@ -174,6 +182,13 @@ export function simulate(config: SimConfig): SimReport {
     }
     if (askedAndRefused) dryRounds += 1;
 
+    // What each seat is willing to put up this round. Clamped to the bounds
+    // whatever the policy asks for, so no decision can put an agent outside
+    // them.
+    for (const seat of seats) {
+      seat.stakeWei = clampStake(stake, config.maxStakeMultiple, stake);
+    }
+
     // Decisions, by the same heuristic the game falls back to.
     const entering: Seat[] = [];
     for (const seat of seats) {
@@ -183,13 +198,13 @@ export function simulate(config: SimConfig): SimReport {
       );
       // The balance decides, not the decision. Same gate the planner applies
       // before money moves.
-      if (decision.enter && seat.agent.balanceWei >= stake) entering.push(seat);
+      if (decision.enter && seat.agent.balanceWei >= seat.stakeWei) entering.push(seat);
     }
 
     let entries = 0n;
     for (const seat of entering) {
-      seat.agent = { ...seat.agent, balanceWei: seat.agent.balanceWei - stake };
-      entries += stake;
+      seat.agent = { ...seat.agent, balanceWei: seat.agent.balanceWei - seat.stakeWei };
+      entries += seat.stakeWei;
     }
 
     const botCount = Math.max(0, config.entrants - entering.length);
@@ -201,22 +216,35 @@ export function simulate(config: SimConfig): SimReport {
     const winnerId = result.placements[0];
     const winner = entering.find((seat) => `agent-${seat.profile.id}` === winnerId) ?? null;
 
-    const prize = splitPrize({ entriesWei: entries, rolloverWei: rollover, rakeBps: round.rakeBps, agentWon: Boolean(winner), bankShare: config.bankShare });
+    // The winner takes what its own stake bought, and the rest rolls over.
+    // Without that cap a floor stake could sweep a pot that bigger stakers
+    // and a long rollover built, and staking more would buy nothing.
+    const prize = splitCappedPrize({
+      poolWei: entries + rollover,
+      rakeBps: round.rakeBps,
+      winnerStakeWei: winner ? winner.stakeWei : null,
+      entrants: config.entrants,
+    });
     rake += prize.rakeWei;
+    if (prize.capped) capped += 1;
     if (winner) {
       const applied = applyWinnings(winner.agent, prize.payoutWei);
       winner.agent = applied.agent;
       treasury += applied.toTreasuryWei;
       interestCollected += applied.repayment.interestPaidWei;
-      rollover = 0n;
-    } else {
-      treasury += prize.toBankWei;
       rollover = prize.nextRolloverWei;
+    } else {
+      // The bank's share is of what nobody real claimed, which on a house win
+      // is the whole prize.
+      const ppm = BigInt(Math.round(config.bankShare * 1_000_000));
+      const toBankWei = (prize.nextRolloverWei * ppm) / 1_000_000n;
+      treasury += toBankWei;
+      rollover = prize.nextRolloverWei - toBankWei;
     }
 
     for (const seat of seats) {
       const entered = entering.includes(seat);
-      const net = seat === winner ? prize.payoutWei - stake : entered ? -stake : 0n;
+      const net = seat === winner ? prize.payoutWei - seat.stakeWei : entered ? -seat.stakeWei : 0n;
       seat.recentOutcomes = [...seat.recentOutcomes, { roundId, entered, netWei: net }].slice(-10);
     }
 
@@ -322,6 +350,7 @@ export function simulate(config: SimConfig): SimReport {
     writtenOff,
     operatorInjected,
     retired,
+    cappedRounds: capped,
     agentBalances: seats.reduce((sum, seat) => sum + seat.agent.balanceWei, 0n),
     outstandingDebt: seats.reduce((sum, seat) => sum + totalDebt(seat.agent.debt), 0n),
     agentNet,

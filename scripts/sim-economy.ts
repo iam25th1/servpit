@@ -12,7 +12,7 @@
 
 import { parseArgs } from "node:util";
 import { NAMED_AGENTS } from "../src/config/agents";
-import { economyConfig } from "../src/config/economy";
+import { economyConfig, maxStakeMultiple } from "../src/config/economy";
 import { simulate, type SimReport } from "../src/economy/simulate";
 
 const { values } = parseArgs({
@@ -23,6 +23,7 @@ const { values } = parseArgs({
     stake: { type: "string", default: "10" },
     balance: { type: "string", default: "100" },
     treasury: { type: "string", default: "500" },
+    "max-stake": { type: "string", default: String(maxStakeMultiple()) },
   },
 });
 
@@ -39,19 +40,20 @@ const entrants = intArg("entrants", values.entrants, NAMED_AGENTS.length, 1024);
 const stake = BigInt(intArg("stake", values.stake, 1, 1_000_000));
 const startingBalance = BigInt(intArg("balance", values.balance, 1, 1_000_000));
 const treasury = BigInt(intArg("treasury", values.treasury, 0, 100_000_000));
+const maxStake = intArg("max-stake", values["max-stake"], 1, 100);
 
 const SHARES = [0, 0.5, 1];
 
 const economy = economyConfig(stake);
 const reports = SHARES.map((bankShare) =>
-  simulate({ rounds, entrants, seed: values.seed, bankShare, startingBalance, treasury, borrowToStakes: 3n, economy }),
+  simulate({ rounds, entrants, seed: values.seed, bankShare, startingBalance, treasury, borrowToStakes: 3n, maxStakeMultiple: maxStake, economy }),
 );
 
 const pad = (value: string | number, width: number): string => String(value).padStart(width);
 const orNever = (value: number | null): string => (value === null ? "never" : String(value));
 
 console.log(`servpit economy sim: ${rounds} rounds x ${entrants} seats, seed "${values.seed}", chips throughout`);
-console.log(`  seat ${stake}, agent opening balance ${startingBalance}, bank opening treasury ${treasury}, ${NAMED_AGENTS.length} agents`);
+console.log(`  seat ${stake} to ${stake * BigInt(maxStake)}, agent opening balance ${startingBalance}, bank opening treasury ${treasury}, ${NAMED_AGENTS.length} agents`);
 console.log(
   `  credit: min loan ${economy.minLoanWei}, max principal ${economy.maxPrincipalWei}, ${economy.maxTreasuryShareBps / 100}% of treasury per loan, ` +
     `${economy.interestBps / 100}% interest per round, debt ceiling ${economy.debtCeilingWei}, replacement debt ${economy.replacementDebtWei}`,

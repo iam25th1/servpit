@@ -114,6 +114,25 @@ export const CREDIT_TERMS = {
   replacementDebtStakes: 0n,
 } as const;
 
+/**
+ * How many base stakes an agent may put on one seat.
+ *
+ * Three by default. One means the fixed stake the running game still uses;
+ * anything much higher lets a single round decide an agent's fate and makes
+ * the credit rules a formality.
+ */
+export const DEFAULT_MAX_STAKE_MULTIPLE = 3;
+
+export function maxStakeMultiple(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = env.SERVPIT_MAX_STAKE_MULTIPLE?.trim();
+  if (raw === undefined || raw.length === 0) return DEFAULT_MAX_STAKE_MULTIPLE;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < 1 || value > 100) {
+    throw new RangeError(`SERVPIT_MAX_STAKE_MULTIPLE must be a whole number of stakes between 1 and 100, got ${raw}`);
+  }
+  return value;
+}
+
 export function economyConfig(stakeWei: bigint, overrides: Partial<EconomyConfig> = {}): EconomyConfig {
   if (typeof stakeWei !== "bigint" || stakeWei <= 0n) throw new RangeError(`stakeWei must be a positive bigint, got ${String(stakeWei)}`);
   return {

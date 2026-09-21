@@ -11,6 +11,7 @@ const config = (overrides: Partial<SimConfig> = {}, terms: Parameters<typeof eco
   startingBalance: 100n,
   treasury: 500n,
   borrowToStakes: 3n,
+  maxStakeMultiple: 3,
   economy: economyConfig(10n, terms),
   ...overrides,
 });
@@ -71,9 +72,12 @@ describe("simulate", () => {
   it("wrecks on the debt ceiling when the bank has money and on being denied when it does not", () => {
     const funded = simulate(config({ rounds: 2_000 }));
     const dry = simulate(config({ rounds: 2_000, treasury: 0n }));
-    expect(funded.wrecksByReason["debt above the ceiling"]).toBeGreaterThan(0);
-    expect(funded.wrecksByReason["broke and denied credit"]).toBe(0);
+    // A funded bank wrecks agents for owing too much, not for being refused.
+    // The occasional denial still happens, at the principal ceiling.
+    expect(funded.wrecksByReason["debt above the ceiling"]).toBeGreaterThan(funded.wrecksByReason["broke and denied credit"]);
+    // A dry one has nothing to lend, so every wreck is a refusal.
     expect(dry.wrecksByReason["broke and denied credit"]).toBeGreaterThan(0);
+    expect(dry.wrecksByReason["debt above the ceiling"]).toBe(0);
   });
 
   it("refuses a round count or a field that leaves no room for the agents", () => {
