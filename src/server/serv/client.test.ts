@@ -117,3 +117,75 @@ describe("CostMeter", () => {
     expect(meter.totals.totalTokens).toBe(0);
   });
 });
+
+describe("one agent's budget", () => {
+  const never = (): ChatTransport =>
+    ({
+      create: vi.fn().mockImplementation((_r: unknown, options: { signal: AbortSignal }) =>
+        new Promise((_resolve, reject) => {
+          options.signal.addEventListener("abort", () => reject(new Error("aborted")));
+        }),
+      ),
+    }) as unknown as ChatTransport;
+
+  const call = (client: ServClient) => client.complete({ system: "s", user: "u", schemaName: "d", schema: {} });
+
+  it("gives up on the whole budget rather than on each attempt in turn", async () => {
+    // Six of these run at once and the phase ends with the slowest, so a
+    // budget on the attempt alone bounds nothing that matters. Three attempts
+    // at the per attempt timeout used to be what one agent could cost the
+    // other five.
+    const transport = never();
+    const client = new ServClient({ ...DEFAULT_SERV, timeoutMs: 40, deadlineMs: 100, attempts: 5, backoffMs: 10 }, transport);
+    const started = Date.now();
+    await expect(call(client)).rejects.toThrow(/whole budget/);
+    const elapsed = Date.now() - started;
+    // Two attempts of 40 ms fit; a third would cross the deadline.
+    expect(elapsed).toBeLessThan(400);
+    expect((transport.create as ReturnType<typeof vi.fn>).mock.calls.length).toBeLessThan(5);
+  });
+
+  it("never gives an attempt longer than the budget that is left", async () => {
+    const transport = never();
+    const client = new ServClient({ ...DEFAULT_SERV, timeoutMs: 10_000, deadlineMs: 60, attempts: 3, backoffMs: 5 }, transport);
+    const started = Date.now();
+    await expect(call(client)).rejects.toThrow();
+    expect(Date.now() - started).toBeLessThan(1_000);
+  });
+
+  it("leaves a healthy call alone", async () => {
+    const transport = { create: vi.fn().mockResolvedValue(reply('{"enter":true,"stake":10,"reason":"In."}')) } as unknown as ChatTransport;
+    const result = await call(new ServClient(config(), transport));
+    expect(result.attempts).toBe(1);
+  });
+
+  it("ships a budget that fits a healthy call with room to spare", () => {
+    // Measured against live SERV: six concurrent calls, 6.1 s fastest and
+    // 11.9 s slowest across four phases.
+    expect(DEFAULT_SERV.timeoutMs).toBeGreaterThan(12_000);
+    expect(DEFAULT_SERV.deadlineMs).toBeGreaterThan(DEFAULT_SERV.timeoutMs);
+    // And bounds what one agent can cost the phase.
+    expect(DEFAULT_SERV.deadlineMs).toBeLessThan(DEFAULT_SERV.timeoutMs * DEFAULT_SERV.attempts);
+  });
+});
+
+describe("statuses not worth retrying", () => {
+  const failing = (status: number): ChatTransport =>
+    ({ create: vi.fn().mockRejectedValue(Object.assign(new Error(`${status} nope`), { status })) }) as unknown as ChatTransport;
+
+  it("does not spend the phase retrying a billing refusal", async () => {
+    // Observed live: an account out of credits answered 402 and every agent
+    // spent three attempts on it before falling back.
+    const transport = failing(402);
+    const client = new ServClient(config(), transport);
+    await expect(client.complete({ system: "s", user: "u", schemaName: "d", schema: {} })).rejects.toThrow(ServError);
+    expect((transport.create as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(1);
+  });
+
+  it("still retries something that could go either way", async () => {
+    const transport = failing(500);
+    const client = new ServClient(config(), transport);
+    await expect(client.complete({ system: "s", user: "u", schemaName: "d", schema: {} })).rejects.toThrow(ServError);
+    expect((transport.create as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(DEFAULT_SERV.attempts);
+  });
+});

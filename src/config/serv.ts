@@ -40,7 +40,21 @@ export interface ServConfig {
   shadowMaxIterations: number;
   temperature: number;
   maxCompletionTokens: number;
+  /** Deadline for a single attempt. */
   timeoutMs: number;
+  /**
+   * Deadline for one agent's whole decision, across every attempt and the
+   * backoff between them.
+   *
+   * The phase ends when the slowest of six concurrent agents finishes, so
+   * without this one agent's retries set the length of the phase for
+   * everybody. Measured: a healthy call is 6.1 to 11.9 s, and three attempts
+   * at a 20 s timeout is 61.2 s of one agent holding the other five.
+   *
+   * An agent that runs out of budget falls back to the deterministic
+   * heuristic, which is what a failed SERV call has always done.
+   */
+  deadlineMs: number;
   /** Attempts in total, including the first. */
   attempts: number;
   backoffMs: number;
@@ -67,7 +81,10 @@ export const DEFAULT_SERV: ServConfig = {
   shadowMaxIterations: 3,
   temperature: 0.2,
   maxCompletionTokens: 400,
-  timeoutMs: 20_000,
+  // 15 s per attempt against a measured healthy maximum of 11.9 s, and 25 s
+  // for the agent in total. Worst case per agent was 61.2 s.
+  timeoutMs: 15_000,
+  deadlineMs: 25_000,
   attempts: 3,
   backoffMs: 400,
   pricing: { inputCentsPerMillion: 125, outputCentsPerMillion: 650 },
