@@ -14,6 +14,8 @@ import { roundIdFor } from "@/server/round/types";
 import { runRound } from "@/server/round/settle";
 import { overReached } from "@/server/round/wrecks";
 import { parseRoundRequest } from "../plan/params";
+import { arenaMode } from "@/config/arena";
+import { ARENA_RUNNING } from "@/server/arena/message";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,6 +29,12 @@ export async function POST(request: Request): Promise<Response> {
   }
   const parsed = parseRoundRequest(body);
   if (!parsed.ok) return Response.json({ error: parsed.error }, { status: 400 });
+
+  // With the pit running itself there is one writer and it is the worker. A
+  // lever pull here would settle a round beside it, against the same wallets
+  // and the same stores: the settle lock would serialise the two, which is
+  // not the same as there being only one.
+  if (arenaMode()) return Response.json({ code: "arena_running", error: ARENA_RUNNING, message: ARENA_RUNNING, retryable: false }, { status: 409 });
 
   const ctx = await getSettleContext();
   const flow = { ...ctx.flow, entrants: parsed.entrants };

@@ -19,6 +19,8 @@ import { basescanAddress } from "@/server/money";
 import { planRound, seatOccupants, type RoundPlan } from "@/server/round/flow";
 import { TAPPED_OUT } from "@/server/round/plan";
 import { parseRoundRequest } from "./params";
+import { arenaMode } from "@/config/arena";
+import { ARENA_RUNNING } from "@/server/arena/message";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -85,6 +87,11 @@ export async function POST(request: Request): Promise<Response> {
   }
   const parsed = parseRoundRequest(body);
   if (!parsed.ok) return Response.json({ error: parsed.error }, { status: 400 });
+
+  // The worker owns the round loop while the pit runs itself, and a plan
+  // costs real money to make: six agents deciding is a cent of SERV whether
+  // or not anybody ever settles it.
+  if (arenaMode()) return Response.json({ code: "arena_running", error: ARENA_RUNNING, message: ARENA_RUNNING, retryable: false }, { status: 409 });
 
   const ctx = await getServerContext();
   const flow = { ...ctx.flow, entrants: parsed.entrants };
