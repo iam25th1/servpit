@@ -5,6 +5,7 @@
 // enforces by walking the import graph.
 
 import { NAMED_AGENTS } from "@/config/agents";
+import { faceFor, profileFor } from "@/config/replacements";
 import { bankEnabled, bankRateBounds, maxLoanStakes, maxStakeMultiple, CREDIT_TERMS } from "@/config/economy";
 import { clampStake } from "@/economy/prize";
 import { stakeWeiFrom, toChips } from "@/config/stake";
@@ -76,12 +77,18 @@ export async function planRound(
   // balance that was never verified.
   const snapshots: AgentSnapshot[] = [];
   const unreachable: AgentDecision[] = [];
-  for (const profile of NAMED_AGENTS) {
-    const wallet = ctx.wallets.agents.get(profile.id);
+  for (const seat of NAMED_AGENTS) {
+    const wallet = ctx.wallets.agents.get(seat.id);
     if (!wallet) continue;
-    const base = { agentId: profile.id, name: profile.name, strategy: profile.strategy, address: wallet.address };
+    // Who is in this seat now. After a wreck the wallet is reused and the
+    // occupant is not, so the panel shows somebody new rather than the same
+    // six names cycling forever.
+    const profile = profileFor(seat.id, ctx.debts.currentIdentity(seat.id));
+    // Keyed by the seat, because that is what owns the wallet, the debt and
+    // every idempotency key. The name is whoever is sitting in it.
+    const base = { agentId: seat.id, name: profile.name, strategy: profile.strategy, address: wallet.address, face: faceFor(seat.id, ctx.debts.currentIdentity(seat.id)) };
     const sitOut = (reason: string): void => {
-      log.warn("balance unreadable, agent sits this round out", { agentId: profile.id, address: wallet.address, reason: redact(reason) });
+      log.warn("balance unreadable, agent sits this round out", { agentId: seat.id, address: wallet.address, reason: redact(reason) });
       unreachable.push({ ...base, balanceWei: 0n, decision: { enter: false, stake: 0, reason: UNREACHABLE_REASON }, source: "heuristic", rejection: UNREACHABLE_REASON });
     };
     if (unread.includes(wallet.address)) {
@@ -96,7 +103,7 @@ export async function planRound(
       continue;
     }
     snapshots.push({
-      profile,
+      profile: { ...profile, id: seat.id },
       address: wallet.address,
       balanceWei,
       stakeWei,

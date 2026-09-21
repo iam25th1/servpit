@@ -50,6 +50,8 @@ export interface AgentDecision {
   name: string;
   strategy: string;
   address: string;
+  /** The roster face for a replacement. Null for the originals. */
+  face?: string | null;
   balanceWei: bigint;
   decision: Decision;
   source: DecisionSource;

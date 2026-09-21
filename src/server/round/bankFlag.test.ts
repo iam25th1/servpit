@@ -24,6 +24,8 @@ import { RoundStore } from "./store";
 import { planRound, runRound } from "./flow";
 import { TAPPED_OUT } from "./plan";
 import { overReached } from "./wrecks";
+import { ORIGINAL_FACES, REPLACEMENTS } from "@/config/replacements";
+import { totalOwed } from "./debt";
 
 const FUNDED_WEI = 100_000_000_000_000n;
 let dir: string;
@@ -560,6 +562,105 @@ describe("a broke agent does not get to sit out quietly", () => {
       debts.addLoan(id, debts.currentIdentity(id), seat * 3n, 1_000);
     }
     const plan = await planRound(ctx, "seizetwice");
+    await runRound(ctx, plan);
+    const applied = chain.applied;
+    const again = await runRound(ctx, plan);
+    expect(chain.applied).toBe(applied);
+    expect(again.reconciliation.ok).toBe(true);
+  });
+});
+
+describe("replacement", () => {
+  async function doomed() {
+    process.env.SERVPIT_BANK_ENABLED = "true";
+    const seat = stakeWeiFrom();
+    dir = mkdtempSync(join(tmpdir(), "servpit-bankflag-"));
+    const chain = new FakeChain({ initialBalanceWei: seat / 2n });
+    const wallets = await openWallets(chain, new WalletRegistry(join(dir, "wallets.json")), { bank: true, operator: true });
+    chain.fund(wallets.bank!.address, seat * 200n);
+    chain.fund(wallets.operator!.address, seat * 500n);
+    const debts = new DebtStore(join(dir, "debts.json"));
+    const ctx = {
+      chain,
+      wallets,
+      ledger: new TransferLedger(join(dir, "ledger.json")),
+      store: new RoundStore(join(dir, "rounds.json")),
+      bankroll: new BankrollCache({ ttlMs: 0, now: () => 0 }),
+      meter: new CostMeter(DEFAULT_SERV.pricing),
+      rollover: new RolloverStore(join(dir, "rollover.json")),
+      debts,
+      wreckStore: new WreckStore(join(dir, "wrecks.json")),
+      serv: new ServClient({ ...DEFAULT_SERV, backoffMs: 0 }, duplexTransport(toChips(seat), { approve: false, amount: 0, rateBps: 500 })),
+      entrants: 24,
+    };
+    return { chain, wallets, debts, ctx, seat };
+  }
+
+  it("puts somebody new in the seat, with a face none of the originals wear", async () => {
+    const { ctx } = await doomed();
+    const plan = await planRound(ctx, "refill");
+    const run = await runRound(ctx, plan);
+
+    expect(run.replacements).toHaveLength(6);
+    for (const r of run.replacements) {
+      expect(r.identityId).toMatch(/-2$/);
+      expect(REPLACEMENTS.some((p) => p.name === r.name)).toBe(true);
+      expect(r.face).not.toBeNull();
+      expect(ORIGINAL_FACES).not.toContain(r.face);
+    }
+    expect(run.reconciliation.ok).toBe(true);
+  });
+
+  it("never lets a new agent inherit a dead one's debt", async () => {
+    const { debts, ctx, seat } = await doomed();
+    for (const id of ["atlas", "blaze", "comet", "delta", "ember", "flint"]) {
+      debts.addLoan(id, debts.currentIdentity(id), seat * 3n, 1_000);
+    }
+    const plan = await planRound(ctx, "clean");
+    const run = await runRound(ctx, plan);
+    expect(run.wrecks.length).toBe(6);
+    for (const w of run.wrecks) {
+      expect(BigInt(w.writtenOffWei)).toBeGreaterThan(0n);
+      // Same wallet, new identity, nothing owed.
+      const identity = debts.currentIdentity(w.walletId);
+      expect(identity).not.toBe(w.identityId);
+      expect(totalOwed(debts.get(w.walletId, identity))).toBe(0n);
+    }
+  });
+
+  it("funds the seat from operator capital, never from an agent or the pot", async () => {
+    const { chain, wallets, ctx } = await doomed();
+    const operatorBefore = chain.balanceOf(wallets.operator!.address);
+    const potBefore = chain.balanceOf(wallets.pot.address);
+    const plan = await planRound(ctx, "capital");
+    const run = await runRound(ctx, plan);
+
+    const funded = run.replacements.reduce((sum, r) => sum + r.fundedWei, 0n);
+    expect(funded).toBeGreaterThan(0n);
+    expect(chain.balanceOf(wallets.operator!.address)).toBe(operatorBefore - funded);
+    // Nobody entered, so the pot is untouched by any of this.
+    expect(chain.balanceOf(wallets.pot.address)).toBe(potBefore);
+    expect(run.reconciliation.checks.map((c) => c.name)).toContain("operator delta");
+    expect(run.reconciliation.ok).toBe(true);
+  });
+
+  it("shows the new agent by name in the next round's plan", async () => {
+    const { ctx } = await doomed();
+    const first = await planRound(ctx, "gen1");
+    const names = new Set(first.decisions.map((d) => d.name));
+    await runRound(ctx, first);
+
+    const second = await planRound(ctx, "gen2");
+    for (const d of second.decisions) {
+      expect(names.has(d.name)).toBe(false);
+      expect(REPLACEMENTS.some((p) => p.name === d.name)).toBe(true);
+      expect(d.face).not.toBeNull();
+    }
+  });
+
+  it("refills once however many times the round is settled", async () => {
+    const { chain, ctx } = await doomed();
+    const plan = await planRound(ctx, "refilltwice");
     await runRound(ctx, plan);
     const applied = chain.applied;
     const again = await runRound(ctx, plan);

@@ -25,8 +25,19 @@ export const KEY_VARS: readonly string[] = Object.freeze(WALLET_IDS.map(keyVarFo
  */
 export const BANK_WALLET_ID = "bank";
 
+/**
+ * Operator capital, which refills a seat after the agent in it is finished.
+ *
+ * Separate from both the pot and the bank on purpose. The pot holds prize
+ * money that belongs to the round, and the bank's treasury is lending
+ * capital; funding a replacement out of either would hide who is actually
+ * paying to keep six agents on the table. A replacement bankroll never comes
+ * from an agent's playing balance and never from the prize pool.
+ */
+export const OPERATOR_WALLET_ID = "operator";
+
 /** Wallets the system uses when a key exists and runs fine without. */
-export const OPTIONAL_WALLET_IDS: readonly string[] = Object.freeze([BANK_WALLET_ID]);
+export const OPTIONAL_WALLET_IDS: readonly string[] = Object.freeze([BANK_WALLET_ID, OPERATOR_WALLET_ID]);
 
 /** Every wallet a key can be generated for, required ones first. */
 export const ALL_WALLET_IDS: readonly string[] = Object.freeze([...WALLET_IDS, ...OPTIONAL_WALLET_IDS]);

@@ -1,7 +1,7 @@
 // Opens (or creates and persists) one wallet per named agent plus the pot.
 
 import { NAMED_AGENTS, POT_WALLET_ID } from "@/config/agents";
-import { BANK_WALLET_ID } from "@/config/wallets";
+import { BANK_WALLET_ID, OPERATOR_WALLET_ID } from "@/config/wallets";
 import { log } from "../log";
 import type { WalletRegistry } from "./registry";
 import type { Chain, Wallet } from "./types";
@@ -17,11 +17,15 @@ export interface Wallets {
    * always needed are unaffected by its absence.
    */
   bank?: Wallet;
+  /** Operator capital, which refills a wrecked seat. Never an agent's money. */
+  operator?: Wallet;
 }
 
 export interface OpenOptions {
   /** Whether to open the bank's wallet. It needs a key of its own. */
   bank?: boolean;
+  /** Whether to open the operator's wallet. It needs a key of its own. */
+  operator?: boolean;
 }
 
 async function openOne(chain: Chain, registry: WalletRegistry, id: string): Promise<Wallet> {
@@ -40,5 +44,6 @@ export async function openWallets(chain: Chain, registry: WalletRegistry, option
   for (const profile of NAMED_AGENTS) agents.set(profile.id, await openOne(chain, registry, profile.id));
   const pot = await openOne(chain, registry, POT_WALLET_ID);
   const bank = options.bank ? await openOne(chain, registry, BANK_WALLET_ID) : undefined;
-  return { agents, pot, ...(bank ? { bank } : {}) };
+  const operator = options.operator ? await openOne(chain, registry, OPERATOR_WALLET_ID) : undefined;
+  return { agents, pot, ...(bank ? { bank } : {}), ...(operator ? { operator } : {}) };
 }

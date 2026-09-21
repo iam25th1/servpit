@@ -31,6 +31,7 @@ function decisionShape(d: AgentDecision, link: Linker) {
     name: d.name,
     strategy: d.strategy,
     address: d.address,
+    face: d.face ?? null,
     link: link(d.address),
     balanceWei: d.balanceWei.toString(),
     enter: d.decision.enter,

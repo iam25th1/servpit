@@ -121,6 +121,8 @@ export interface RoundRun {
   wrecks: WreckRecord[];
   /** What the bank took off them. */
   seizures: TransferOutcome[];
+  /** Who took each emptied seat, and what the operator put in it. */
+  replacements: Array<{ walletId: string; identityId: string; name: string; face: string | null; fundedWei: bigint; outcome: TransferOutcome | null }>;
   payout: TransferOutcome | null;
   /**
    * Set when a house bot won. Eighteen of the twenty four entrants have no

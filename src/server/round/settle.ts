@@ -15,11 +15,13 @@ import { heuristicDecision } from "../decisions/heuristic";
 import { log } from "../log";
 import { fromWei, sumWei } from "../money";
 import { reconcile } from "../reconcile";
-import { collectEntry, disburseLoan, payWinner, repayBank, seizeToBank, type TransferOutcome } from "../transfers";
+import { collectEntry, disburseLoan, payWinner, refillSeat, repayBank, seizeToBank, type TransferOutcome } from "../transfers";
 import { repay } from "@/economy/rules";
 import { totalOwed } from "./debt";
 import { overReached, type WreckRecord, type WreckTrigger } from "./wrecks";
 import { CREDIT_TERMS } from "@/config/economy";
+import { faceFor, generationOf, profileFor } from "@/config/replacements";
+import { CHIPS_PER_FUNDED_WALLET } from "@/config/stake";
 import { splitPrize, type PrizeSplit } from "./prize";
 import { bankEnabled } from "@/config/economy";
 import { splitCappedPrize } from "@/economy/prize";
@@ -46,14 +48,16 @@ export async function runRound(ctx: FlowContext, plan: RoundPlan, progress: RunP
   const pot = ctx.wallets.pot;
   const watched = [pot.address, ...plan.snapshots.map((s) => s.address)];
   const bank = ctx.wallets.bank;
+  const operator = ctx.wallets.operator;
   const before: Record<string, bigint> = {};
-  const watchedWallets = [...plan.snapshots.map((s) => ctx.wallets.agents.get(s.profile.id)!), pot, ...(bank ? [bank] : [])];
+  const watchedWallets = [...plan.snapshots.map((s) => ctx.wallets.agents.get(s.profile.id)!), pot, ...(bank ? [bank] : []), ...(operator ? [operator] : [])];
   ctx.bankroll.invalidate();
   // One request for all seven, rather than seven in a row.
   await ctx.bankroll.warm(ctx.chain, watchedWallets);
   for (const s of plan.snapshots) before[s.address] = await ctx.bankroll.get(ctx.wallets.agents.get(s.profile.id)!);
   before[pot.address] = await ctx.bankroll.get(pot);
   if (bank) before[bank.address] = await ctx.bankroll.get(bank);
+  if (operator) before[operator.address] = await ctx.bankroll.get(operator);
 
   // Sequential on purpose. Each send waits for its own receipt before the
   // next nonce is requested, which is what makes a collision structurally
@@ -206,6 +210,8 @@ export async function runRound(ctx: FlowContext, plan: RoundPlan, progress: RunP
   // willing to cover it.
   const wrecks: WreckRecord[] = [];
   const seizures: TransferOutcome[] = [];
+  const refills: TransferOutcome[] = [];
+  const replacements: RoundRun["replacements"] = [];
   if (bankEnabled() && bank) {
     const ceilingWei = CREDIT_TERMS.debtCeilingStakes * plan.stakeWei;
     const denied = new Set(plan.deniedCredit);
@@ -257,6 +263,39 @@ export async function runRound(ctx: FlowContext, plan: RoundPlan, progress: RunP
       };
       wrecks.push(record);
       ctx.wreckStore.save(record);
+
+      // The seat gets a new occupant, and the debt dies with the one that
+      // owed it. The identity is what a debt is stamped with, so bumping it
+      // is what makes the next agent clean rather than an act of forgiveness.
+      const nextIdentityId = `${walletId}-${generationOf(identityId) + 1}`;
+      ctx.debts.clear(walletId, nextIdentityId, plan.roundId);
+      const arrival: RoundRun["replacements"][number] = {
+        walletId,
+        identityId: nextIdentityId,
+        name: profileFor(walletId, nextIdentityId).name,
+        face: faceFor(walletId, nextIdentityId),
+        fundedWei: 0n,
+        outcome: null,
+      };
+
+      // Funded from operator capital, never from an agent's playing balance
+      // and never out of the prize pool. A seat with nobody solvent in it is
+      // not a seat.
+      if (operator) {
+        const seatWei = plan.stakeWei * BigInt(CHIPS_PER_FUNDED_WALLET) / BigInt(toChips(plan.stakeWei) || 1);
+        const operatorWei = await ctx.bankroll.get(operator);
+        const fundingWei = operatorWei >= seatWei ? seatWei : operatorWei;
+        if (fundingWei > 0n) {
+          const seat = ctx.wallets.agents.get(walletId)!;
+          arrival.outcome = await refillSeat(transferCtx, plan.roundId, walletId, operator, seat, fundingWei);
+          arrival.fundedWei = fundingWei;
+          refills.push(arrival.outcome);
+        } else {
+          log.warn("no operator capital to refill a seat", { roundId: plan.roundId, agentId: walletId });
+        }
+      }
+      replacements.push(arrival);
+      log.info("seat refilled", { roundId: plan.roundId, walletId, identityId: nextIdentityId, name: arrival.name, fundedWei: arrival.fundedWei.toString() });
       log.warn("agent wrecked", {
         roundId: plan.roundId,
         agentId: walletId,
@@ -275,6 +314,7 @@ export async function runRound(ctx: FlowContext, plan: RoundPlan, progress: RunP
   for (const s of plan.snapshots) after[s.address] = await ctx.bankroll.get(ctx.wallets.agents.get(s.profile.id)!);
   after[pot.address] = await ctx.bankroll.get(pot);
   if (bank) after[bank.address] = await ctx.bankroll.get(bank);
+  if (operator) after[operator.address] = await ctx.bankroll.get(operator);
 
   const reconciliation = reconcile({
     potAddress: pot.address,
@@ -297,9 +337,13 @@ export async function runRound(ctx: FlowContext, plan: RoundPlan, progress: RunP
       ...(payout?.applied ? [{ address: payout.from, amountWei: payout.feeWei ?? 0n }] : []),
       ...(repayment?.outcome.applied ? [{ address: repayment.outcome.from, amountWei: repayment.outcome.feeWei ?? 0n }] : []),
       ...seizures.filter((x) => x.applied).map((x) => ({ address: x.from, amountWei: x.feeWei ?? 0n })),
+      ...refills.filter((x) => x.applied).map((x) => ({ address: x.from, amountWei: x.feeWei ?? 0n })),
     ],
     loans: loans.map((l) => ({ address: l.to, amountWei: l.amountWei })),
     appliedLoans: loans.filter((l) => l.applied).map((l) => ({ address: l.to, amountWei: l.amountWei })),
+    operatorAddress: operator?.address,
+    operatorFunding: refills.map((r) => ({ address: r.to, amountWei: r.amountWei })),
+    appliedOperatorFunding: refills.filter((r) => r.applied).map((r) => ({ address: r.to, amountWei: r.amountWei })),
     repayments: [
       ...(repayment ? [{ address: repayment.outcome.from, amountWei: repayment.outcome.amountWei }] : []),
       // A seizure leaves an agent for the bank, exactly like a repayment.
@@ -374,7 +418,7 @@ export async function runRound(ctx: FlowContext, plan: RoundPlan, progress: RunP
     payoutMinorUnits: fromWei(prizeWei),
   });
 
-  return { plan, round, entries, loans, interest, repayment, wrecks, seizures, payout, retained, prize, rolloverInWei, reconciliation };
+  return { plan, round, entries, loans, interest, repayment, wrecks, seizures, replacements, payout, retained, prize, rolloverInWei, reconciliation };
 }
 
 export { heuristicDecision };
