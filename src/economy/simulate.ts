@@ -16,7 +16,8 @@ import { resolveRound } from "@/engine/resolveRound";
 import { heuristicDecision } from "@/server/decisions/heuristic";
 import type { RoundOutcome } from "@/server/decisions/types";
 import { clampStake, splitCappedPrize } from "./prize";
-import { accrueInterest, applyWinnings, originateLoan, replacementAgent, seize, totalDebt, wreckReason, type Agent, type EconomyConfig, type WreckReason } from "./rules";
+import { bankApproves, stakeIntentFor, type BorrowerRecord } from "./personalities";
+import { accrueInterest, applyWinnings, fundStake, replacementAgent, seize, totalDebt, wreckReason, type Agent, type EconomyConfig, type WreckReason } from "./rules";
 
 export interface SimConfig {
   rounds: number;
@@ -33,6 +34,13 @@ export interface SimConfig {
   borrowToStakes: bigint;
   /** How many base stakes an agent may put on one seat. */
   maxStakeMultiple: number;
+  /**
+   * Whether the bank will lend to a given borrower at all.
+   *
+   * Injected so a sweep can hold the bank's judgement still while it moves
+   * the credit terms, and so a test can ask what the terms alone do.
+   */
+  bankPolicy?: (record: BorrowerRecord) => boolean;
   economy: EconomyConfig;
 }
 
@@ -69,6 +77,13 @@ export interface SimReport {
   outstandingDebt: bigint;
   /** Rounds where the winner's stake, not the pool, decided the payout. */
   cappedRounds: number;
+  loansPer100Rounds: number;
+  /** Why the bank said no, counted by reason. */
+  denialsByReason: Record<string, number>;
+  /** Loans written, wrecks suffered and equity per round, by strategy. */
+  borrowsByStrategy: Record<string, number>;
+  wrecksByStrategy: Record<string, number>;
+  evByStrategy: Record<string, number>;
   /** What the agents gained or lost in total, net of what was injected. */
   agentNet: bigint;
   /** agentNet per agent per round, in chips. */
@@ -144,6 +159,14 @@ export function simulate(config: SimConfig): SimReport {
   let treasuryMin = treasury;
   let treasuryMax = treasury;
   let capped = 0;
+  // What the field put up last round. Nobody can see this round's, so a
+  // contrarian reads the one behind it.
+  let fieldAverageWei = config.economy.stakeWei;
+  const borrowsByStrategy: Record<string, number> = {};
+  const denialsByReason: Record<string, number> = {};
+  const wrecksByStrategy: Record<string, number> = {};
+  const strategyRounds: Record<string, number> = {};
+  const strategyDelta: Record<string, bigint> = {};
   let cleanAgentRounds = 0;
   let indebtedAgentRounds = 0;
   let cleanDelta = 0n;
@@ -161,33 +184,83 @@ export function simulate(config: SimConfig): SimReport {
     // Interest first: a round costs the agent before it pays anything.
     for (const seat of seats) seat.agent = accrueInterest(config.economy, seat.agent);
 
-    // Credit. An agent that cannot cover a seat asks the bank, whatever it
-    // was going to decide: it needs capital before it needs an opinion.
+    // What each seat wants to put up, and whether it will borrow to get
+    // there. Clamped to the bounds whatever the personality asks for, so no
+    // decision can put an agent outside them.
     let askedAndRefused = false;
     for (const seat of seats) {
       seat.creditDenied = false;
-      if (seat.agent.balanceWei >= stake) continue;
-      if (firstBrokeRound === null) firstBrokeRound = r;
-      const request = config.borrowToStakes * stake - seat.agent.balanceWei;
-      const outcome = originateLoan(config.economy, treasury, seat.agent, request);
-      if (outcome.approved) {
-        seat.agent = outcome.agent;
-        treasury = outcome.treasuryWei;
-        lent += outcome.amountWei;
-        loans += 1;
-      } else {
-        seat.creditDenied = true;
-        if (outcome.reason === "treasury cannot cover the minimum") askedAndRefused = true;
+      const intent = stakeIntentFor(seat.profile.strategy, {
+        baseStakeWei: stake,
+        maxMultiple: config.maxStakeMultiple,
+        balanceWei: seat.agent.balanceWei,
+        rolloverWei: rollover,
+        entrants: config.entrants,
+        recent: seat.recentOutcomes.map((o) => ({ entered: o.entered, netWei: o.netWei })),
+        fieldAverageWei,
+      });
+      const wantWei = clampStake(stake, config.maxStakeMultiple, intent.stakeWei);
+      if (seat.agent.balanceWei < stake && firstBrokeRound === null) firstBrokeRound = r;
+
+      // Covered outright, so nobody needs to be asked.
+      if (seat.agent.balanceWei >= wantWei) {
+        seat.stakeWei = wantWei;
+        continue;
       }
+
+      // The agent asks and the bank answers. The bank looks at the borrower
+      // first, and the credit rules bound the amount after that.
+      const approves = config.bankPolicy ?? bankApproves;
+      const willing =
+        intent.borrow &&
+        approves({ owedWei: totalDebt(seat.agent.debt), wrecks: seat.generation, recent: seat.recentOutcomes.map((o) => ({ entered: o.entered, netWei: o.netWei })), baseStakeWei: stake });
+
+      const take = (funded: Extract<ReturnType<typeof fundStake>, { funded: true }>, stakeWei: bigint): void => {
+        seat.agent = funded.agent;
+        treasury = funded.treasuryWei;
+        lent += funded.loanWei;
+        loans += 1;
+        borrowsByStrategy[seat.profile.strategy] = (borrowsByStrategy[seat.profile.strategy] ?? 0) + 1;
+        seat.stakeWei = stakeWei;
+      };
+
+      // Reach for the stake it wanted.
+      if (willing) {
+        const big = fundStake(config.economy, treasury, seat.agent, wantWei);
+        if (big.funded) {
+          take(big, wantWei);
+          continue;
+        }
+        denialsByReason[big.reason] = (denialsByReason[big.reason] ?? 0) + 1;
+        if (big.reason === "treasury cannot cover the minimum") askedAndRefused = true;
+      }
+
+      // Refused, so settle for the largest seat the balance already covers.
+      // Reaching for more and being told no is not the same as being unable
+      // to afford a seat, and only the second one wrecks an agent.
+      if (seat.agent.balanceWei >= stake) {
+        seat.stakeWei = clampStake(stake, config.maxStakeMultiple, seat.agent.balanceWei < wantWei ? seat.agent.balanceWei : wantWei);
+        continue;
+      }
+
+      // It cannot even afford a seat. The bank will often still fund one,
+      // which is a different and much smaller question than the bet it was
+      // just refused for.
+      seat.stakeWei = stake;
+      if (!willing) {
+        seat.creditDenied = true;
+        continue;
+      }
+      const small = fundStake(config.economy, treasury, seat.agent, stake);
+      if (small.funded) {
+        take(small, stake);
+        continue;
+      }
+      denialsByReason[small.reason] = (denialsByReason[small.reason] ?? 0) + 1;
+      if (small.reason === "treasury cannot cover the minimum") askedAndRefused = true;
+      seat.creditDenied = true;
     }
     if (askedAndRefused) dryRounds += 1;
-
-    // What each seat is willing to put up this round. Clamped to the bounds
-    // whatever the policy asks for, so no decision can put an agent outside
-    // them.
-    for (const seat of seats) {
-      seat.stakeWei = clampStake(stake, config.maxStakeMultiple, stake);
-    }
 
     // Decisions, by the same heuristic the game falls back to.
     const entering: Seat[] = [];
@@ -207,6 +280,8 @@ export function simulate(config: SimConfig): SimReport {
       entries += seat.stakeWei;
     }
 
+    fieldAverageWei = entering.length > 0 ? entries / BigInt(entering.length) : stake;
+
     const botCount = Math.max(0, config.entrants - entering.length);
     const entrants: Entrant[] = [
       ...entering.map((seat) => ({ id: `agent-${seat.profile.id}` })),
@@ -219,11 +294,12 @@ export function simulate(config: SimConfig): SimReport {
     // The winner takes what its own stake bought, and the rest rolls over.
     // Without that cap a floor stake could sweep a pot that bigger stakers
     // and a long rollover built, and staking more would buy nothing.
+    const highestStakeWei = entering.reduce((most, seat) => (seat.stakeWei > most ? seat.stakeWei : most), 0n);
     const prize = splitCappedPrize({
       poolWei: entries + rollover,
       rakeBps: round.rakeBps,
       winnerStakeWei: winner ? winner.stakeWei : null,
-      entrants: config.entrants,
+      highestStakeWei,
     });
     rake += prize.rakeWei;
     if (prize.capped) capped += 1;
@@ -260,6 +336,8 @@ export function simulate(config: SimConfig): SimReport {
         cleanAgentRounds += 1;
         cleanDelta += delta;
       }
+      strategyRounds[seat.profile.strategy] = (strategyRounds[seat.profile.strategy] ?? 0) + 1;
+      strategyDelta[seat.profile.strategy] = (strategyDelta[seat.profile.strategy] ?? 0n) + delta;
     }
 
     // Wrecks, seizures and replacements, after the round has paid out. An
@@ -273,6 +351,7 @@ export function simulate(config: SimConfig): SimReport {
       writtenOff += closed.writtenOffWei;
       wrecks += 1;
       wrecksByReason[reason] += 1;
+      wrecksByStrategy[seat.profile.strategy] = (wrecksByStrategy[seat.profile.strategy] ?? 0) + 1;
       if (firstWreckRound === null) firstWreckRound = r;
       everWrecked.add(seat.profile.id);
       if (allWreckedByRound === null && everWrecked.size === seats.length) allWreckedByRound = r;
@@ -351,6 +430,11 @@ export function simulate(config: SimConfig): SimReport {
     operatorInjected,
     retired,
     cappedRounds: capped,
+    loansPer100Rounds: (100 * loans) / config.rounds,
+    denialsByReason,
+    borrowsByStrategy,
+    wrecksByStrategy,
+    evByStrategy: Object.fromEntries(Object.entries(strategyDelta).map(([k, v]) => [k, Number(v) / (strategyRounds[k] || 1)])),
     agentBalances: seats.reduce((sum, seat) => sum + seat.agent.balanceWei, 0n),
     outstandingDebt: seats.reduce((sum, seat) => sum + totalDebt(seat.agent.debt), 0n),
     agentNet,

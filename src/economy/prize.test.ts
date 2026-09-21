@@ -48,43 +48,54 @@ describe("the ceiling on a stake", () => {
 });
 
 describe("splitCappedPrize", () => {
-  it("pays the whole prize when the winner's stake reaches it", () => {
-    // 24 seats at a stake of 10 reaches 240, and the pool is smaller.
-    const s = splitCappedPrize({ poolWei: 50n, rakeBps: 0, winnerStakeWei: 10n, entrants: 24 });
-    expect(s.payoutWei).toBe(50n);
+  it("pays the whole prize to the biggest staker in the room", () => {
+    const s = splitCappedPrize({ poolWei: 1_000n, rakeBps: 0, winnerStakeWei: 30n, highestStakeWei: 30n });
+    expect(s.payoutWei).toBe(1_000n);
     expect(s.nextRolloverWei).toBe(0n);
     expect(s.capped).toBe(false);
   });
 
-  it("holds back what the winner's stake could not reach, and rolls it over", () => {
-    // A floor stake into a pot a long rollover built. It takes its share and
-    // leaves the rest, which is what stops a minimum stake being the best
-    // play available.
-    const s = splitCappedPrize({ poolWei: 1_000n, rakeBps: 0, winnerStakeWei: 10n, entrants: 24 });
-    expect(s.capWei).toBe(240n);
-    expect(s.payoutWei).toBe(240n);
-    expect(s.nextRolloverWei).toBe(760n);
+  it("drains the pot when the field stakes evenly, so nothing is stranded", () => {
+    // The property an absolute cap did not have. A field that all stakes the
+    // same drains the pot every time an agent wins, however long the rollover
+    // has been building.
+    const s = splitCappedPrize({ poolWei: 50_000n, rakeBps: 0, winnerStakeWei: 10n, highestStakeWei: 10n });
+    expect(s.payoutWei).toBe(50_000n);
+    expect(s.nextRolloverWei).toBe(0n);
+  });
+
+  it("holds back what the winner did not stake for, and rolls it over", () => {
+    // Staked a third of what the room put up, so it takes a third and leaves
+    // the rest. This is what stops a minimum stake being the best play.
+    const s = splitCappedPrize({ poolWei: 900n, rakeBps: 0, winnerStakeWei: 10n, highestStakeWei: 30n });
+    expect(s.capWei).toBe(300n);
+    expect(s.payoutWei).toBe(300n);
+    expect(s.nextRolloverWei).toBe(600n);
     expect(s.capped).toBe(true);
   });
 
   it("pays a bigger staker more out of the same pot", () => {
-    const small = splitCappedPrize({ poolWei: 1_000n, rakeBps: 0, winnerStakeWei: 10n, entrants: 24 });
-    const large = splitCappedPrize({ poolWei: 1_000n, rakeBps: 0, winnerStakeWei: 30n, entrants: 24 });
+    const small = splitCappedPrize({ poolWei: 900n, rakeBps: 0, winnerStakeWei: 10n, highestStakeWei: 30n });
+    const large = splitCappedPrize({ poolWei: 900n, rakeBps: 0, winnerStakeWei: 20n, highestStakeWei: 30n });
     expect(large.payoutWei).toBeGreaterThan(small.payoutWei);
-    expect(large.payoutWei).toBe(720n);
+    expect(large.payoutWei).toBe(600n);
   });
 
   it("rolls the whole prize over when a house bot won", () => {
-    const s = splitCappedPrize({ poolWei: 1_000n, rakeBps: 0, winnerStakeWei: null, entrants: 24 });
+    const s = splitCappedPrize({ poolWei: 1_000n, rakeBps: 0, winnerStakeWei: null, highestStakeWei: 30n });
     expect(s.payoutWei).toBe(0n);
     expect(s.nextRolloverWei).toBe(1_000n);
   });
 
   it("takes the rake off the top before the cap is applied", () => {
-    const s = splitCappedPrize({ poolWei: 1_000n, rakeBps: 250, winnerStakeWei: 100n, entrants: 24 });
+    const s = splitCappedPrize({ poolWei: 1_000n, rakeBps: 250, winnerStakeWei: 30n, highestStakeWei: 30n });
     expect(s.rakeWei).toBe(25n);
     expect(s.payoutWei).toBe(975n);
     expect(s.nextRolloverWei).toBe(0n);
+  });
+
+  it("refuses a field whose biggest stake is below the winner's own", () => {
+    expect(() => splitCappedPrize({ poolWei: 100n, rakeBps: 0, winnerStakeWei: 30n, highestStakeWei: 10n })).toThrow(/below the winner/);
   });
 });
 
@@ -95,15 +106,14 @@ describe("the 12a invariant, carried forward to variable stakes", () => {
   const POOLS = [0n, 1n, 7n, 240n, 1_000n, 123_456_789n, 10n ** 18n];
   const STAKES = [null, 1n, 10n, 30n, 1_000n, 10n ** 18n];
   const RAKES = [0, 1, 250, 9_999, 10_000];
-  const FIELDS = [1, 2, 24, 32];
 
-  it("accounts for every wei, at every stake, cap, rake and field size", () => {
+  it("accounts for every wei, at every stake, cap and rake", () => {
     for (const poolWei of POOLS) {
       for (const winnerStakeWei of STAKES) {
         for (const rakeBps of RAKES) {
-          for (const entrants of FIELDS) {
-            const s = splitCappedPrize({ poolWei, rakeBps, winnerStakeWei, entrants });
-            const label = `pool ${poolWei} stake ${winnerStakeWei} rake ${rakeBps} field ${entrants}`;
+          for (const highestStakeWei of [10n ** 18n, winnerStakeWei ?? 1n]) {
+            const s = splitCappedPrize({ poolWei, rakeBps, winnerStakeWei, highestStakeWei });
+            const label = `pool ${poolWei} stake ${winnerStakeWei} rake ${rakeBps} highest ${highestStakeWei}`;
             expect(s.rakeWei + s.payoutWei + s.nextRolloverWei, label).toBe(poolWei);
             expect(s.payoutWei, label).toBeLessThanOrEqual(poolWei);
             expect(s.payoutWei >= 0n && s.nextRolloverWei >= 0n && s.rakeWei >= 0n, label).toBe(true);
@@ -113,21 +123,21 @@ describe("the 12a invariant, carried forward to variable stakes", () => {
     }
   });
 
-  it("never pays a winner more than its own stake could reach", () => {
+  it("never pays a winner more than its share of the biggest stake", () => {
     for (const poolWei of POOLS) {
-      for (const winnerStakeWei of STAKES.filter((s) => s !== null)) {
-        for (const entrants of FIELDS) {
-          const s = splitCappedPrize({ poolWei, rakeBps: 0, winnerStakeWei, entrants });
-          expect(s.payoutWei).toBeLessThanOrEqual(winnerStakeWei * BigInt(entrants));
+      for (const winnerStakeWei of [1n, 10n, 30n]) {
+        for (const highestStakeWei of [30n, 100n, 10n ** 18n]) {
+          const s = splitCappedPrize({ poolWei, rakeBps: 0, winnerStakeWei, highestStakeWei });
+          expect(s.payoutWei).toBeLessThanOrEqual((poolWei * winnerStakeWei) / highestStakeWei);
         }
       }
     }
   });
 
   it("refuses inputs that are not amounts", () => {
-    expect(() => splitCappedPrize({ poolWei: -1n, rakeBps: 0, winnerStakeWei: 1n, entrants: 24 })).toThrow(/non negative/);
-    expect(() => splitCappedPrize({ poolWei: 1n, rakeBps: 10_001, winnerStakeWei: 1n, entrants: 24 })).toThrow(/between 0 and 10000/);
-    expect(() => splitCappedPrize({ poolWei: 1n, rakeBps: 0, winnerStakeWei: -1n, entrants: 24 })).toThrow(/non negative/);
-    expect(() => splitCappedPrize({ poolWei: 1n, rakeBps: 0, winnerStakeWei: 1n, entrants: 0 })).toThrow(/positive integer/);
+    expect(() => splitCappedPrize({ poolWei: -1n, rakeBps: 0, winnerStakeWei: 1n, highestStakeWei: 1n })).toThrow(/non negative/);
+    expect(() => splitCappedPrize({ poolWei: 1n, rakeBps: 10_001, winnerStakeWei: 1n, highestStakeWei: 1n })).toThrow(/between 0 and 10000/);
+    expect(() => splitCappedPrize({ poolWei: 1n, rakeBps: 0, winnerStakeWei: -1n, highestStakeWei: 1n })).toThrow(/non negative/);
+    expect(() => splitCappedPrize({ poolWei: 1n, rakeBps: 0, winnerStakeWei: 1n, highestStakeWei: -1n })).toThrow(/non negative/);
   });
 });

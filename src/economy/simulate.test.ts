@@ -41,8 +41,16 @@ describe("simulate", () => {
   });
 
   it("flags a set of rules that never bites", () => {
-    // No interest, no ceiling worth the name, endless credit.
-    const r = simulate(config({ rounds: 100 }, { interestBps: 0, debtCeilingWei: 1_000_000n, maxPrincipalWei: 1_000_000n }));
+    // No interest, no ceiling worth the name, a bank that never refuses, and
+    // bankrolls deep enough that nobody runs out. Atlas never borrows at all,
+    // so a config where anyone can go broke wrecks it eventually whatever the
+    // credit rules say.
+    const r = simulate(
+      config(
+        { rounds: 100, bankPolicy: () => true, treasury: 10_000_000n, startingBalance: 1_000_000n },
+        { interestBps: 0, debtCeilingWei: 1_000_000n, maxPrincipalWei: 1_000_000n, maxLoanWei: 1_000_000n },
+      ),
+    );
     expect(r.wrecks).toBe(0);
     expect(r.flags.join(" ")).toMatch(/never bite/);
   });
@@ -69,15 +77,42 @@ describe("simulate", () => {
     expect(r.flags.join(" ")).toMatch(/never wrote a loan/);
   });
 
-  it("wrecks on the debt ceiling when the bank has money and on being denied when it does not", () => {
-    const funded = simulate(config({ rounds: 2_000 }));
+  it("only wrecks on the debt ceiling when there is a bank to owe", () => {
+    // An agent that over-reaches usually loses its balance before its debt
+    // compounds past the ceiling, so most wrecks are recorded as broke and
+    // denied whatever set them off. The ceiling still needs a lender to be
+    // reachable at all, which is what this holds.
+    const funded = simulate(config({ rounds: 2_000, treasury: 5_000n }));
     const dry = simulate(config({ rounds: 2_000, treasury: 0n }));
-    // A funded bank wrecks agents for owing too much, not for being refused.
-    // The occasional denial still happens, at the principal ceiling.
-    expect(funded.wrecksByReason["debt above the ceiling"]).toBeGreaterThan(funded.wrecksByReason["broke and denied credit"]);
-    // A dry one has nothing to lend, so every wreck is a refusal.
-    expect(dry.wrecksByReason["broke and denied credit"]).toBeGreaterThan(0);
+    expect(funded.wrecksByReason["debt above the ceiling"]).toBeGreaterThan(0);
+    expect(funded.loans).toBeGreaterThan(0);
+    // A dry one has nothing to lend, so nobody can owe past a ceiling.
     expect(dry.wrecksByReason["debt above the ceiling"]).toBe(0);
+    expect(dry.wrecksByReason["broke and denied credit"]).toBeGreaterThan(0);
+    expect(dry.loans).toBe(0);
+  });
+
+  it("lends far more often once a stake can exceed a balance", () => {
+    // Credit used to happen only when an agent was already broke, which the
+    // 12b sweep measured at well under one loan per 100 rounds.
+    const levered = simulate(config({ rounds: 2_000, treasury: 5_000n, maxStakeMultiple: 3 }));
+    const fixed = simulate(config({ rounds: 2_000, treasury: 5_000n, maxStakeMultiple: 1 }));
+    expect(levered.loansPer100Rounds).toBeGreaterThan(fixed.loansPer100Rounds * 2);
+  });
+
+  it("wrecks the agents that reach, not the ones that do not", () => {
+    const r = simulate(config({ rounds: 2_000, treasury: 5_000n }));
+    // Blaze puts up the ceiling every round and borrows for it. Atlas never
+    // borrows at all. If the design works, that shows up here.
+    expect(r.wrecksByStrategy["aggressive"] ?? 0).toBeGreaterThan(r.wrecksByStrategy["cautious"] ?? 0);
+    expect(r.borrowsByStrategy["cautious"] ?? 0).toBe(0);
+    expect(r.borrowsByStrategy["aggressive"] ?? 0).toBeGreaterThan(0);
+  });
+
+  it("leaves an agent that never borrows close to flat", () => {
+    // Leveraged players must not quietly bleed the careful ones.
+    const r = simulate(config({ rounds: 2_000, treasury: 5_000n }));
+    expect(Math.abs(r.evByStrategy["cautious"] ?? 1)).toBeLessThan(0.1);
   });
 
   it("refuses a round count or a field that leaves no room for the agents", () => {
