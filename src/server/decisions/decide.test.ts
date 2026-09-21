@@ -2,19 +2,20 @@ import { describe, expect, it, vi } from "vitest";
 import { NAMED_AGENTS } from "@/config/agents";
 import { DEFAULT_SERV } from "@/config/serv";
 import { CostMeter, ServClient, type ChatTransport } from "../serv/client";
-import { DECISION_SCHEMA, UNSUPPORTED_SCHEMA_KEYWORDS, buildPrompt, decideForAgents, heuristicDecision, schemaKeywords, validateDecision } from "./decide";
+import { DECISION_SCHEMA, FORBIDDEN_WORDS, MAX_REASON_WORDS, UNSUPPORTED_SCHEMA_KEYWORDS, buildPrompt, decideForAgents, heuristicDecision, reasonFault, schemaKeywords, validateDecision } from "./decide";
 import type { AgentSnapshot } from "./types";
 
 const snapshot = (patch: Partial<AgentSnapshot> = {}): AgentSnapshot => ({
   profile: NAMED_AGENTS[0],
   address: "0x" + "1".repeat(40),
-  balanceWei: 10_000n,
-  stakeWei: 1_000n,
+  // Realistic wei: a chip is 10^12, so these are 100 chips held and 10 a seat.
+  balanceWei: 100_000_000_000_000n,
+  stakeWei: 10_000_000_000_000n,
   recentOutcomes: [],
   ...patch,
 });
 
-const round = { roundId: "round-1", participants: 24, poolWei: 24_000n, stakeWei: 1_000n };
+const round = { roundId: "round-1", participants: 24, poolWei: 240_000_000_000_000n, stakeWei: 10_000_000_000_000n };
 
 const transportReturning = (content: string) =>
   ({
@@ -39,21 +40,28 @@ describe("buildPrompt", () => {
 
   it("frames the task as resource allocation, never as wagering", () => {
     const text = `${system} ${user}`.toLowerCase();
-    for (const word of ["bet", "wager", "gamble", "odds", "casino", "jackpot"]) expect(text).not.toContain(word);
+    // Whole words. A substring check fails on "between", which is not a
+    // wagering term and was never meant to be caught.
+    for (const word of ["bet", "wager", "gamble", "odds", "casino", "jackpot"]) {
+      expect(new RegExp(`\\b${word}\\b`).test(text), `framing used "${word}"`).toBe(false);
+    }
     expect(text).toContain("allocat");
     expect(system).toMatch(/operator/i);
   });
 
-  it("states the balance, the pool, the participant count and the strategy descriptor", () => {
-    expect(user).toContain("10000");
+  it("states the balance, the pool, the participant count and the strategy descriptor, in chips", () => {
+    // Chips, not wei. A model handed 99868301341612 repeats it back.
+    expect(user).toMatch(/You hold \d+ chips/);
+    expect(user).toMatch(/costs \d+ chips/);
     expect(user).toContain("24");
     expect(user).toContain(NAMED_AGENTS[0].descriptor);
   });
 
   it("includes recent outcomes when there are any", () => {
-    const { user: withHistory } = buildPrompt(snapshot({ recentOutcomes: [{ roundId: "r0", entered: true, netWei: -1_000n }] }), round);
-    expect(withHistory).toMatch(/recent/i);
-    expect(withHistory).toContain("-1000");
+    const { user: withHistory } = buildPrompt(snapshot({ recentOutcomes: [{ roundId: "r0", entered: true, netWei: -10_000_000_000_000n }] }), round);
+    expect(withHistory).toMatch(/last few periods/i);
+    // Told as chips lost, not a signed wei figure.
+    expect(withHistory).toMatch(/lost \d+/);
   });
 });
 
@@ -61,8 +69,8 @@ describe("validateDecision", () => {
   const snap = snapshot();
 
   it("accepts a well formed decision and keeps the integer stake", () => {
-    const r = validateDecision('{"enter":true,"stake":1000,"reason":"balance 10000 supports one allocation"}', snap);
-    expect(r).toEqual({ ok: true, decision: { enter: true, stake: 1_000, reason: "balance 10000 supports one allocation" } });
+    const r = validateDecision('{"enter":true,"stake":10,"reason":"Plenty in the tank, I am in."}', snap);
+    expect(r).toEqual({ ok: true, decision: { enter: true, stake: 10, reason: "Plenty in the tank, I am in." } });
   });
 
   it("rejects malformed json, wrong types, extra keys and a missing key", () => {
@@ -92,7 +100,7 @@ describe("validateDecision", () => {
   });
 
   it("rejects entering when the balance cannot cover the stake", () => {
-    expect(validateDecision('{"enter":true,"stake":1000,"reason":"x"}', snapshot({ balanceWei: 10n })).ok).toBe(false);
+    expect(validateDecision('{"enter":true,"stake":10,"reason":"I am in."}', snapshot({ balanceWei: 10n })).ok).toBe(false);
   });
 
   it("requires stake zero when not entering", () => {
@@ -116,7 +124,7 @@ describe("heuristicDecision", () => {
   });
 
   it("never enters when the balance is below the minimum multiple", () => {
-    const d = heuristicDecision(snapshot({ balanceWei: 1_500n }), round);
+    const d = heuristicDecision(snapshot({ balanceWei: 15_000_000_000_000n }), round);
     expect(d.enter).toBe(false);
     expect(d.stake).toBe(0);
   });
@@ -139,7 +147,7 @@ describe("decideForAgents", () => {
   const snaps = NAMED_AGENTS.map((profile, i) => snapshot({ profile, address: "0x" + String(i % 10).repeat(40) }));
 
   it("makes exactly one SERV call per named agent and reports source serv", async () => {
-    const transport = transportReturning('{"enter":true,"stake":1000,"reason":"balance 10000 covers one allocation of 1000"}');
+    const transport = transportReturning('{"enter":true,"stake":10,"reason":"Plenty in the tank, I am in."}');
     const meter = new CostMeter(DEFAULT_SERV.pricing);
     const out = await decideForAgents({ client: new ServClient({ ...DEFAULT_SERV, backoffMs: 0 }, transport), meter }, snaps, round);
     expect(out.decisions).toHaveLength(6);
@@ -147,7 +155,7 @@ describe("decideForAgents", () => {
     for (const d of out.decisions) {
       expect(d.source).toBe("serv");
       expect(d.decision.enter).toBe(true);
-      expect(d.decision.stake).toBe(1_000);
+      expect(d.decision.stake).toBe(10);
     }
     expect(meter.calls).toBe(6);
     expect(meter.totals.promptTokens).toBe(6 * 900);
@@ -165,7 +173,7 @@ describe("decideForAgents", () => {
   });
 
   it("falls back and records the rejection when SERV returns an invalid decision", async () => {
-    const transport = transportReturning('{"enter":true,"stake":999999999,"reason":"take everything"}');
+    const transport = transportReturning('{"enter":true,"stake":9999,"reason":"Taking everything."}');
     const out = await decideForAgents({ client: new ServClient({ ...DEFAULT_SERV, backoffMs: 0 }, transport), meter: new CostMeter(DEFAULT_SERV.pricing) }, snaps, round);
     for (const d of out.decisions) {
       expect(d.source).toBe("heuristic");
@@ -194,7 +202,7 @@ describe("decideForAgents", () => {
   });
 
   it("never lets a model decision exceed the on chain balance even when the model insists", async () => {
-    const transport = transportReturning('{"enter":true,"stake":1000,"reason":"fine"}');
+    const transport = transportReturning('{"enter":true,"stake":10,"reason":"Fine by me."}');
     const broke = [snapshot({ profile: NAMED_AGENTS[0], balanceWei: 5n })];
     const out = await decideForAgents({ client: new ServClient({ ...DEFAULT_SERV, backoffMs: 0 }, transport), meter: new CostMeter(DEFAULT_SERV.pricing) }, broke, round);
     expect(out.decisions[0].decision.enter).toBe(false);
@@ -248,9 +256,9 @@ describe("the bounds the schema no longer expresses are still enforced", () => {
   });
 
   it("rejects a stake above the balance read from the chain", () => {
-    const r = validateDecision('{"enter":true,"stake":20000,"reason":"x"}', snap);
+    const r = validateDecision('{"enter":true,"stake":2000,"reason":"Going big."}', snap);
     expect(r.ok).toBe(false);
-    expect(r.ok === false && r.reason).toContain("exceeds on chain balance");
+    expect(r.ok === false && r.reason).toContain("chips this wallet holds");
   });
 
   it("rejects a stake that is not this round's allocation", () => {
@@ -296,5 +304,149 @@ describe("the failure that shipped", () => {
     const transport = { create: vi.fn().mockRejectedValue(schemaRejection()) } as unknown as ChatTransport;
     const out = await decideForAgents({ client: new ServClient({ ...DEFAULT_SERV, attempts: 1, backoffMs: 0 }, transport), meter: new CostMeter(DEFAULT_SERV.pricing) }, snaps, round);
     expect(out.servCalls).toBe(6);
+  });
+});
+
+describe("the six agents decide at once", () => {
+  const snaps = NAMED_AGENTS.map((profile, i) => snapshot({ profile, address: "0x" + String(i % 10).repeat(40) }));
+
+  /** A transport that holds every call open until released. */
+  const gated = () => {
+    let release: () => void = () => {};
+    const open = new Promise<void>((r) => { release = r; });
+    let inFlight = 0;
+    let peak = 0;
+    const transport = {
+      create: vi.fn(async () => {
+        inFlight++;
+        peak = Math.max(peak, inFlight);
+        await open;
+        inFlight--;
+        return {
+          model: "claude-haiku-4.5",
+          choices: [{ index: 0, message: { role: "assistant", content: '{"enter":true,"stake":10,"reason":"Plenty in the tank, I am in."}' } }],
+          usage: { prompt_tokens: 900, completion_tokens: 40, total_tokens: 940 },
+        };
+      }),
+    } as unknown as ChatTransport;
+    return { transport, release: () => release(), peak: () => peak };
+  };
+
+  it("has all six calls in flight together, not one after another", async () => {
+    // Sequentially the peak is one. Six sequential live calls measured 61
+    // seconds of empty panel in the browser.
+    const g = gated();
+    const run = decideForAgents({ client: new ServClient({ ...DEFAULT_SERV, backoffMs: 0 }, g.transport), meter: new CostMeter(DEFAULT_SERV.pricing) }, snaps, round);
+    await vi.waitFor(() => expect(g.peak()).toBe(6));
+    g.release();
+    await run;
+  });
+
+  it("reports each agent the moment it lands, before the others finish", async () => {
+    const seen: string[] = [];
+    const transport = transportReturning('{"enter":true,"stake":10,"reason":"Plenty in the tank, I am in."}');
+    await decideForAgents(
+      { client: new ServClient({ ...DEFAULT_SERV, backoffMs: 0 }, transport), meter: new CostMeter(DEFAULT_SERV.pricing) },
+      snaps,
+      round,
+      (d) => seen.push(d.agentId),
+    );
+    expect(seen).toHaveLength(6);
+    expect(new Set(seen).size).toBe(6);
+  });
+
+  it("keeps the result in snapshot order however the network ordered the answers", async () => {
+    // Entrant order decides who is who in the round. It must not depend on
+    // which agent's request came back first.
+    const order = [...snaps].map((s) => s.profile.id);
+    let n = 0;
+    const transport = {
+      create: vi.fn(async () => {
+        // Later calls resolve first.
+        await new Promise((r) => setTimeout(r, (6 - n++) * 5));
+        return {
+          model: "claude-haiku-4.5",
+          choices: [{ index: 0, message: { role: "assistant", content: '{"enter":false,"stake":0,"reason":"Sitting this one out."}' } }],
+          usage: { prompt_tokens: 900, completion_tokens: 40, total_tokens: 940 },
+        };
+      }),
+    } as unknown as ChatTransport;
+    const out = await decideForAgents({ client: new ServClient({ ...DEFAULT_SERV, backoffMs: 0 }, transport), meter: new CostMeter(DEFAULT_SERV.pricing) }, snaps, round);
+    expect(out.decisions.map((d) => d.agentId)).toEqual(order);
+  });
+
+  it("still counts calls, refusals and rejections correctly when they run together", async () => {
+    const transport = { create: vi.fn().mockRejectedValue(new Error("connect ECONNREFUSED")) } as unknown as ChatTransport;
+    const out = await decideForAgents({ client: new ServClient({ ...DEFAULT_SERV, attempts: 1, backoffMs: 0 }, transport), meter: new CostMeter(DEFAULT_SERV.pricing) }, snaps, round);
+    expect(out.servCalls).toBe(6);
+    expect(out.rejections).toHaveLength(6);
+    expect(out.guardRefusals).toBe(0);
+    expect(out.decisions.every((d) => d.source === "heuristic")).toBe(true);
+  });
+
+  it("lets one agent fail without touching the other five", async () => {
+    let call = 0;
+    const transport = {
+      create: vi.fn(async () => {
+        if (call++ === 2) throw new Error("connect ECONNREFUSED");
+        return {
+          model: "claude-haiku-4.5",
+          choices: [{ index: 0, message: { role: "assistant", content: '{"enter":true,"stake":10,"reason":"Plenty in the tank, I am in."}' } }],
+          usage: { prompt_tokens: 900, completion_tokens: 40, total_tokens: 940 },
+        };
+      }),
+    } as unknown as ChatTransport;
+    const out = await decideForAgents({ client: new ServClient({ ...DEFAULT_SERV, attempts: 1, backoffMs: 0 }, transport), meter: new CostMeter(DEFAULT_SERV.pricing) }, snaps, round);
+    expect(out.decisions.filter((d) => d.source === "serv")).toHaveLength(5);
+    expect(out.decisions.filter((d) => d.source === "heuristic")).toHaveLength(1);
+  });
+});
+
+describe("the register the player sees", () => {
+  const snap = snapshot();
+
+  it("accepts a short sentence in a person's voice", () => {
+    for (const reason of ["Lost three straight. Sitting this one out.", "Plenty in the tank, I am in.", "Everyone is cautious, so I am going big."]) {
+      expect(reasonFault(reason)).toBeNull();
+    }
+  });
+
+  it("refuses the jargon that was reaching the screen", () => {
+    // This is the sentence that shipped: unreadable, and quoting a number
+    // nobody can hold in their head.
+    expect(reasonFault("Working balance of 99868301341612 minor units comfortably covers the 100 minor unit allocation under capital-preservation posture.")).not.toBeNull();
+    for (const word of FORBIDDEN_WORDS) {
+      expect(reasonFault(`I checked my ${word} and I am in.`), word).not.toBeNull();
+    }
+  });
+
+  it("refuses a raw number, which is what made the old line unreadable", () => {
+    expect(reasonFault("I hold 99868301341612 and I am in.")).toContain("99868301341612");
+    // Four digits is fine: a chip count or a pool size can be that long.
+    expect(reasonFault("The pool is 2400 chips, I am in.")).toBeNull();
+  });
+
+  it("refuses a speech rather than a sentence", () => {
+    const long = `I ${"really ".repeat(MAX_REASON_WORDS)} am in.`;
+    expect(reasonFault(long)).toContain("word limit");
+  });
+
+  it("does not catch a word that merely contains a banned one", () => {
+    // "allocation" is banned; "location" is not, and neither is "between".
+    expect(reasonFault("Good location for a fight, I am in.")).toBeNull();
+    expect(reasonFault("Split between all of us, so I am in.")).toBeNull();
+  });
+
+  it("rejects the whole decision when the wording is wrong, not just the wording", () => {
+    // The validator is the net that guarantees it never reaches the screen.
+    // Shadow Agent gets the first chance and is not relied on.
+    const r = validateDecision('{"enter":true,"stake":10,"reason":"My working balance covers the allocation."}', snap);
+    expect(r.ok).toBe(false);
+    expect(r.ok === false && r.reason).toMatch(/working balance|allocation/);
+  });
+
+  it("keeps a good decision intact", () => {
+    const r = validateDecision('{"enter":false,"stake":0,"reason":"Lost three straight. Sitting this one out."}', snap);
+    expect(r).toEqual({ ok: true, decision: { enter: false, stake: 0, reason: "Lost three straight. Sitting this one out." } });
   });
 });

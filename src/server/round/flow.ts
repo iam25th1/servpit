@@ -13,11 +13,13 @@
 import { createHash } from "node:crypto";
 import { NAMED_AGENTS } from "@/config/agents";
 import { DEFAULT_ROUND } from "@/config/round";
+import { stakeWeiFrom, toChips } from "@/config/stake";
 import { resolveRound, type Entrant, type RoundResult } from "@/engine/resolveRound";
 import type { BankrollCache } from "../bankroll";
 import { decideForAgents, heuristicDecision } from "../decisions/decide";
 import type { AgentDecision, AgentSnapshot, RoundContext } from "../decisions/types";
 import type { TransferLedger } from "../ledger";
+import type { PlanCache } from "./planCache";
 import { log } from "../log";
 import { fromWei, toWei } from "../money";
 import { reconcile, type ReconcileResult } from "../reconcile";
@@ -28,6 +30,8 @@ import type { Wallets } from "../wallets/open";
 import { RoundStore, type StoredAgentRound } from "./store";
 
 export interface FlowContext {
+  /** Plans already quoted, so a settle does not re-run the decision loop. */
+  plans?: PlanCache;
   chain: Chain;
   wallets: Wallets;
   ledger: TransferLedger;
@@ -81,9 +85,11 @@ export function roundIdFor(seed: string, entrants: number): string {
   return `r-${digest}`;
 }
 
-export async function planRound(ctx: FlowContext, seed: string): Promise<RoundPlan> {
+export async function planRound(ctx: FlowContext, seed: string, onDecided?: (decision: AgentDecision) => void): Promise<RoundPlan> {
   if (!SEED.test(seed)) throw new RangeError(`seed must match ${SEED}`);
-  const stakeWei = toWei(DEFAULT_ROUND.stakeTiers[DEFAULT_ROUND.stakeTier]);
+  // A share of a funded wallet rather than a flat amount, so an agent can
+  // actually run low and its reasoning has something to weigh.
+  const stakeWei = stakeWeiFrom();
   const roundId = roundIdFor(seed, ctx.entrants);
 
   ctx.bankroll.invalidate();
@@ -101,7 +107,7 @@ export async function planRound(ctx: FlowContext, seed: string): Promise<RoundPl
   }
 
   const context: RoundContext = { roundId, participants: ctx.entrants, poolWei: stakeWei * BigInt(ctx.entrants), stakeWei };
-  const run = await decideForAgents({ client: ctx.serv, meter: ctx.meter }, snapshots, context);
+  const run = await decideForAgents({ client: ctx.serv, meter: ctx.meter }, snapshots, context, onDecided);
 
   // Final gate before money moves: the chain, not the model, decides who can
   // enter. Gas is no longer sponsored, so the bar is the stake plus whatever
@@ -113,8 +119,16 @@ export async function planRound(ctx: FlowContext, seed: string): Promise<RoundPl
   for (const decision of run.decisions) {
     const snapshot = snapshots.find((s) => s.profile.id === decision.agentId)!;
     if (decision.decision.enter && snapshot.balanceWei < required) {
+      // Plain words and chips: this line is shown to the player, not only
+      // logged. "short on gas" and "short on stake" stay as the two cases so
+      // an operator can still tell them apart at a glance.
       const shortfall = ctx.chain.gasReserveWei > 0n && snapshot.balanceWei >= stakeWei ? "gas" : "stake";
-      const reason = `balance ${snapshot.balanceWei} wei cannot cover the ${stakeWei} wei allocation plus ${ctx.chain.gasReserveWei} wei of gas (short on ${shortfall})`;
+      const held = toChips(snapshot.balanceWei);
+      const seat = toChips(stakeWei);
+      const reason =
+        shortfall === "gas"
+          ? `has ${held} chips but not enough left over for fees, so it is short on gas`
+          : `has ${held} chips, and a seat costs ${seat}, so it is short on stake`;
       log.warn("entry blocked by on chain balance", { agentId: decision.agentId, reason });
       decisions.push({ ...decision, decision: { enter: false, stake: 0, reason: `excluded: ${reason}` }, rejection: decision.rejection ? `${decision.rejection}; ${reason}` : reason });
       continue;
@@ -130,7 +144,12 @@ export async function planRound(ctx: FlowContext, seed: string): Promise<RoundPl
   return { roundId, seed, stakeWei, decisions, snapshots, entering, bots, entrants, servCalls: run.servCalls, guardRefusals: run.guardRefusals, rejections: run.rejections };
 }
 
-export async function runRound(ctx: FlowContext, plan: RoundPlan): Promise<RoundRun> {
+/** Told as each entry confirms on chain, so a caller can show it landing. */
+export interface RunProgress {
+  onEntry?: (agentId: string, outcome: TransferOutcome) => void;
+}
+
+export async function runRound(ctx: FlowContext, plan: RoundPlan, progress: RunProgress = {}): Promise<RoundRun> {
   const pot = ctx.wallets.pot;
   const watched = [pot.address, ...plan.snapshots.map((s) => s.address)];
   const before: Record<string, bigint> = {};
@@ -138,13 +157,26 @@ export async function runRound(ctx: FlowContext, plan: RoundPlan): Promise<Round
   for (const s of plan.snapshots) before[s.address] = await ctx.bankroll.get(ctx.wallets.agents.get(s.profile.id)!);
   before[pot.address] = await ctx.bankroll.get(pot);
 
+  // Sequential on purpose. Each send waits for its own receipt before the
+  // next nonce is requested, which is what makes a collision structurally
+  // impossible on a chain where nonces are left to the node. It is also the
+  // slowest part of a round, so each confirmation is reported as it lands
+  // rather than all of them at the end.
   const entries: TransferOutcome[] = [];
   for (const entrant of plan.entering) {
     const wallet = ctx.wallets.agents.get(entrant.agentId)!;
-    entries.push(await collectEntry({ ledger: ctx.ledger, bankroll: ctx.bankroll, network: ctx.chain.network, settles: ctx.chain.settles }, plan.roundId, entrant.agentId, wallet, pot, entrant.stakeWei));
+    const outcome = await collectEntry({ ledger: ctx.ledger, bankroll: ctx.bankroll, network: ctx.chain.network, settles: ctx.chain.settles }, plan.roundId, entrant.agentId, wallet, pot, entrant.stakeWei);
+    entries.push(outcome);
+    progress.onEntry?.(entrant.agentId, outcome);
   }
 
-  const round = resolveRound(plan.seed, plan.entrants, DEFAULT_ROUND);
+  // The engine's stake must be the same number the chain moved, in chips.
+  // They diverged once and the round collected 60000000000000 wei of entries
+  // and paid out 2400.
+  const round = resolveRound(plan.seed, plan.entrants, {
+    ...DEFAULT_ROUND,
+    stakeTiers: { ...DEFAULT_ROUND.stakeTiers, [DEFAULT_ROUND.stakeTier]: toChips(plan.stakeWei) },
+  });
   const winnerEntrantId = round.placements[0];
   const winnerAgent = plan.entering.find((e) => e.entrantId === winnerEntrantId);
   const prize = round.payouts.find((p) => p.entrantId === winnerEntrantId)?.amount ?? 0;
@@ -178,8 +210,8 @@ export async function runRound(ctx: FlowContext, plan: RoundPlan): Promise<Round
     // deltas are zero on both sides.
     //
     // The fee is charged to the sender: an entry costs the agent, a payout
-    // costs the pot. The pot is not checked per wallet, so its fee is read
-    // and simply never used, which is correct rather than an oversight.
+    // costs the pot. The pot's fee matters on any round it actually pays a
+    // winner, which no settled round did until an agent finally won one.
     feesWei: [
       ...entries.filter((e) => e.applied).map((e) => ({ address: e.from, amountWei: e.feeWei ?? 0n })),
       ...(payout?.applied ? [{ address: payout.from, amountWei: payout.feeWei ?? 0n }] : []),

@@ -21,6 +21,20 @@ import type { FlowState } from "../machine";
 import type { ArenaStanding } from "./arenaHud";
 import { swingMeters } from "./bankrollMeter";
 import { entrantLabel } from "./entrantLabel";
+import { decidedCount, lineupRows, type DecidedShape } from "./lineupRows";
+
+/** One buy in, as the settle stream reports it. */
+export interface EntryShape {
+  agentId: string;
+  name: string;
+  amountWei: string;
+  txHash: string | null;
+  link: string | null;
+  applied: boolean;
+}
+
+/** A hash short enough for a narrow column, or a word when there is none. */
+const shortHash = (hash: string | null): string => (hash ? `${hash.slice(0, 8)}...${hash.slice(-6)}` : "confirmed");
 import { reconciliationNote, type ReconcileCheck } from "./reconciliationNote";
 import { transferRows } from "./transferRows";
 import styles from "./shell.module.css";
@@ -60,6 +74,8 @@ interface RunShape {
   /** True when the chain settles for real, so a hash is worth linking. */
   settles: boolean;
   reconciled: boolean;
+  /** Wei one chip is worth, so the screen never assumes a funding target. */
+  weiPerChip?: string;
   /** Per check detail, so a failure can name what went wrong. */
   checks?: ReconcileCheck[];
   agents: RunAgent[];
@@ -75,6 +91,10 @@ export interface GameShellProps {
   leverNote: string;
   /** Live from the replay's timeline, not from the final placement list. */
   arena: ArenaStanding;
+  /** Buy ins confirmed on chain so far, streamed while the round settles. */
+  entries: EntryShape[];
+  /** Decisions streamed so far, before the whole plan has landed. */
+  decided: DecidedShape[];
   slotCanvasRef: RefObject<HTMLCanvasElement | null>;
   arenaCanvasRef: RefObject<HTMLCanvasElement | null>;
   onChooseMode: (modeId: string, stake: StakeTierId) => void;
@@ -85,7 +105,7 @@ export interface GameShellProps {
 
 
 export function GameShell(props: GameShellProps) {
-  const { state, plan, run } = props;
+  const { state, plan, run, decided, entries } = props;
   const { ui, modeIcon, facesetPath } = useUiKit();
   const showStage = state.screen === "lobby" || state.screen === "slot" || state.screen === "spinning" || state.screen === "arena";
 
@@ -116,14 +136,20 @@ export function GameShell(props: GameShellProps) {
             {state.screen !== "arena" && (
               <>
                 <Button onClick={props.onPull} disabled={!state.leverLive}>
-                  {state.screen === "lobby" ? "Agents deciding" : state.leverLive ? "Pull the lever" : "Locked in"}
+                  {state.screen === "lobby" ? "Agents deciding" : state.leverLive ? "Pull the lever" : "Agents buying in"}
                 </Button>
                 <p className={styles.leverNote}>{props.leverNote}</p>
               </>
             )}
           </div>
 
-          {state.screen === "arena" ? <ArenaHud run={run} arena={props.arena} /> : <Lineup plan={plan} error={state.error} />}
+          {state.screen === "arena" ? (
+            <ArenaHud run={run} arena={props.arena} />
+          ) : state.screen === "spinning" ? (
+            <BuyIns plan={plan} entries={entries} error={state.error} />
+          ) : (
+            <Lineup plan={plan} decided={decided} error={state.error} />
+          )}
       </div>
 
       {state.screen === "result" && run && <ResultScreen run={run} onPlayAgain={props.onPlayAgain} />}
@@ -210,14 +236,19 @@ export function GameShell(props: GameShellProps) {
     );
   }
 
-  function Lineup({ plan, error }: { plan: PlanShape | null; error: string | null }) {
+  function Lineup({ plan, decided, error }: { plan: PlanShape | null; decided: DecidedShape[]; error: string | null }) {
     const listRef = useRef<HTMLUListElement>(null);
+    // The plan's decisions win once it lands, so a late stream line cannot
+    // leave a row showing something the round did not use.
+    const rows = lineupRows(plan ? plan.decisions : decided);
+    const done = decidedCount(rows);
     useEffect(() => {
-      if (!plan) return;
-      const rows = listRef.current ? [...listRef.current.querySelectorAll<HTMLElement>("li")] : [];
-      // Decisions arrive one after another, not all at once.
-      void staggerIn(rows);
-    }, [plan]);
+      // Only the row that just filled in. Restaggering the whole list on
+      // every arrival would blink the five already on screen.
+      const rows = listRef.current ? [...listRef.current.querySelectorAll<HTMLElement>("li[data-decided='true']")] : [];
+      const latest = rows[rows.length - 1];
+      if (latest) void staggerIn([latest]);
+    }, [decided.length]);
 
 
     return (
@@ -225,23 +256,91 @@ export function GameShell(props: GameShellProps) {
         <h2 className={styles.sideHead}>Who is in</h2>
         <p className={styles.sideNote}>
           {plan
-            ? `${plan.decisions.filter((d) => d.enter).length} of ${plan.decisions.length} committed, ${plan.bots} house bots fill the rest. ${plan.servCalls} SERV calls.`
-            : "Asking each agent about its own balance."}
+            ? `${plan.decisions.filter((d) => d.enter).length} of ${plan.decisions.length} are in. ${plan.bots} house bots fill the rest.`
+            : `Your agents are checking their wallets. ${done} of ${rows.length} have answered.`}
         </p>
         <ul ref={listRef} className={styles.lineup}>
-          {plan?.decisions.map((d) => {
+          {rows.map((row) => (
+            <li key={row.agentId} className={styles.agentRow} data-decided={row.state === "decided" ? "true" : "false"}>
+              <div className={styles.agentPortrait}>
+                <img
+                  className={`${styles.faceset} ${row.state === "waiting" ? styles.thinkingFace : ""}`}
+                  src={facesetPath(characterFor(row.agentId))}
+                  alt=""
+                  width={38}
+                  height={38}
+                />
+              </div>
+              <div className={styles.agentBody}>
+                <span className={styles.agentLine}>
+                  <span className={styles.agentName}>
+                    {row.name}{" "}
+                    {row.state === "decided" ? (
+                      <span className={row.decision.enter ? styles.in : styles.agentVerdict}>{row.decision.enter ? "is in" : "sits out"}</span>
+                    ) : (
+                      <span className={styles.agentVerdict}>thinking</span>
+                    )}
+                  </span>
+                </span>
+                {row.state === "decided" ? <Dialog scale={2}>{row.decision.reason}</Dialog> : <div className={styles.thinkingBubble} aria-label="thinking" />}
+              </div>
+            </li>
+          ))}
+        </ul>
+        {error && <p className={styles.error}>{error}</p>}
+      </NinePatch>
+    );
+  }
+
+  /**
+   * The buy ins landing, one at a time, while the round settles.
+   *
+   * This was a frozen "Locked in" for 68.9 seconds. Collecting entries is
+   * sequential by necessity, because each send waits for its own receipt
+   * before the next nonce is requested. The wait is the same length; what
+   * changed is that the agents are now visibly paying in, with their real
+   * transactions on screen, instead of nothing happening.
+   *
+   * Real confirmations drive this. Nothing here is on a timer.
+   */
+  function BuyIns({ plan, entries, error }: { plan: PlanShape | null; entries: EntryShape[]; error: string | null }) {
+    const expected = plan ? plan.decisions.filter((d) => d.enter) : [];
+    const paid = new Map(entries.map((e) => [e.agentId, e]));
+    return (
+      <NinePatch sprite="bg" data-anim="buyins" className={styles.hud}>
+        <h2 className={styles.sideHead}>Buying in</h2>
+        <p className={styles.sideNote}>
+          {entries.length < expected.length
+            ? `${entries.length} of ${expected.length} have paid the pot. Each one is a real transaction.`
+            : `All ${expected.length} are in. Spinning the reels.`}
+        </p>
+        <ul className={styles.lineup}>
+          {expected.map((d) => {
+            const entry = paid.get(d.agentId);
             return (
-              <li key={d.agentId} className={styles.agentRow}>
+              <li key={d.agentId} className={styles.agentRow} data-paid={entry ? "true" : "false"}>
                 <div className={styles.agentPortrait}>
-                  <img className={styles.faceset} src={facesetPath(characterFor(d.agentId))} alt="" width={38} height={38} />
+                  <img className={`${styles.faceset} ${entry ? "" : styles.thinkingFace}`} src={facesetPath(characterFor(d.agentId))} alt="" width={38} height={38} />
                 </div>
                 <div className={styles.agentBody}>
                   <span className={styles.agentLine}>
                     <span className={styles.agentName}>
-                      {d.name} <span className={d.enter ? styles.in : styles.agentVerdict}>{d.enter ? `in for ${d.stake}` : "holding"}</span>
+                      {d.name} <span className={entry ? styles.in : styles.agentVerdict}>{entry ? "paid in" : "buying in"}</span>
                     </span>
                   </span>
-                  <Dialog scale={2}>{d.reason}</Dialog>
+                  {entry ? (
+                    <span className={styles.entryHash}>
+                      {entry.link ? (
+                        <a className={styles.transferHash} href={entry.link} target="_blank" rel="noreferrer">
+                          {shortHash(entry.txHash)}
+                        </a>
+                      ) : (
+                        <span className={styles.dim}>{shortHash(entry.txHash)}</span>
+                      )}
+                    </span>
+                  ) : (
+                    <div className={styles.thinkingBubble} aria-label="waiting for the chain" />
+                  )}
                 </div>
               </li>
             );
@@ -297,6 +396,13 @@ export function GameShell(props: GameShellProps) {
     const coinPathRef = useRef<SVGPathElement>(null);
     const prize = BigInt(run.potWei) - BigInt(run.rakeWei);
     const note = reconciliationNote(run.reconciled, run.checks);
+    // Chips, not wei. Nobody can read 10000000000000, and the agents are no
+    // longer speaking in it either.
+    const per = run.weiPerChip ? BigInt(run.weiPerChip) : 1n;
+    const chips = (wei: bigint): string => {
+      const whole = wei < 0n ? -wei / per : wei / per;
+      return `${wei < 0n ? "-" : ""}${whole}`;
+    };
     const meters = swingMeters(run.agents.map((a) => ({ agentId: a.agentId, changeWei: BigInt(a.balanceAfterWei) - BigInt(a.balanceBeforeWei) })));
     const winnerName = entrantLabel(run.winner, run.agents);
 
@@ -345,7 +451,7 @@ export function GameShell(props: GameShellProps) {
         <NinePatch sprite="panelAlt" scale={uiScale} className={styles.winner} data-anim="winner-panel">
           <img className={styles.winnerFace} src={facesetPath(winnerCharacter(run))} alt="" width={38 * 2} height={38 * 2} />
           <h2 className={`${styles.winnerName} ${styles.nameplate}`}>{winnerName}</h2>
-          <p className={styles.winnerPot}>{prize.toString()} taken</p>
+          <p className={styles.winnerPot}>{chips(prize)} chips taken</p>
           <p className={styles.sideNote}>{note.text}</p>
           {note.failed.length > 0 && (
             <ul className={styles.reconcileFails}>
@@ -366,7 +472,7 @@ export function GameShell(props: GameShellProps) {
                 <Meter value={meters.get(a.agentId) ?? 0} variant="mini" scale={5} label={`${a.name} swing this round`} />
                 <span className={`${styles.delta} ${change > 0n ? styles.up : styles.down}`}>
                   {change >= 0n ? "+" : ""}
-                  {change.toString()}
+                  {chips(change)}
                 </span>
               </div>
             );
@@ -379,7 +485,7 @@ export function GameShell(props: GameShellProps) {
             {transferRows(run.transfers).map((row) => (
               <li key={`${row.kind}-${row.label}`} className={styles.transferRow} data-transfer-row="">
                 <span className={styles.transferLabel}>{row.label}</span>
-                <span className={styles.transferAmount}>{row.amountWei}</span>
+                <span className={styles.transferAmount}>{chips(BigInt(row.amountWei))}</span>
                 {row.explorable ? (
                   <a className={styles.transferHash} href={row.link ?? undefined} target="_blank" rel="noreferrer">
                     {row.hashShort}

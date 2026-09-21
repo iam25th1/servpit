@@ -137,3 +137,49 @@ describe("errors and replay", () => {
     expect(reduce(initialState(), { type: "modeChosen", modeId: "battleRoyale", stake: "low" }).screen).toBe("boot");
   });
 });
+
+describe("decisions arriving one at a time", () => {
+  const inLobby = () => {
+    let s = initialState();
+    s = reduce(s, { type: "assetsReady" });
+    s = reduce(s, { type: "connected", player: { id: "p", label: "Guest" } });
+    return reduce(s, { type: "modeChosen", modeId: "battleRoyale", stake: "low" });
+  };
+
+  it("collects each decision as it lands, in arrival order", () => {
+    let s = inLobby();
+    expect(s.decided).toEqual([]);
+    s = reduce(s, { type: "agentDecided", decision: { agentId: "delta" } });
+    s = reduce(s, { type: "agentDecided", decision: { agentId: "atlas" } });
+    expect(s.decided).toEqual([{ agentId: "delta" }, { agentId: "atlas" }]);
+    // The lever stays dead until the whole plan is in.
+    expect(s.leverLive).toBe(false);
+    expect(s.screen).toBe("lobby");
+  });
+
+  it("ignores a decision that arrives after the plan has landed", () => {
+    // A late line must not reopen a list the slot screen is already reading.
+    let s = inLobby();
+    s = reduce(s, { type: "agentDecided", decision: { agentId: "delta" } });
+    s = reduce(s, { type: "planLoaded", plan: { roundId: "r-1" } });
+    expect(s.screen).toBe("slot");
+    const after = reduce(s, { type: "agentDecided", decision: { agentId: "late" } });
+    expect(after).toBe(s);
+  });
+
+  it("clears the list when a round is chosen, whatever was left from the last one", () => {
+    // Reducer level, because reaching mode select again means driving the
+    // whole flow and the thing under test is the transition.
+    const stale = { ...initialState(), screen: "modeSelect" as const, decided: [{ agentId: "delta" }] };
+    const next = reduce(stale, { type: "modeChosen", modeId: "battleRoyale", stake: "low" });
+    expect(next.screen).toBe("lobby");
+    expect(next.decided).toEqual([]);
+  });
+
+  it("clears the list on the way back from a result", () => {
+    const finished = { ...initialState(), screen: "result" as const, decided: [{ agentId: "delta" }] };
+    const next = reduce(finished, { type: "playAgain" });
+    expect(next.screen).toBe("modeSelect");
+    expect(next.decided).toEqual([]);
+  });
+});

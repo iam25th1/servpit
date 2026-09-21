@@ -10,6 +10,7 @@ import { RoundStore } from "./round/store";
 import type { FlowContext } from "./round/flow";
 import { readEnv, type ServerEnv } from "./env";
 import { log } from "./log";
+import { PlanCache } from "./round/planCache";
 import { ViemChain } from "./wallets/viem";
 import { FakeChain } from "./wallets/fake";
 import { openWallets, type Wallets } from "./wallets/open";
@@ -41,10 +42,12 @@ async function build(): Promise<ServerContext> {
   const ledger = new TransferLedger(join(env.dataDir, `ledger-${chain.network}.json`));
   const store = new RoundStore(join(env.dataDir, `rounds-${chain.network}.json`));
   const meter = new CostMeter(DEFAULT_SERV.pricing);
+  // Quoted plans, so settling a round does not decide it a second time.
+  const plans = new PlanCache();
   const servConfig = { ...DEFAULT_SERV, model: env.serv?.model ?? DEFAULT_SERV.model };
   const serv = env.serv ? new ServClient(servConfig, createServTransport(env.serv.apiKey, servConfig)) : undefined;
   log.info("serv backend", { configured: Boolean(serv), model: serv ? servConfig.model : null });
-  const flow: FlowContext = { chain, wallets, ledger, store, bankroll, meter, serv, entrants: 24 };
+  const flow: FlowContext = { chain, wallets, ledger, store, bankroll, meter, serv, plans, entrants: 24 };
   return { env, chain, registry, wallets, bankroll, flow };
 }
 

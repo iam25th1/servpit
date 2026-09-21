@@ -96,7 +96,12 @@ export function reconcile(input: ReconcileInput): ReconcileResult {
   const entriesTotal = sumWei(input.entries.map((m) => m.amountWei));
   const payoutsTotal = sumWei(input.payouts.map((m) => m.amountWei));
   const potDelta = balance(input.after, input.potAddress, "after") - balance(input.before, input.potAddress, "before");
-  check("pot delta", sumWei(appliedEntries.map((m) => m.amountWei)) - sumWei(appliedPayouts.map((m) => m.amountWei)), potDelta);
+  // The pot pays gas too, on any round it actually pays a winner. It never
+  // had to before, because a house bot won every settled round and the pot
+  // only ever received. The first round an agent won came up short by exactly
+  // the payout's fee.
+  const potFee = sumWei(fees.filter((m) => m.address === input.potAddress).map((m) => m.amountWei));
+  check("pot delta", sumWei(appliedEntries.map((m) => m.amountWei)) - sumWei(appliedPayouts.map((m) => m.amountWei)), potDelta + potFee);
 
   // Entries plus the house share minus rake is the prize. A winning agent
   // takes all of it; a house win retains all of it. Anything else is wrong.

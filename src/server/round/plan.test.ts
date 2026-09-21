@@ -21,14 +21,17 @@ const enterTransport = () =>
   ({
     create: vi.fn().mockResolvedValue({
       model: "claude-haiku-4.5",
-      choices: [{ index: 0, message: { role: "assistant", content: '{"enter":true,"stake":100,"reason":"balance covers the 100 allocation across 24 participants"}' }, finish_reason: "stop" }],
+      // The stake is derived, so the fixture states it rather than hardcoding
+      // a number that stops being this round's allocation.
+      // Chips, and a reason in the register the validator now requires.
+      choices: [{ index: 0, message: { role: "assistant", content: `{"enter":true,"stake":${toChips(stakeWeiFrom())},"reason":"Plenty in the tank, I am in."}` }, finish_reason: "stop" }],
       usage: { prompt_tokens: 800, completion_tokens: 60, total_tokens: 860 },
     }),
   }) as unknown as ChatTransport;
 
 async function harness(options: { balanceWei?: bigint; transport?: ChatTransport; gasReserveWei?: bigint } = {}) {
   dir = mkdtempSync(join(tmpdir(), "servpit-round-"));
-  const chain = new FakeChain({ initialBalanceWei: options.balanceWei ?? 1_000_000n, gasReserveWei: options.gasReserveWei });
+  const chain = new FakeChain({ initialBalanceWei: options.balanceWei ?? FUNDED_WEI, gasReserveWei: options.gasReserveWei });
   const registry = new WalletRegistry(join(dir, "wallets.json"));
   const wallets = await openWallets(chain, registry);
   const ledger = new TransferLedger(join(dir, "ledger.json"));
@@ -38,6 +41,11 @@ async function harness(options: { balanceWei?: bigint; transport?: ChatTransport
   const client = options.transport ? new ServClient({ ...DEFAULT_SERV, backoffMs: 0 }, options.transport) : undefined;
   return { chain, wallets, ledger, store, bankroll, meter, ctx: { chain, wallets, ledger, store, bankroll, meter, serv: client, entrants: 24 } };
 }
+
+import { stakeWeiFrom, toChips } from "@/config/stake";
+
+/** What a wallet is funded with, which the stake is a tenth of. */
+const FUNDED_WEI = 100_000_000_000_000n;
 
 describe("planRound", () => {
   it("decides for all six named agents and fills the field to the requested size with bots", async () => {
@@ -56,7 +64,7 @@ describe("planRound", () => {
     const before = chain.balanceReads;
     const plan = await planRound(ctx, "demo");
     expect(chain.balanceReads).toBeGreaterThanOrEqual(before + 6);
-    for (const d of plan.decisions) expect(d.balanceWei).toBe(1_000_000n);
+    for (const d of plan.decisions) expect(d.balanceWei).toBe(FUNDED_WEI);
   });
 
   it("excludes a broke agent from entry no matter what it decided", async () => {
@@ -69,7 +77,9 @@ describe("planRound", () => {
     expect(plan.entering.map((e) => e.agentId)).not.toContain("atlas");
     const atlasDecision = plan.decisions.find((d) => d.agentId === "atlas")!;
     expect(atlasDecision.decision.enter).toBe(false);
-    expect(atlasDecision.rejection ?? "").toMatch(/balance|cover/i);
+    // Drained to 10 wei, which is no chips at all, so the model's answer is
+    // refused on the balance before the exclusion path is even reached.
+    expect(atlasDecision.rejection ?? "").toMatch(/chips|short on/i);
     expect(chain.balanceReads).toBeGreaterThan(0);
   });
 
@@ -160,8 +170,11 @@ describe("gas is no longer sponsored", () => {
   it("excludes an agent that can cover the stake but not the gas, by the same path as a broke one", async () => {
     const { ctx } = await harness({ transport: enterTransport(), gasReserveWei: 500n });
     const atlas = ctx.wallets.agents.get("atlas")!;
-    // Leave exactly the stake, nothing for gas.
-    await atlas.send([{ to: ctx.wallets.pot.address, value: (await atlas.getBalance()) - 100n }], "leave-stake-only");
+    // Leave exactly the stake, nothing for gas. The stake is a tenth of a
+    // funded wallet rather than a flat amount, so it is read rather than
+    // written down here.
+    const stake = stakeWeiFrom();
+    await atlas.send([{ to: ctx.wallets.pot.address, value: (await atlas.getBalance()) - stake }], "leave-stake-only");
     ctx.bankroll.invalidate();
     const plan = await planRound(ctx, "gas");
     const atlasDecision = plan.decisions.find((d) => d.agentId === "atlas")!;
