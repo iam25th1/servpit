@@ -17,16 +17,57 @@ import { log } from "../log";
 import type { CostMeter, ServClient } from "../serv/client";
 import type { AgentDecision, AgentSnapshot, Decision, RoundContext } from "./types";
 
+/**
+ * The response schema, in the subset SERV's validator accepts.
+ *
+ * It carried `minimum: 0` on stake and every call failed with a 400:
+ *
+ *   response_format.json_schema.schema: For 'integer' type, property
+ *   'minimum' is not supported
+ *
+ * Measured against the live validator, the rejected set is the numeric range
+ * keywords and only those: minimum, maximum, exclusiveMinimum,
+ * exclusiveMaximum and multipleOf, on both integer and number. String
+ * keywords are all accepted, as are description, default, enum and const. So
+ * the bound has to be expressed somewhere that is not the schema.
+ *
+ * It already is, in three places, and the schema was never the one that
+ * mattered. validateDecision rejects a negative, non integer or oversized
+ * stake against the balance this process read from the chain. The prompt
+ * states the rule. The Shadow Agent hint states it as a criterion. A model
+ * cannot talk its way past any of them, and none of them trusts a number the
+ * model supplied about itself.
+ */
 export const DECISION_SCHEMA = {
   type: "object",
   additionalProperties: false,
   required: ["enter", "stake", "reason"],
   properties: {
     enter: { type: "boolean", description: "true to commit this round's allocation" },
-    stake: { type: "integer", minimum: 0, description: "allocation in minor units, exactly the round allocation when entering, otherwise 0" },
+    stake: { type: "integer", description: "allocation in minor units, never negative, exactly the round allocation when entering, otherwise 0" },
     reason: { type: "string", description: "one sentence naming the balance figure or participation count relied on" },
   },
 } as const;
+
+/**
+ * Keywords SERV's schema validator rejects. Numeric ranges only; every
+ * string keyword probed was accepted.
+ */
+export const UNSUPPORTED_SCHEMA_KEYWORDS = ["minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf"] as const;
+
+/** Every keyword used anywhere in a schema, however deeply nested. */
+export function schemaKeywords(node: unknown, found: Set<string> = new Set()): Set<string> {
+  if (Array.isArray(node)) {
+    for (const child of node) schemaKeywords(child, found);
+    return found;
+  }
+  if (node === null || typeof node !== "object") return found;
+  for (const [key, value] of Object.entries(node)) {
+    found.add(key);
+    schemaKeywords(value, found);
+  }
+  return found;
+}
 
 const MAX_REASON = 400;
 
