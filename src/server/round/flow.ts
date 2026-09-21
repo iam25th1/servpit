@@ -13,6 +13,7 @@
 import { createHash } from "node:crypto";
 import { NAMED_AGENTS } from "@/config/agents";
 import { DEFAULT_ROUND } from "@/config/round";
+import { stakeWeiFrom } from "@/config/stake";
 import { resolveRound, type Entrant, type RoundResult } from "@/engine/resolveRound";
 import type { BankrollCache } from "../bankroll";
 import { decideForAgents, heuristicDecision } from "../decisions/decide";
@@ -86,7 +87,9 @@ export function roundIdFor(seed: string, entrants: number): string {
 
 export async function planRound(ctx: FlowContext, seed: string, onDecided?: (decision: AgentDecision) => void): Promise<RoundPlan> {
   if (!SEED.test(seed)) throw new RangeError(`seed must match ${SEED}`);
-  const stakeWei = toWei(DEFAULT_ROUND.stakeTiers[DEFAULT_ROUND.stakeTier]);
+  // A share of a funded wallet rather than a flat amount, so an agent can
+  // actually run low and its reasoning has something to weigh.
+  const stakeWei = stakeWeiFrom();
   const roundId = roundIdFor(seed, ctx.entrants);
 
   ctx.bankroll.invalidate();
