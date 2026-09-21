@@ -12,8 +12,7 @@
 // Integer minor units throughout. Chips are a display and prompt unit and
 // never appear in this file.
 
-import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { StoreFile, UNKNOWN_NETWORK } from "../store/file";
 import { assertWei } from "../money";
 
 export interface AgentDebt {
@@ -52,12 +51,6 @@ interface StoredDebt {
   loanCount?: number;
 }
 
-interface FileShape {
-  version: 1;
-  debts: Record<string, StoredDebt>;
-  updatedAt: string;
-}
-
 export const NO_DEBT_FOR = (identityId: string, bornAtRound: string | null = null): AgentDebt => ({
   identityId,
   principalWei: 0n,
@@ -73,53 +66,45 @@ export const totalOwed = (debt: AgentDebt): bigint => debt.principalWei + debt.i
 
 export class DebtStore {
   private readonly debts = new Map<string, AgentDebt>();
-  /** The file as last read: modification time and size. Empty when absent. */
-  private stamp = "";
-
-  constructor(private readonly file: string) {
-    this.reload();
-  }
+  private readonly sync: StoreFile;
 
   /**
-   * Rereads the file when it has changed since the last look.
-   *
    * One process holds two of these. The plan route builds the server context
    * and the run route builds the settle context, each with its own store over
    * the same file, because the settle path may not import anything that can
    * reach a model. Read once at construction, the plan route's copy was a
    * snapshot of the moment the process started: it kept offering loans that
    * had been repaid, kept naming occupants who had been carried out, and the
-   * lender's panel showed a book that no longer existed.
-   *
-   * Every mutation below flushes immediately, so there is never unwritten
-   * state here to lose by rereading.
+   * lender's panel showed a book that no longer existed. Every read below
+   * goes through the file first, and every mutation flushes immediately, so
+   * there is never unwritten state here to lose by rereading.
    */
-  private reload(): void {
-    const stat = statSync(this.file, { throwIfNoEntry: false });
-    const now = stat ? `${stat.mtimeMs}:${stat.size}` : "";
-    if (now === this.stamp) return;
-    this.stamp = now;
+  constructor(file: string, network: string = UNKNOWN_NETWORK) {
+    this.sync = new StoreFile(file, network, (body) => this.load(body));
+    this.sync.read();
+  }
+
+  private load(body: Record<string, unknown> | null): void {
     this.debts.clear();
-    if (!stat) return;
-    const parsed = JSON.parse(readFileSync(this.file, "utf8")) as Partial<FileShape>;
-    for (const [walletId, stored] of Object.entries(parsed.debts ?? {})) {
-      if (!stored || !/^\d+$/.test(stored.principalWei) || !/^\d+$/.test(stored.interestWei)) continue;
+    const stored = (body?.debts ?? {}) as Record<string, StoredDebt>;
+    for (const [walletId, debt] of Object.entries(stored)) {
+      if (!debt || !/^\d+$/.test(debt.principalWei) || !/^\d+$/.test(debt.interestWei)) continue;
       this.debts.set(walletId, {
-        identityId: stored.identityId,
-        principalWei: BigInt(stored.principalWei),
-        interestWei: BigInt(stored.interestWei),
-        rateBps: stored.rateBps,
-        lastAccruedRound: stored.lastAccruedRound,
-        bornAtRound: stored.bornAtRound ?? null,
-        borrowedWei: stored.borrowedWei !== undefined && /^\d+$/.test(stored.borrowedWei) ? BigInt(stored.borrowedWei) : BigInt(stored.principalWei),
-        loanCount: stored.loanCount ?? 0,
+        identityId: debt.identityId,
+        principalWei: BigInt(debt.principalWei),
+        interestWei: BigInt(debt.interestWei),
+        rateBps: debt.rateBps,
+        lastAccruedRound: debt.lastAccruedRound,
+        bornAtRound: debt.bornAtRound ?? null,
+        borrowedWei: debt.borrowedWei !== undefined && /^\d+$/.test(debt.borrowedWei) ? BigInt(debt.borrowedWei) : BigInt(debt.principalWei),
+        loanCount: debt.loanCount ?? 0,
       });
     }
   }
 
   /** What this wallet's current occupant owes. Never undefined. */
   get(walletId: string, identityId: string): AgentDebt {
-    this.reload();
+    this.sync.read();
     const held = this.debts.get(walletId);
     // A debt stamped with a different identity belongs to somebody who is no
     // longer in this seat, so it is not this agent's to carry.
@@ -205,28 +190,30 @@ export class DebtStore {
    * debt on file is still owed by whoever is sitting there.
    */
   currentIdentity(walletId: string): string {
-    this.reload();
+    this.sync.read();
     return this.debts.get(walletId)?.identityId ?? `${walletId}-1`;
   }
 
   /** Every debt on file, for reconciliation and for the operator. */
   all(): Array<AgentDebt & { walletId: string }> {
-    this.reload();
+    this.sync.read();
     return [...this.debts.entries()].map(([walletId, debt]) => ({ walletId, ...debt }));
   }
 
   private flush(): void {
-    mkdirSync(dirname(this.file), { recursive: true });
     const debts: Record<string, StoredDebt> = {};
     for (const [walletId, d] of this.debts) {
-      debts[walletId] = { identityId: d.identityId, principalWei: d.principalWei.toString(), interestWei: d.interestWei.toString(), rateBps: d.rateBps, lastAccruedRound: d.lastAccruedRound, bornAtRound: d.bornAtRound, borrowedWei: d.borrowedWei.toString(), loanCount: d.loanCount };
+      debts[walletId] = {
+        identityId: d.identityId,
+        principalWei: d.principalWei.toString(),
+        interestWei: d.interestWei.toString(),
+        rateBps: d.rateBps,
+        lastAccruedRound: d.lastAccruedRound,
+        bornAtRound: d.bornAtRound,
+        borrowedWei: d.borrowedWei.toString(),
+        loanCount: d.loanCount,
+      };
     }
-    const body: FileShape = { version: 1, debts, updatedAt: new Date().toISOString() };
-    const tmp = `${this.file}.tmp`;
-    writeFileSync(tmp, JSON.stringify(body, null, 2) + "\n");
-    renameSync(tmp, this.file);
-    // This store is now the file, so the next read has nothing to pick up.
-    const stat = statSync(this.file, { throwIfNoEntry: false });
-    this.stamp = stat ? `${stat.mtimeMs}:${stat.size}` : "";
+    this.sync.write({ version: 1, debts, updatedAt: new Date().toISOString() });
   }
 }

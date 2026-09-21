@@ -60,7 +60,7 @@ async function build(): Promise<SettleContext> {
   const env = readEnv();
   const chain: Chain = env.viem ? new ViemChain(env.viem) : new FakeChain({ initialBalanceWei: fakeOpeningWei(process.env) });
   log.info("wallet backend", { backend: chain.kind, network: chain.network });
-  const registry = new WalletRegistry(join(env.dataDir, `wallets-${chain.network}.json`));
+  const registry = new WalletRegistry(join(env.dataDir, `wallets-${chain.network}.json`), chain.network);
   // Only when the bank is on and there is a key for it. A round that never
   // asks the bank for anything must not need a wallet it does not have.
   const hasKey = (id: string): boolean => chain.kind === "fake" || Boolean(env.viem?.keys[id]);
@@ -69,13 +69,13 @@ async function build(): Promise<SettleContext> {
     operator: bankEnabled() && hasKey(OPERATOR_WALLET_ID),
   });
   const bankroll = new BankrollCache({ ttlMs: 5_000, now: () => Date.now() });
-  const ledger = new TransferLedger(join(env.dataDir, `ledger-${chain.network}.json`));
-  const store = new RoundStore(join(env.dataDir, `rounds-${chain.network}.json`));
+  const ledger = new TransferLedger(join(env.dataDir, `ledger-${chain.network}.json`), chain.network);
+  const store = new RoundStore(join(env.dataDir, `rounds-${chain.network}.json`), chain.network);
   const meter = new CostMeter(DEFAULT_SERV.pricing);
-  const plans = new PlanStore(join(env.dataDir, `plans-${chain.network}.json`));
-  const rollover = new RolloverStore(join(env.dataDir, `rollover-${chain.network}.json`));
-  const debts = new DebtStore(join(env.dataDir, `debts-${chain.network}.json`));
-  const wreckStore = new WreckStore(join(env.dataDir, `wrecks-${chain.network}.json`));
+  const plans = new PlanStore(join(env.dataDir, `plans-${chain.network}.json`), {}, chain.network);
+  const rollover = new RolloverStore(join(env.dataDir, `rollover-${chain.network}.json`), chain.network);
+  const debts = new DebtStore(join(env.dataDir, `debts-${chain.network}.json`), chain.network);
+  const wreckStore = new WreckStore(join(env.dataDir, `wrecks-${chain.network}.json`), chain.network);
   // No bank wallet in this build, so a nonzero share has nowhere to go. This
   // is the path that settles, so it is the path that must refuse to start.
   assertBankShareIsPayable(false);

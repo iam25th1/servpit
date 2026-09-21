@@ -13,41 +13,39 @@
 // round reads the same input and recomputes the same prize, rather than
 // reading the output of its own first run and paying a different number.
 
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { StoreFile, UNKNOWN_NETWORK } from "../store/file";
 import { assertWei } from "../money";
 
-interface FileShape {
-  version: 1;
-  /** Carried into the next round. Decimal wei, because bigint has no JSON form. */
-  rolloverWei: string;
-  /** The round that last consumed a rollover. */
-  lastRoundId: string | null;
-  /** What that round consumed, so a replay of it reads the same number. */
-  lastInputWei: string;
-  updatedAt: string;
-}
 
 export class RolloverStore {
   private rollover = 0n;
   private lastRoundId: string | null = null;
   private lastInput = 0n;
+  private readonly sync: StoreFile;
 
-  constructor(private readonly file: string) {
-    if (!existsSync(file)) return;
-    const parsed = JSON.parse(readFileSync(file, "utf8")) as Partial<FileShape>;
-    if (typeof parsed.rolloverWei === "string" && /^\d+$/.test(parsed.rolloverWei)) this.rollover = BigInt(parsed.rolloverWei);
-    if (typeof parsed.lastRoundId === "string") this.lastRoundId = parsed.lastRoundId;
-    if (typeof parsed.lastInputWei === "string" && /^\d+$/.test(parsed.lastInputWei)) this.lastInput = BigInt(parsed.lastInputWei);
+  constructor(file: string, network: string = UNKNOWN_NETWORK) {
+    this.sync = new StoreFile(file, network, (body) => this.load(body));
+    this.sync.read();
+  }
+
+  private load(body: Record<string, unknown> | null): void {
+    const rolloverWei = body?.rolloverWei;
+    const lastRoundId = body?.lastRoundId;
+    const lastInputWei = body?.lastInputWei;
+    this.rollover = typeof rolloverWei === "string" && /^\d+$/.test(rolloverWei) ? BigInt(rolloverWei) : 0n;
+    this.lastRoundId = typeof lastRoundId === "string" ? lastRoundId : null;
+    this.lastInput = typeof lastInputWei === "string" && /^\d+$/.test(lastInputWei) ? BigInt(lastInputWei) : 0n;
   }
 
   /** Carried into the next round that has not run yet. */
   get carriedWei(): bigint {
+    this.sync.read();
     return this.rollover;
   }
 
   /** What this round adds to its pool. Stable across replays of the same round. */
   inputFor(roundId: string): bigint {
+    this.sync.read();
     return roundId === this.lastRoundId ? this.lastInput : this.rollover;
   }
 
@@ -55,6 +53,9 @@ export class RolloverStore {
   record(roundId: string, inputWei: bigint, nextRolloverWei: bigint): void {
     assertWei(inputWei, "inputWei");
     assertWei(nextRolloverWei, "nextRolloverWei");
+    // Against what is on file now, not against what was there when this
+    // store was built: another writer may have settled a round since.
+    this.sync.read();
     if (roundId === this.lastRoundId && inputWei !== this.lastInput) {
       throw new Error(`round ${roundId} already consumed ${this.lastInput} wei of rollover, refusing to record ${inputWei}`);
     }
@@ -65,16 +66,12 @@ export class RolloverStore {
   }
 
   private flush(): void {
-    mkdirSync(dirname(this.file), { recursive: true });
-    const body: FileShape = {
+    this.sync.write({
       version: 1,
       rolloverWei: this.rollover.toString(),
       lastRoundId: this.lastRoundId,
       lastInputWei: this.lastInput.toString(),
       updatedAt: new Date().toISOString(),
-    };
-    const tmp = `${this.file}.tmp`;
-    writeFileSync(tmp, JSON.stringify(body, null, 2) + "\n");
-    renameSync(tmp, this.file);
+    });
   }
 }

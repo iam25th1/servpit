@@ -5,8 +5,7 @@
 // key as the second net. A key can never be reused for a different amount,
 // destination or party.
 
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { StoreFile, UNKNOWN_NETWORK } from "./store/file";
 import type { TransferKind } from "./idempotency";
 import { log, redact } from "./log";
 import { assertWei } from "./money";
@@ -71,35 +70,37 @@ export interface TransferInput {
 // bigint has no JSON form, so both amounts persist as decimal strings.
 type Stored = Omit<TransferRecord, "amountWei" | "feeWei"> & { amountWei: string; feeWei?: string };
 
-interface FileShape {
-  version: 1;
-  transfers: Record<string, Stored>;
-}
-
 export class TransferLedger {
   private records = new Map<string, TransferRecord>();
+  private readonly sync: StoreFile;
 
-  constructor(private readonly file: string) {
-    if (existsSync(file)) {
-      const parsed = JSON.parse(readFileSync(file, "utf8")) as Partial<FileShape>;
-      for (const stored of Object.values(parsed.transfers ?? {})) {
-        if (stored && typeof stored.key === "string" && /^\d+$/.test(stored.amountWei)) {
-          this.records.set(stored.key, {
-            ...stored,
-            amountWei: BigInt(stored.amountWei),
-            feeWei: stored.feeWei === undefined ? undefined : BigInt(stored.feeWei),
-          });
-        }
+  constructor(file: string, network: string = UNKNOWN_NETWORK) {
+    this.sync = new StoreFile(file, network, (body) => this.load(body));
+    this.sync.read();
+  }
+
+  private load(body: Record<string, unknown> | null): void {
+    this.records = new Map();
+    const stored = (body?.transfers ?? {}) as Record<string, Stored>;
+    for (const record of Object.values(stored)) {
+      if (record && typeof record.key === "string" && /^\d+$/.test(record.amountWei)) {
+        this.records.set(record.key, {
+          ...record,
+          amountWei: BigInt(record.amountWei),
+          feeWei: record.feeWei === undefined ? undefined : BigInt(record.feeWei),
+        });
       }
     }
   }
 
   get(key: string): TransferRecord | undefined {
+    this.sync.read();
     const r = this.records.get(key);
     return r ? { ...r } : undefined;
   }
 
   forRound(roundId: string): TransferRecord[] {
+    this.sync.read();
     return [...this.records.values()].filter((r) => r.roundId === roundId).map((r) => ({ ...r }));
   }
 
@@ -112,6 +113,7 @@ export class TransferLedger {
    * principal advanced and nothing has yet reduced it.
    */
   principalOwed(agentId: string): bigint {
+    this.sync.read();
     let owed = 0n;
     for (const r of this.records.values()) {
       if (r.kind === "loan" && r.agentId === agentId && r.status === "complete") owed += r.amountWei;
@@ -121,6 +123,7 @@ export class TransferLedger {
 
   /** Every loan settled to an agent, oldest first. */
   loansFor(agentId: string): TransferRecord[] {
+    this.sync.read();
     return [...this.records.values()].filter((r) => r.kind === "loan" && r.agentId === agentId).map((r) => ({ ...r }));
   }
 
@@ -129,6 +132,10 @@ export class TransferLedger {
     if (input.amountWei === 0n) throw new RangeError("amountWei must be greater than zero");
     if (!ADDRESS.test(input.to)) throw new RangeError("to must be an address");
 
+    // Whatever is on file now. A settle in another process may have written
+    // this very key, and resending money on a stale copy is the failure this
+    // ledger exists to prevent.
+    this.sync.read();
     const existing = this.records.get(input.key);
     if (existing) {
       const same =
@@ -268,14 +275,10 @@ export class TransferLedger {
   }
 
   private flush(): void {
-    mkdirSync(dirname(this.file), { recursive: true });
     const transfers: Record<string, Stored> = {};
-    for (const [k, r] of this.records) {
-      transfers[k] = { ...r, amountWei: r.amountWei.toString(), feeWei: r.feeWei === undefined ? undefined : r.feeWei.toString() };
+    for (const [key, r] of this.records) {
+      transfers[key] = { ...r, amountWei: r.amountWei.toString(), feeWei: r.feeWei === undefined ? undefined : r.feeWei.toString() };
     }
-    const body: FileShape = { version: 1, transfers };
-    const tmp = `${this.file}.tmp`;
-    writeFileSync(tmp, JSON.stringify(body, null, 2) + "\n");
-    renameSync(tmp, this.file);
+    this.sync.write({ version: 1, transfers });
   }
 }

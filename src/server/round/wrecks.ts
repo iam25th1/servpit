@@ -10,8 +10,7 @@
 // pushing, whether it was playing with borrowed chips, how far it had fallen
 // from its best, and how long it lasted.
 
-import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { StoreFile, UNKNOWN_NETWORK } from "../store/file";
 
 /** The condition the rules module fired on. */
 export type WreckTrigger = "debt above the ceiling" | "broke and denied credit";
@@ -53,43 +52,26 @@ export function overReached(record: WreckRecord): boolean {
   return record.recentStakeMultiples.some((m) => m > 1);
 }
 
-interface FileShape {
-  version: 1;
-  wrecks: WreckRecord[];
-  updatedAt: string;
-}
-
 export class WreckStore {
   private records: WreckRecord[] = [];
-  /** The file as last read: modification time and size. Empty when absent. */
-  private stamp = "";
-
-  constructor(private readonly file: string) {
-    this.reload();
-  }
+  private readonly sync: StoreFile;
 
   /**
-   * Rereads the file when it has changed since the last look.
-   *
    * The graveyard is served from the server context and written from the
    * settle context, both in one process and each with its own store over this
    * file. Read once at construction, the wall never grew: a round settled
    * while the page was open left no mark on it until a restart.
    */
-  private reload(): void {
-    const stat = statSync(this.file, { throwIfNoEntry: false });
-    const now = stat ? `${stat.mtimeMs}:${stat.size}` : "";
-    if (now === this.stamp) return;
-    this.stamp = now;
-    this.records = [];
-    if (!stat) return;
-    const parsed = JSON.parse(readFileSync(this.file, "utf8")) as Partial<FileShape>;
-    if (Array.isArray(parsed.wrecks)) this.records = parsed.wrecks;
+  constructor(file: string, network: string = UNKNOWN_NETWORK) {
+    this.sync = new StoreFile(file, network, (body) => {
+      this.records = Array.isArray(body?.wrecks) ? (body.wrecks as WreckRecord[]) : [];
+    });
+    this.sync.read();
   }
 
   /** Records a wreck, or replaces the one already on file for that round. */
   save(record: WreckRecord): void {
-    this.reload();
+    this.sync.read();
     const i = this.records.findIndex((r) => r.roundId === record.roundId && r.walletId === record.walletId);
     if (i >= 0) this.records[i] = record;
     else this.records.push(record);
@@ -98,29 +80,22 @@ export class WreckStore {
 
   /** Whether this wallet has already been wrecked out of this round. */
   has(roundId: string, walletId: string): boolean {
-    this.reload();
+    this.sync.read();
     return this.records.some((r) => r.roundId === roundId && r.walletId === walletId);
   }
 
   all(): WreckRecord[] {
-    this.reload();
+    this.sync.read();
     return [...this.records];
   }
 
   /** How many times this seat has been emptied, which sets the next identity. */
   countFor(walletId: string): number {
-    this.reload();
+    this.sync.read();
     return this.records.filter((r) => r.walletId === walletId).length;
   }
 
   private flush(): void {
-    mkdirSync(dirname(this.file), { recursive: true });
-    const body: FileShape = { version: 1, wrecks: this.records, updatedAt: new Date().toISOString() };
-    const tmp = `${this.file}.tmp`;
-    writeFileSync(tmp, JSON.stringify(body, null, 2) + "\n");
-    renameSync(tmp, this.file);
-    // This store is now the file, so the next read has nothing to pick up.
-    const stat = statSync(this.file, { throwIfNoEntry: false });
-    this.stamp = stat ? `${stat.mtimeMs}:${stat.size}` : "";
+    this.sync.write({ version: 1, wrecks: this.records, updatedAt: new Date().toISOString() });
   }
 }
