@@ -13,9 +13,10 @@ import { toChips } from "@/config/stake";
 import { resolveRound } from "@/engine/resolveRound";
 import { heuristicDecision } from "../decisions/heuristic";
 import { log } from "../log";
-import { fromWei, toWei } from "../money";
+import { fromWei, sumWei } from "../money";
 import { reconcile } from "../reconcile";
 import { collectEntry, payWinner, type TransferOutcome } from "../transfers";
+import { splitPrize } from "./prize";
 import type { FlowContext, RoundPlan, RoundRun } from "./types";
 import { type StoredAgentRound } from "./store";
 
@@ -53,18 +54,41 @@ export async function runRound(ctx: FlowContext, plan: RoundPlan, progress: RunP
   });
   const winnerEntrantId = round.placements[0];
   const winnerAgent = plan.entering.find((e) => e.entrantId === winnerEntrantId);
-  const prize = round.payouts.find((p) => p.entrantId === winnerEntrantId)?.amount ?? 0;
-  const prizeWei = toWei(prize);
+
+  // The engine's own pot charges all twenty four seats, and eighteen of them
+  // are house bots that never paid anything. That number is a game display,
+  // not money, and the pot wallet had to cover the difference out of its own
+  // balance every time an agent won. The prize is now what the pot is
+  // actually holding for this round: the entries that just landed in it plus
+  // whatever rolled over from rounds nobody real won.
+  //
+  // Rollover is read by round id rather than as a running total, so a replay
+  // of a settled round inherits the same number it did the first time.
+  const entriesWei = sumWei(entries.map((e) => e.amountWei));
+  const rolloverInWei = ctx.rollover.inputFor(plan.roundId);
+  const prize = splitPrize({ entriesWei, rolloverWei: rolloverInWei, rakeBps: DEFAULT_ROUND.rakeBps, agentWon: Boolean(winnerAgent) });
+  const prizeWei = prize.payoutWei;
 
   let payout: TransferOutcome | null = null;
   let retained: { winnerEntrantId: string; amountWei: bigint } | null = null;
-  if (winnerAgent) {
+  if (winnerAgent && prizeWei > 0n) {
     const wallet = ctx.wallets.agents.get(winnerAgent.agentId)!;
     payout = await payWinner({ ledger: ctx.ledger, bankroll: ctx.bankroll, network: ctx.chain.network, settles: ctx.chain.settles }, plan.roundId, winnerAgent.agentId, pot, wallet, prizeWei);
-  } else {
-    retained = { winnerEntrantId, amountWei: prizeWei };
-    log.info("house bot won, prize retained in the pot", { roundId: plan.roundId, winner: winnerEntrantId, prizeWei: prizeWei.toString() });
+  } else if (!winnerAgent) {
+    retained = { winnerEntrantId, amountWei: prize.toBankWei + prize.nextRolloverWei };
+    log.info("house bot won, prize rolls over into the next pot", {
+      roundId: plan.roundId,
+      winner: winnerEntrantId,
+      retainedWei: retained.amountWei.toString(),
+      nextRolloverWei: prize.nextRolloverWei.toString(),
+      toBankWei: prize.toBankWei.toString(),
+    });
   }
+
+  // After the payout, so a failed send leaves the rollover untouched and the
+  // next round inherits the same pot rather than one that has already been
+  // spent on a transfer that never landed.
+  ctx.rollover.record(plan.roundId, rolloverInWei, prize.nextRolloverWei);
 
   ctx.bankroll.invalidate();
   const after: Record<string, bigint> = {};
@@ -90,8 +114,13 @@ export async function runRound(ctx: FlowContext, plan: RoundPlan, progress: RunP
       ...entries.filter((e) => e.applied).map((e) => ({ address: e.from, amountWei: e.feeWei ?? 0n })),
       ...(payout?.applied ? [{ address: payout.from, amountWei: payout.feeWei ?? 0n }] : []),
     ],
-    houseContributionWei: plan.stakeWei * BigInt(plan.bots.length),
-    rakeWei: toWei(round.rake),
+    // No house contribution any more: a seat that did not pay adds nothing to
+    // the prize. What the pot brought in from previous rounds does, and it is
+    // money the pot is already holding.
+    rolloverInWei,
+    nextRolloverWei: prize.nextRolloverWei,
+    toBankWei: prize.toBankWei,
+    rakeWei: prize.rakeWei,
   });
   if (!reconciliation.ok) {
     log.error("reconciliation failed", { roundId: plan.roundId, checks: reconciliation.checks.filter((c) => !c.ok) });
@@ -126,8 +155,8 @@ export async function runRound(ctx: FlowContext, plan: RoundPlan, progress: RunP
     network: ctx.chain.network,
     entrants: plan.entrants.length,
     winner: winnerEntrantId,
-    potWei: toWei(round.pot).toString(),
-    rakeWei: toWei(round.rake).toString(),
+    potWei: prize.poolWei.toString(),
+    rakeWei: prize.rakeWei.toString(),
     agents,
     reconciled: reconciliation.ok,
     servCalls: plan.servCalls,
@@ -139,14 +168,16 @@ export async function runRound(ctx: FlowContext, plan: RoundPlan, progress: RunP
     winner: winnerEntrantId,
     entered: plan.entering.length,
     bots: plan.bots.length,
-    potWei: toWei(round.pot).toString(),
+    poolWei: prize.poolWei.toString(),
+    rolloverInWei: rolloverInWei.toString(),
+    nextRolloverWei: prize.nextRolloverWei.toString(),
     prizeWei: prizeWei.toString(),
     reconciled: reconciliation.ok,
     watched: watched.length,
     payoutMinorUnits: fromWei(prizeWei),
   });
 
-  return { plan, round, entries, payout, retained, reconciliation };
+  return { plan, round, entries, payout, retained, prize, rolloverInWei, reconciliation };
 }
 
 export { heuristicDecision };

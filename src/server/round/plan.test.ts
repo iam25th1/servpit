@@ -10,6 +10,7 @@ import { FakeChain } from "../wallets/fake";
 import { openWallets } from "../wallets/open";
 import { WalletRegistry } from "../wallets/registry";
 import { RoundStore } from "./store";
+import { RolloverStore } from "./rollover";
 import { planRound, runRound } from "./flow";
 
 let dir: string;
@@ -36,10 +37,11 @@ async function harness(options: { balanceWei?: bigint; transport?: ChatTransport
   const wallets = await openWallets(chain, registry);
   const ledger = new TransferLedger(join(dir, "ledger.json"));
   const store = new RoundStore(join(dir, "rounds.json"));
+  const rollover = new RolloverStore(join(dir, "rollover.json"));
   const bankroll = new BankrollCache({ ttlMs: 0, now: () => 0 });
   const meter = new CostMeter(DEFAULT_SERV.pricing);
   const client = options.transport ? new ServClient({ ...DEFAULT_SERV, backoffMs: 0 }, options.transport) : undefined;
-  return { chain, wallets, ledger, store, bankroll, meter, ctx: { chain, wallets, ledger, store, bankroll, meter, serv: client, entrants: 24 } };
+  return { chain, wallets, ledger, store, bankroll, meter, rollover, ctx: { chain, wallets, ledger, store, bankroll, meter, rollover, serv: client, entrants: 24 } };
 }
 
 import { stakeWeiFrom, toChips } from "@/config/stake";
@@ -113,12 +115,16 @@ describe("runRound", () => {
     expect(result.reconciliation.checks.every((c) => c.ok)).toBe(true);
 
     const winner = result.round.placements[0];
-    const prize = result.round.pot - result.round.rake;
+    // The prize is what agents paid in plus what rolled over, never the
+    // engine's twenty four seat pot.
+    const entriesWei = result.entries.reduce((sum, e) => sum + e.amountWei, 0n);
+    expect(result.prize.poolWei).toBe(entriesWei + result.rolloverInWei);
     if (plan.entering.some((e) => e.entrantId === winner)) {
-      expect(result.payout?.amountWei).toBe(BigInt(prize));
+      expect(result.payout?.amountWei).toBe(result.prize.poolWei - result.prize.rakeWei);
       expect(result.payout?.status).toBe("complete");
     } else {
       expect(result.payout).toBeNull();
+      expect(result.retained?.amountWei).toBe(result.prize.nextRolloverWei);
       expect(chain.balanceOf(wallets.pot.address)).toBeGreaterThan(0n);
     }
   });
@@ -162,7 +168,8 @@ describe("runRound", () => {
     const plan = await planRound(ctx, "demo");
     const result = await runRound(ctx, plan);
     const paid = result.payout ? result.payout.amountWei : 0n;
-    expect(paid).toBeLessThanOrEqual(BigInt(result.round.pot - result.round.rake));
+    const entriesWei = result.entries.reduce((sum, e) => sum + e.amountWei, 0n);
+    expect(paid).toBeLessThanOrEqual(entriesWei + result.rolloverInWei);
   });
 });
 
@@ -187,5 +194,56 @@ describe("gas is no longer sponsored", () => {
     const { ctx } = await harness({ transport: enterTransport(), gasReserveWei: 500n });
     const plan = await planRound(ctx, "gas2");
     expect(plan.entering.map((e) => e.agentId)).toContain("atlas");
+  });
+});
+
+describe("the pot only ever pays out what it is holding", () => {
+  // The prize used to be the engine's twenty four seat pot while only the
+  // five or six real agents paid anything. The pot wallet covered the gap out
+  // of its own balance every time an agent won, about ten chips a round, and
+  // had one payout left in it when this was measured.
+  it("rolls an unclaimed prize into the next round instead of promising it out of the pot's own balance", async () => {
+    const { ctx } = await harness({ transport: enterTransport() });
+    const outcomes: string[] = [];
+    let carried = 0n;
+    for (const seed of ["s1", "s2", "s3", "s4", "s5", "s6"]) {
+      const plan = await planRound(ctx, seed);
+      const run = await runRound(ctx, plan);
+      const entriesWei = run.entries.reduce((sum, e) => sum + e.amountWei, 0n);
+      expect(run.rolloverInWei).toBe(carried);
+      expect(run.prize.poolWei).toBe(entriesWei + carried);
+      expect(run.reconciliation.ok).toBe(true);
+      if (run.payout) {
+        outcomes.push("agent");
+        expect(run.payout.amountWei).toBe(run.prize.poolWei - run.prize.rakeWei);
+        expect(run.prize.nextRolloverWei).toBe(0n);
+      } else {
+        outcomes.push("house");
+        expect(run.retained?.amountWei).toBe(run.prize.poolWei - run.prize.rakeWei);
+      }
+      carried = run.prize.nextRolloverWei;
+    }
+    // Both branches have to be exercised or the invariant is only half tested.
+    expect(new Set(outcomes).size).toBe(2);
+  });
+
+  it("never sends the bank a share while there is no bank wallet", async () => {
+    const { ctx } = await harness({ transport: enterTransport() });
+    const plan = await planRound(ctx, "bank");
+    const run = await runRound(ctx, plan);
+    expect(run.prize.toBankWei).toBe(0n);
+  });
+
+  it("gives a replayed round the same rollover and pays nothing a second time", async () => {
+    const { ctx, chain } = await harness({ transport: enterTransport() });
+    const plan = await planRound(ctx, "replay");
+    const first = await runRound(ctx, plan);
+    const applied = chain.applied;
+    const again = await runRound(ctx, plan);
+    expect(again.rolloverInWei).toBe(first.rolloverInWei);
+    expect(again.prize.poolWei).toBe(first.prize.poolWei);
+    expect(ctx.rollover.carriedWei).toBe(first.prize.nextRolloverWei);
+    expect(chain.applied).toBe(applied);
+    expect(again.reconciliation.ok).toBe(true);
   });
 });

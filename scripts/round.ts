@@ -15,6 +15,7 @@ import { readEnv } from "../src/server/env";
 import { loadLocalEnv } from "./lib/loadEnv";
 import { requireDeclaredBackend } from "./lib/requireBackend";
 import { basescanTx } from "../src/server/money";
+import { toChips } from "../src/config/stake";
 import { planRound, runRound } from "../src/server/round/flow";
 
 // Before anything reads the environment.
@@ -43,7 +44,15 @@ async function main(): Promise<void> {
   }
 
   const run = await runRound(flow, plan);
-  console.log(`\nwinner ${run.round.placements[0]}, pot ${run.round.pot}, rake ${run.round.rake}`);
+  const chips = (wei: bigint): string => `${toChips(wei)} chips`;
+  console.log(`\nwinner ${run.round.placements[0]}`);
+  console.log(`  entries      ${run.prize.poolWei - run.rolloverInWei} wei (${chips(run.prize.poolWei - run.rolloverInWei)})`);
+  console.log(`  rollover in  ${run.rolloverInWei} wei (${chips(run.rolloverInWei)})`);
+  console.log(`  pool         ${run.prize.poolWei} wei (${chips(run.prize.poolWei)})`);
+  console.log(`  rake         ${run.prize.rakeWei} wei`);
+  console.log(`  payout       ${run.prize.payoutWei} wei (${chips(run.prize.payoutWei)})`);
+  console.log(`  to bank      ${run.prize.toBankWei} wei`);
+  console.log(`  rollover out ${run.prize.nextRolloverWei} wei (${chips(run.prize.nextRolloverWei)})`);
   for (const t of [...run.entries, ...(run.payout ? [run.payout] : [])]) {
     const link = ctx.chain.settles && t.txHash ? ` ${basescanTx(ctx.chain.network, t.txHash)}` : "";
     console.log(`  ${t.kind.padEnd(7)} ${t.agentId.padEnd(7)} ${t.amountWei} wei  ${t.applied ? "applied" : "already settled"}  ${t.txHash ?? "no hash"}${link}`);

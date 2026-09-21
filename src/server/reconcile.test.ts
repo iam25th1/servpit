@@ -11,12 +11,14 @@ const base = (): ReconcileInput => ({
     { address: "0xc", amountWei: 100n },
   ],
   payouts: [{ address: "0xa", amountWei: 500n }],
-  houseContributionWei: 200n,
+  rolloverInWei: 200n,
+  nextRolloverWei: 0n,
+  toBankWei: 0n,
   rakeWei: 0n,
 });
 
 describe("reconcile", () => {
-  it("holds when every on chain delta matches the transfers and entries plus house share minus rake equal payouts", () => {
+  it("holds when every on chain delta matches the transfers and entries plus rollover minus rake equal payouts", () => {
     const r = reconcile(base());
     expect(r.ok).toBe(true);
     expect(r.checks.every((c) => c.ok)).toBe(true);
@@ -35,7 +37,7 @@ describe("reconcile", () => {
     expect(bad).toContain("pot delta");
   });
 
-  it("fails when the pot paid out more than entries plus house share minus rake", () => {
+  it("fails when the pot paid out more than entries plus rollover minus rake", () => {
     const input = base();
     input.payouts = [{ address: "0xa", amountWei: 600n }];
     input.after["0xa"] = 1_000n - 100n + 600n;
@@ -45,12 +47,53 @@ describe("reconcile", () => {
     expect(r.checks.find((c) => c.name === "conservation")?.ok).toBe(false);
   });
 
-  it("accounts for a house win: nothing leaves the pot", () => {
+  it("accounts for a house win: nothing leaves the pot and the whole prize rolls over", () => {
     const input = base();
     input.payouts = [];
     input.after = { "0xpot": 10_000n + 300n, "0xa": 900n, "0xb": 900n, "0xc": 900n };
-    input.houseContributionWei = 200n;
+    input.nextRolloverWei = 500n;
     expect(reconcile(input).ok).toBe(true);
+  });
+
+  it("refuses a house win that loses part of the prize", () => {
+    // The old check only asked that the retained prize was not negative, so a
+    // rollover that quietly dropped 100 wei looked fine.
+    const input = base();
+    input.payouts = [];
+    input.after = { "0xpot": 10_000n + 300n, "0xa": 900n, "0xb": 900n, "0xc": 900n };
+    input.nextRolloverWei = 400n;
+    const r = reconcile(input);
+    expect(r.ok).toBe(false);
+    expect(r.checks.find((c) => c.name === "conservation")?.ok).toBe(false);
+  });
+
+  it("splits a house win between the bank and the next round without losing a wei", () => {
+    const input = base();
+    input.payouts = [];
+    input.after = { "0xpot": 10_000n + 300n, "0xa": 900n, "0xb": 900n, "0xc": 900n };
+    input.toBankWei = 250n;
+    input.nextRolloverWei = 250n;
+    expect(reconcile(input).ok).toBe(true);
+  });
+
+  it("refuses a payout the pot could not cover", () => {
+    // The insolvent prize promised 240 chips against about 50 paid in and the
+    // pot made up the difference until it could not.
+    const input = base();
+    input.before["0xpot"] = 100n;
+    input.after["0xpot"] = 0n;
+    const r = reconcile(input);
+    expect(r.ok).toBe(false);
+    expect(r.checks.find((c) => c.name === "pot covers payout")?.ok).toBe(false);
+  });
+
+  it("does not ask a replay to cover a payout it never sent", () => {
+    const input = base();
+    input.before["0xpot"] = 100n;
+    input.after = { ...input.before };
+    input.appliedEntries = [];
+    input.appliedPayouts = [];
+    expect(reconcile(input).checks.find((c) => c.name === "pot covers payout")?.ok).toBe(true);
   });
 
   it("holds for a replay that applied nothing: zero deltas, conservation unchanged", () => {
@@ -92,7 +135,9 @@ describe("reconcile with self funded gas", () => {
 
   const withGas = (): ReconcileInput => {
     const input = base();
+    // A house win, so the whole prize stays in the pot for the next round.
     input.payouts = [];
+    input.nextRolloverWei = 500n;
     input.before = { "0xpot": FUNDED, "0xa": FUNDED, "0xb": FUNDED, "0xc": FUNDED };
     input.after = {
       "0xpot": FUNDED + 300n,
@@ -197,7 +242,9 @@ describe("the round an agent wins, where the pot pays gas too", () => {
       { address: "0xb", amountWei: ENTRY_FEE },
       { address: "0xpot", amountWei: PAYOUT_FEE },
     ],
-    houseContributionWei: 300n,
+    rolloverInWei: 300n,
+    nextRolloverWei: 0n,
+    toBankWei: 0n,
     rakeWei: 0n,
   });
 

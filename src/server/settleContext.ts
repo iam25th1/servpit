@@ -14,6 +14,7 @@ import { readEnv } from "./env";
 import { TransferLedger } from "./ledger";
 import { log } from "./log";
 import { PlanStore } from "./round/planStore";
+import { RolloverStore } from "./round/rollover";
 import { RoundStore } from "./round/store";
 import type { FlowContext } from "./round/types";
 import { CostMeter } from "./serv/meter";
@@ -23,6 +24,7 @@ import { WalletRegistry } from "./wallets/registry";
 import type { Chain } from "./wallets/types";
 import { ViemChain } from "./wallets/viem";
 import { DEFAULT_SERV } from "@/config/serv";
+import { assertBankShareIsPayable } from "@/config/economy";
 
 export interface SettleContext {
   chain: Chain;
@@ -46,8 +48,12 @@ async function build(): Promise<SettleContext> {
   const store = new RoundStore(join(env.dataDir, `rounds-${chain.network}.json`));
   const meter = new CostMeter(DEFAULT_SERV.pricing);
   const plans = new PlanStore(join(env.dataDir, `plans-${chain.network}.json`));
+  const rollover = new RolloverStore(join(env.dataDir, `rollover-${chain.network}.json`));
+  // No bank wallet in this build, so a nonzero share has nowhere to go. This
+  // is the path that settles, so it is the path that must refuse to start.
+  assertBankShareIsPayable(false);
   // No serv: a settle has nothing to ask.
-  const flow: FlowContext = { chain, wallets, ledger, store, bankroll, meter, plans, entrants: 24 };
+  const flow: FlowContext = { chain, wallets, ledger, store, bankroll, meter, plans, rollover, entrants: 24 };
   return { chain, wallets, flow };
 }
 
