@@ -30,9 +30,11 @@ import { initialState, reduce, type FlowState, type Screen } from "./machine";
 import { BootScreen } from "./screens/BootScreen";
 import { TitleScreen } from "./screens/TitleScreen";
 import { GameShell } from "./screens/GameShell";
+import type { DecidedShape } from "./screens/lineupRows";
 import { UiKitProvider } from "@/ui/UiKit";
 import { createResponsiveScope, playTransition } from "@/ui/transitions";
 import { Stage } from "@/ui/Stage";
+import { readNdjson } from "./ndjson";
 import { pickPlayerDraw, type RunReel } from "./reelPick";
 import { runRequestFor } from "./roundRequest";
 import { arenaStanding, type ArenaStanding } from "./screens/arenaHud";
@@ -308,8 +310,22 @@ export function PlayClient() {
       return;
     }
     try {
-      const plan = await postJson<PlanResponse>("/api/round/plan", { seed: `slot-${token()}`, entrants: mode.entrants ?? 24 });
-      dispatch({ type: "planLoaded", plan });
+      // Streamed, so each agent appears the moment it reports rather than
+      // all six appearing together after the slowest one lands.
+      const response = await fetch("/api/round/plan", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ seed: `slot-${token()}`, entrants: mode.entrants ?? 24 }),
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      let streamError: string | null = null;
+      await readNdjson(response, (value) => {
+        const line = value as { type?: string; decision?: unknown; plan?: unknown; error?: string };
+        if (line.type === "decision") dispatch({ type: "agentDecided", decision: line.decision });
+        else if (line.type === "plan") dispatch({ type: "planLoaded", plan: line.plan });
+        else if (line.type === "error") streamError = line.error ?? "the round could not be planned";
+      });
+      if (streamError !== null) throw new Error(streamError);
     } catch (e) {
       dispatch({ type: "failed", message: e instanceof Error ? e.message : String(e) });
     }
@@ -462,6 +478,7 @@ export function PlayClient() {
             muted={muted}
             leverNote={leverNote}
             arena={arena}
+            decided={state.decided as DecidedShape[]}
             slotCanvasRef={slotCanvasRef}
             arenaCanvasRef={arenaCanvasRef}
             onChooseMode={(modeId, stake) => void chooseMode(modeId, stake)}

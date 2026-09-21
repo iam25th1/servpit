@@ -81,7 +81,7 @@ export function roundIdFor(seed: string, entrants: number): string {
   return `r-${digest}`;
 }
 
-export async function planRound(ctx: FlowContext, seed: string): Promise<RoundPlan> {
+export async function planRound(ctx: FlowContext, seed: string, onDecided?: (decision: AgentDecision) => void): Promise<RoundPlan> {
   if (!SEED.test(seed)) throw new RangeError(`seed must match ${SEED}`);
   const stakeWei = toWei(DEFAULT_ROUND.stakeTiers[DEFAULT_ROUND.stakeTier]);
   const roundId = roundIdFor(seed, ctx.entrants);
@@ -101,7 +101,7 @@ export async function planRound(ctx: FlowContext, seed: string): Promise<RoundPl
   }
 
   const context: RoundContext = { roundId, participants: ctx.entrants, poolWei: stakeWei * BigInt(ctx.entrants), stakeWei };
-  const run = await decideForAgents({ client: ctx.serv, meter: ctx.meter }, snapshots, context);
+  const run = await decideForAgents({ client: ctx.serv, meter: ctx.meter }, snapshots, context, onDecided);
 
   // Final gate before money moves: the chain, not the model, decides who can
   // enter. Gas is no longer sponsored, so the bar is the stake plus whatever

@@ -32,6 +32,14 @@ export interface FlowState {
   mode: GameMode | null;
   stake: StakeTierId | null;
   plan: unknown | null;
+  /**
+   * Decisions that have arrived so far, in the order they landed.
+   *
+   * The plan endpoint streams one agent at a time, so the lineup can show an
+   * agent the moment it reports instead of holding all six back until the
+   * slowest finishes. Cleared whenever a new round starts.
+   */
+  decided: unknown[];
   run: unknown | null;
   /** True only while a pull would be accepted. */
   leverLive: boolean;
@@ -43,6 +51,7 @@ export type FlowEvent =
   | { type: "assetsReady" }
   | { type: "connected"; player: Player }
   | { type: "modeChosen"; modeId: string; stake: StakeTierId }
+  | { type: "agentDecided"; decision: unknown }
   | { type: "planLoaded"; plan: unknown }
   | { type: "leverPulled" }
   | { type: "reelsSettled" }
@@ -52,7 +61,7 @@ export type FlowEvent =
   | { type: "failed"; message: string };
 
 export function initialState(): FlowState {
-  return { screen: "boot", player: null, mode: null, stake: null, plan: null, run: null, leverLive: false, reelsSettled: false, error: null };
+  return { screen: "boot", player: null, mode: null, stake: null, plan: null, decided: [], run: null, leverLive: false, reelsSettled: false, error: null };
 }
 
 /** Both halves of the handoff are in, so the arena can take over. */
@@ -80,8 +89,14 @@ export function reduce(state: FlowState, event: FlowEvent): FlowState {
       if (mode.locked) return { ...state, error: `${mode.name} is not open yet` };
       const stake = mode.stakes?.find((s) => s.id === event.stake);
       if (!stake) return { ...state, error: `Unknown stake tier for ${mode.name}` };
-      return { ...state, screen: "lobby", mode, stake: stake.id, plan: null, run: null, reelsSettled: false, leverLive: false, error: null };
+      return { ...state, screen: "lobby", mode, stake: stake.id, plan: null, decided: [], run: null, reelsSettled: false, leverLive: false, error: null };
     }
+
+    case "agentDecided":
+      // Only while the lobby is still gathering them. A late line after the
+      // plan has landed must not reopen a list the slot screen is reading.
+      if (state.screen !== "lobby") return state;
+      return { ...state, decided: [...state.decided, event.decision] };
 
     case "planLoaded":
       if (state.screen !== "lobby") return state;
@@ -106,7 +121,7 @@ export function reduce(state: FlowState, event: FlowEvent): FlowState {
 
     case "playAgain":
       if (state.screen !== "result") return state;
-      return { ...state, screen: "modeSelect", plan: null, run: null, reelsSettled: false, leverLive: false, error: null };
+      return { ...state, screen: "modeSelect", plan: null, decided: [], run: null, reelsSettled: false, leverLive: false, error: null };
 
     case "failed":
       // A failure must never strand the player: it drops back to the slot with

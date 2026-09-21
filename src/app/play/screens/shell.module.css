@@ -291,6 +291,23 @@
   display: block;
 }
 
+/* An agent that has not answered yet. Opacity only: nothing moves, nothing
+   pulses the whole row, and a reduced motion reader sees a dimmed portrait
+   rather than a still one that looks identical to a decided one. */
+.thinkingFace {
+  opacity: 0.45;
+}
+
+/* Holds the space the reason will occupy, so a row fills in rather than
+   growing and pushing the five below it down. A dashed box on all four
+   sides, not a bar down one: a coloured side bar is a house rule violation
+   and this is the shape a missing thing should have anyway. */
+.thinkingBubble {
+  min-height: 34px;
+  border: 1px dashed var(--on-surface-dim, var(--bone-dim));
+  opacity: 0.35;
+}
+
 /* The emote bubbles were cut rather than scaled. They are 14x13 sprites whose
    meaning is carried by two pixel eyes and a two pixel mouth: at twice the
    pack's density that is a four pixel feature, still not readable at a normal

@@ -174,49 +174,99 @@ export interface DecisionRun {
   servCalls: number;
 }
 
-export async function decideForAgents(deps: DecisionDeps, snapshots: readonly AgentSnapshot[], round: RoundContext): Promise<DecisionRun> {
-  const decisions: AgentDecision[] = [];
-  const rejections: Array<{ agentId: string; reason: string }> = [];
-  let guardRefusals = 0;
-  let servCalls = 0;
+/**
+ * One agent's decision, start to finish. Pulled out of the loop so the six
+ * can run at once: they share nothing, each reads only its own snapshot, and
+ * a failure in one has never been allowed to affect another.
+ */
+async function decideForAgent(deps: DecisionDeps, snapshot: AgentSnapshot, round: RoundContext): Promise<DecidedAgent> {
+  const base = {
+    agentId: snapshot.profile.id,
+    name: snapshot.profile.name,
+    strategy: snapshot.profile.strategy,
+    address: snapshot.address,
+    balanceWei: snapshot.balanceWei,
+  };
 
-  for (const snapshot of snapshots) {
-    const base = {
-      agentId: snapshot.profile.id,
-      name: snapshot.profile.name,
-      strategy: snapshot.profile.strategy,
-      address: snapshot.address,
-      balanceWei: snapshot.balanceWei,
+  if (!deps.client) {
+    return {
+      decision: { ...base, decision: heuristicDecision(snapshot, round), source: "heuristic", rejection: "SERV not configured, using the deterministic heuristic" },
+      servCall: false,
+      guardRefusal: false,
     };
-
-    if (!deps.client) {
-      decisions.push({ ...base, decision: heuristicDecision(snapshot, round), source: "heuristic", rejection: "SERV not configured, using the deterministic heuristic" });
-      continue;
-    }
-
-    const { system, user } = buildPrompt(snapshot, round);
-    try {
-      servCalls++;
-      const result = await deps.client.complete({ system, user, schemaName: "allocation_decision", schema: DECISION_SCHEMA as unknown as Record<string, unknown> });
-      deps.meter.record(result.usage);
-      if (result.guardRefusal) guardRefusals++;
-
-      const validated = validateDecision(result.content, snapshot);
-      if (validated.ok) {
-        decisions.push({ ...base, decision: validated.decision, source: "serv", model: result.model, latencyMs: result.latencyMs });
-        continue;
-      }
-      const reason = result.guardRefusal ? `prompt guard refusal: ${validated.reason}` : validated.reason;
-      log.warn("serv decision rejected", { agentId: snapshot.profile.id, reason, guardRefusal: result.guardRefusal });
-      rejections.push({ agentId: snapshot.profile.id, reason });
-      decisions.push({ ...base, decision: heuristicDecision(snapshot, round), source: "heuristic", rejection: reason, model: result.model, latencyMs: result.latencyMs });
-    } catch (e) {
-      const reason = e instanceof Error ? e.message : String(e);
-      log.warn("serv call failed, using heuristic", { agentId: snapshot.profile.id, reason });
-      rejections.push({ agentId: snapshot.profile.id, reason });
-      decisions.push({ ...base, decision: heuristicDecision(snapshot, round), source: "heuristic", rejection: reason });
-    }
   }
 
-  return { decisions, rejections, guardRefusals, servCalls };
+  const { system, user } = buildPrompt(snapshot, round);
+  try {
+    const result = await deps.client.complete({ system, user, schemaName: "allocation_decision", schema: DECISION_SCHEMA as unknown as Record<string, unknown> });
+    deps.meter.record(result.usage);
+
+    const validated = validateDecision(result.content, snapshot);
+    if (validated.ok) {
+      return {
+        decision: { ...base, decision: validated.decision, source: "serv", model: result.model, latencyMs: result.latencyMs },
+        servCall: true,
+        guardRefusal: result.guardRefusal,
+      };
+    }
+    const reason = result.guardRefusal ? `prompt guard refusal: ${validated.reason}` : validated.reason;
+    log.warn("serv decision rejected", { agentId: snapshot.profile.id, reason, guardRefusal: result.guardRefusal });
+    return {
+      decision: { ...base, decision: heuristicDecision(snapshot, round), source: "heuristic", rejection: reason, model: result.model, latencyMs: result.latencyMs },
+      servCall: true,
+      guardRefusal: result.guardRefusal,
+      rejection: { agentId: snapshot.profile.id, reason },
+    };
+  } catch (e) {
+    const reason = e instanceof Error ? e.message : String(e);
+    log.warn("serv call failed, using heuristic", { agentId: snapshot.profile.id, reason });
+    return {
+      decision: { ...base, decision: heuristicDecision(snapshot, round), source: "heuristic", rejection: reason },
+      servCall: true,
+      guardRefusal: false,
+      rejection: { agentId: snapshot.profile.id, reason },
+    };
+  }
+}
+
+interface DecidedAgent {
+  decision: AgentDecision;
+  servCall: boolean;
+  guardRefusal: boolean;
+  rejection?: { agentId: string; reason: string };
+}
+
+/**
+ * Every agent decides at once.
+ *
+ * They used to decide one after another, which is six round trips end to end.
+ * Measured in the browser against live SERV, that was 61 seconds of an empty
+ * panel before a single agent appeared. Nothing about a decision depends on
+ * another agent's answer, so the sequence bought nothing.
+ *
+ * onDecided fires as each one lands, so a caller can show an agent the moment
+ * it reports rather than holding everything back until the slowest finishes.
+ * The returned array stays in snapshot order regardless of who finished
+ * first, because the round's entrant order must not depend on network timing.
+ */
+export async function decideForAgents(
+  deps: DecisionDeps,
+  snapshots: readonly AgentSnapshot[],
+  round: RoundContext,
+  onDecided?: (decision: AgentDecision) => void,
+): Promise<DecisionRun> {
+  const settled = await Promise.all(
+    snapshots.map(async (snapshot) => {
+      const result = await decideForAgent(deps, snapshot, round);
+      onDecided?.(result.decision);
+      return result;
+    }),
+  );
+
+  return {
+    decisions: settled.map((r) => r.decision),
+    rejections: settled.flatMap((r) => (r.rejection ? [r.rejection] : [])),
+    guardRefusals: settled.filter((r) => r.guardRefusal).length,
+    servCalls: settled.filter((r) => r.servCall).length,
+  };
 }

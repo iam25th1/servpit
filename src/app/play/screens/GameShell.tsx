@@ -21,6 +21,7 @@ import type { FlowState } from "../machine";
 import type { ArenaStanding } from "./arenaHud";
 import { swingMeters } from "./bankrollMeter";
 import { entrantLabel } from "./entrantLabel";
+import { decidedCount, lineupRows, type DecidedShape } from "./lineupRows";
 import { reconciliationNote, type ReconcileCheck } from "./reconciliationNote";
 import { transferRows } from "./transferRows";
 import styles from "./shell.module.css";
@@ -75,6 +76,8 @@ export interface GameShellProps {
   leverNote: string;
   /** Live from the replay's timeline, not from the final placement list. */
   arena: ArenaStanding;
+  /** Decisions streamed so far, before the whole plan has landed. */
+  decided: DecidedShape[];
   slotCanvasRef: RefObject<HTMLCanvasElement | null>;
   arenaCanvasRef: RefObject<HTMLCanvasElement | null>;
   onChooseMode: (modeId: string, stake: StakeTierId) => void;
@@ -85,7 +88,7 @@ export interface GameShellProps {
 
 
 export function GameShell(props: GameShellProps) {
-  const { state, plan, run } = props;
+  const { state, plan, run, decided } = props;
   const { ui, modeIcon, facesetPath } = useUiKit();
   const showStage = state.screen === "lobby" || state.screen === "slot" || state.screen === "spinning" || state.screen === "arena";
 
@@ -123,7 +126,7 @@ export function GameShell(props: GameShellProps) {
             )}
           </div>
 
-          {state.screen === "arena" ? <ArenaHud run={run} arena={props.arena} /> : <Lineup plan={plan} error={state.error} />}
+          {state.screen === "arena" ? <ArenaHud run={run} arena={props.arena} /> : <Lineup plan={plan} decided={decided} error={state.error} />}
       </div>
 
       {state.screen === "result" && run && <ResultScreen run={run} onPlayAgain={props.onPlayAgain} />}
@@ -210,14 +213,19 @@ export function GameShell(props: GameShellProps) {
     );
   }
 
-  function Lineup({ plan, error }: { plan: PlanShape | null; error: string | null }) {
+  function Lineup({ plan, decided, error }: { plan: PlanShape | null; decided: DecidedShape[]; error: string | null }) {
     const listRef = useRef<HTMLUListElement>(null);
+    // The plan's decisions win once it lands, so a late stream line cannot
+    // leave a row showing something the round did not use.
+    const rows = lineupRows(plan ? plan.decisions : decided);
+    const done = decidedCount(rows);
     useEffect(() => {
-      if (!plan) return;
-      const rows = listRef.current ? [...listRef.current.querySelectorAll<HTMLElement>("li")] : [];
-      // Decisions arrive one after another, not all at once.
-      void staggerIn(rows);
-    }, [plan]);
+      // Only the row that just filled in. Restaggering the whole list on
+      // every arrival would blink the five already on screen.
+      const rows = listRef.current ? [...listRef.current.querySelectorAll<HTMLElement>("li[data-decided='true']")] : [];
+      const latest = rows[rows.length - 1];
+      if (latest) void staggerIn([latest]);
+    }, [decided.length]);
 
 
     return (
@@ -225,27 +233,36 @@ export function GameShell(props: GameShellProps) {
         <h2 className={styles.sideHead}>Who is in</h2>
         <p className={styles.sideNote}>
           {plan
-            ? `${plan.decisions.filter((d) => d.enter).length} of ${plan.decisions.length} committed, ${plan.bots} house bots fill the rest. ${plan.servCalls} SERV calls.`
-            : "Asking each agent about its own balance."}
+            ? `${plan.decisions.filter((d) => d.enter).length} of ${plan.decisions.length} are in. ${plan.bots} house bots fill the rest.`
+            : `Your agents are checking their wallets. ${done} of ${rows.length} have answered.`}
         </p>
         <ul ref={listRef} className={styles.lineup}>
-          {plan?.decisions.map((d) => {
-            return (
-              <li key={d.agentId} className={styles.agentRow}>
-                <div className={styles.agentPortrait}>
-                  <img className={styles.faceset} src={facesetPath(characterFor(d.agentId))} alt="" width={38} height={38} />
-                </div>
-                <div className={styles.agentBody}>
-                  <span className={styles.agentLine}>
-                    <span className={styles.agentName}>
-                      {d.name} <span className={d.enter ? styles.in : styles.agentVerdict}>{d.enter ? `in for ${d.stake}` : "holding"}</span>
-                    </span>
+          {rows.map((row) => (
+            <li key={row.agentId} className={styles.agentRow} data-decided={row.state === "decided" ? "true" : "false"}>
+              <div className={styles.agentPortrait}>
+                <img
+                  className={`${styles.faceset} ${row.state === "waiting" ? styles.thinkingFace : ""}`}
+                  src={facesetPath(characterFor(row.agentId))}
+                  alt=""
+                  width={38}
+                  height={38}
+                />
+              </div>
+              <div className={styles.agentBody}>
+                <span className={styles.agentLine}>
+                  <span className={styles.agentName}>
+                    {row.name}{" "}
+                    {row.state === "decided" ? (
+                      <span className={row.decision.enter ? styles.in : styles.agentVerdict}>{row.decision.enter ? "is in" : "sits out"}</span>
+                    ) : (
+                      <span className={styles.agentVerdict}>thinking</span>
+                    )}
                   </span>
-                  <Dialog scale={2}>{d.reason}</Dialog>
-                </div>
-              </li>
-            );
-          })}
+                </span>
+                {row.state === "decided" ? <Dialog scale={2}>{row.decision.reason}</Dialog> : <div className={styles.thinkingBubble} aria-label="thinking" />}
+              </div>
+            </li>
+          ))}
         </ul>
         {error && <p className={styles.error}>{error}</p>}
       </NinePatch>

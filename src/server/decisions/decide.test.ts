@@ -298,3 +298,98 @@ describe("the failure that shipped", () => {
     expect(out.servCalls).toBe(6);
   });
 });
+
+describe("the six agents decide at once", () => {
+  const snaps = NAMED_AGENTS.map((profile, i) => snapshot({ profile, address: "0x" + String(i % 10).repeat(40) }));
+
+  /** A transport that holds every call open until released. */
+  const gated = () => {
+    let release: () => void = () => {};
+    const open = new Promise<void>((r) => { release = r; });
+    let inFlight = 0;
+    let peak = 0;
+    const transport = {
+      create: vi.fn(async () => {
+        inFlight++;
+        peak = Math.max(peak, inFlight);
+        await open;
+        inFlight--;
+        return {
+          model: "claude-haiku-4.5",
+          choices: [{ index: 0, message: { role: "assistant", content: '{"enter":true,"stake":1000,"reason":"balance 10000 covers one allocation of 1000"}' } }],
+          usage: { prompt_tokens: 900, completion_tokens: 40, total_tokens: 940 },
+        };
+      }),
+    } as unknown as ChatTransport;
+    return { transport, release: () => release(), peak: () => peak };
+  };
+
+  it("has all six calls in flight together, not one after another", async () => {
+    // Sequentially the peak is one. Six sequential live calls measured 61
+    // seconds of empty panel in the browser.
+    const g = gated();
+    const run = decideForAgents({ client: new ServClient({ ...DEFAULT_SERV, backoffMs: 0 }, g.transport), meter: new CostMeter(DEFAULT_SERV.pricing) }, snaps, round);
+    await vi.waitFor(() => expect(g.peak()).toBe(6));
+    g.release();
+    await run;
+  });
+
+  it("reports each agent the moment it lands, before the others finish", async () => {
+    const seen: string[] = [];
+    const transport = transportReturning('{"enter":true,"stake":1000,"reason":"balance 10000 covers one allocation of 1000"}');
+    await decideForAgents(
+      { client: new ServClient({ ...DEFAULT_SERV, backoffMs: 0 }, transport), meter: new CostMeter(DEFAULT_SERV.pricing) },
+      snaps,
+      round,
+      (d) => seen.push(d.agentId),
+    );
+    expect(seen).toHaveLength(6);
+    expect(new Set(seen).size).toBe(6);
+  });
+
+  it("keeps the result in snapshot order however the network ordered the answers", async () => {
+    // Entrant order decides who is who in the round. It must not depend on
+    // which agent's request came back first.
+    const order = [...snaps].map((s) => s.profile.id);
+    let n = 0;
+    const transport = {
+      create: vi.fn(async () => {
+        // Later calls resolve first.
+        await new Promise((r) => setTimeout(r, (6 - n++) * 5));
+        return {
+          model: "claude-haiku-4.5",
+          choices: [{ index: 0, message: { role: "assistant", content: '{"enter":false,"stake":0,"reason":"holding this period on balance 10000"}' } }],
+          usage: { prompt_tokens: 900, completion_tokens: 40, total_tokens: 940 },
+        };
+      }),
+    } as unknown as ChatTransport;
+    const out = await decideForAgents({ client: new ServClient({ ...DEFAULT_SERV, backoffMs: 0 }, transport), meter: new CostMeter(DEFAULT_SERV.pricing) }, snaps, round);
+    expect(out.decisions.map((d) => d.agentId)).toEqual(order);
+  });
+
+  it("still counts calls, refusals and rejections correctly when they run together", async () => {
+    const transport = { create: vi.fn().mockRejectedValue(new Error("connect ECONNREFUSED")) } as unknown as ChatTransport;
+    const out = await decideForAgents({ client: new ServClient({ ...DEFAULT_SERV, attempts: 1, backoffMs: 0 }, transport), meter: new CostMeter(DEFAULT_SERV.pricing) }, snaps, round);
+    expect(out.servCalls).toBe(6);
+    expect(out.rejections).toHaveLength(6);
+    expect(out.guardRefusals).toBe(0);
+    expect(out.decisions.every((d) => d.source === "heuristic")).toBe(true);
+  });
+
+  it("lets one agent fail without touching the other five", async () => {
+    let call = 0;
+    const transport = {
+      create: vi.fn(async () => {
+        if (call++ === 2) throw new Error("connect ECONNREFUSED");
+        return {
+          model: "claude-haiku-4.5",
+          choices: [{ index: 0, message: { role: "assistant", content: '{"enter":true,"stake":1000,"reason":"balance 10000 covers one allocation of 1000"}' } }],
+          usage: { prompt_tokens: 900, completion_tokens: 40, total_tokens: 940 },
+        };
+      }),
+    } as unknown as ChatTransport;
+    const out = await decideForAgents({ client: new ServClient({ ...DEFAULT_SERV, attempts: 1, backoffMs: 0 }, transport), meter: new CostMeter(DEFAULT_SERV.pricing) }, snaps, round);
+    expect(out.decisions.filter((d) => d.source === "serv")).toHaveLength(5);
+    expect(out.decisions.filter((d) => d.source === "heuristic")).toHaveLength(1);
+  });
+});
