@@ -76,6 +76,14 @@ export const CREDIT_TERMS = {
    * exactly that shape when the two are set the other way round.
    */
   maxPrincipalStakes: 3n,
+  /**
+   * Most one loan may be: three seats, the same as the principal ceiling.
+   *
+   * It bounds a single advance rather than the total owed, so an agent that
+   * wants to put up three stakes it does not hold can be funded in one go,
+   * and nothing larger can be asked for in one step.
+   */
+  maxLoanStakes: 3n,
   /** A single loan may take a quarter of the treasury. */
   maxTreasuryShareBps: 2_500,
   /**
@@ -114,11 +122,42 @@ export const CREDIT_TERMS = {
   replacementDebtStakes: 0n,
 } as const;
 
+/**
+ * How many base stakes an agent may put on one seat.
+ *
+ * Three by default. One means the fixed stake the running game still uses;
+ * anything much higher lets a single round decide an agent's fate and makes
+ * the credit rules a formality.
+ */
+export const DEFAULT_MAX_STAKE_MULTIPLE = 3;
+
+/** Most one loan may be, as a whole number of base stakes. */
+export function maxLoanStakes(env: NodeJS.ProcessEnv = process.env): bigint {
+  const raw = env.SERVPIT_MAX_LOAN?.trim();
+  if (raw === undefined || raw.length === 0) return CREDIT_TERMS.maxLoanStakes;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < 1 || value > 100) {
+    throw new RangeError(`SERVPIT_MAX_LOAN must be a whole number of stakes between 1 and 100, got ${raw}`);
+  }
+  return BigInt(value);
+}
+
+export function maxStakeMultiple(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = env.SERVPIT_MAX_STAKE_MULTIPLE?.trim();
+  if (raw === undefined || raw.length === 0) return DEFAULT_MAX_STAKE_MULTIPLE;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < 1 || value > 100) {
+    throw new RangeError(`SERVPIT_MAX_STAKE_MULTIPLE must be a whole number of stakes between 1 and 100, got ${raw}`);
+  }
+  return value;
+}
+
 export function economyConfig(stakeWei: bigint, overrides: Partial<EconomyConfig> = {}): EconomyConfig {
   if (typeof stakeWei !== "bigint" || stakeWei <= 0n) throw new RangeError(`stakeWei must be a positive bigint, got ${String(stakeWei)}`);
   return {
     minLoanWei: CREDIT_TERMS.minLoanStakes * stakeWei,
     maxPrincipalWei: CREDIT_TERMS.maxPrincipalStakes * stakeWei,
+    maxLoanWei: CREDIT_TERMS.maxLoanStakes * stakeWei,
     maxTreasuryShareBps: CREDIT_TERMS.maxTreasuryShareBps,
     interestBps: CREDIT_TERMS.interestBps,
     debtCeilingWei: CREDIT_TERMS.debtCeilingStakes * stakeWei,
