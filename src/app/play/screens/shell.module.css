@@ -419,6 +419,19 @@
   color: var(--amber);
 }
 
+/* Named failures under the reconciliation line. Only drawn when something
+   went wrong, so the ordinary result screen is unchanged. */
+.reconcileFails {
+  list-style: none;
+  margin: var(--space-tight) 0 0;
+  padding: 0;
+  font-size: var(--text-micro);
+  color: var(--ink-dim);
+  text-align: left;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
 .winnerPot {
   font-family: var(--font-ui);
   font-size: var(--text-lead);

@@ -27,12 +27,37 @@ type Hex = `0x${string}`;
  */
 export const DEFAULT_GAS_RESERVE_WEI = 20_000_000_000_000n;
 
+/**
+ * The receipt fields this module reads. Base is an OP stack chain, so viem's
+ * formatter puts the L1 data fee on the receipt alongside the L2 gas: both
+ * come out of the sender and both have to be counted.
+ */
+export interface ChainReceipt {
+  status: string;
+  transactionHash: Hex;
+  gasUsed?: bigint;
+  effectiveGasPrice?: bigint;
+  l1Fee?: bigint | null;
+}
+
+/**
+ * Fee the sender actually paid, from the receipt. Never an estimate: the L1
+ * component varies per transaction with its calldata and the L1 base fee, so
+ * two transfers in the same round do not cost the same. Measured on the first
+ * settled round: 6252136428 wei of L1 fee on three entries and 5698658288 on
+ * the fourth.
+ */
+export function feeFromReceipt(receipt: ChainReceipt): bigint {
+  const l2 = (receipt.gasUsed ?? 0n) * (receipt.effectiveGasPrice ?? 0n);
+  return l2 + (receipt.l1Fee ?? 0n);
+}
+
 /** The slice of ViemWalletProvider this module uses, so tests can stub it. */
 export interface WalletProviderLike {
   getAddress(): string;
   getBalance(): Promise<bigint>;
   sendTransaction(transaction: { to: Hex; value: bigint; data?: Hex }): Promise<Hex>;
-  waitForTransactionReceipt(hash: Hex): Promise<{ status: string; transactionHash: Hex }>;
+  waitForTransactionReceipt(hash: Hex): Promise<ChainReceipt>;
 }
 
 export interface ViemChainConfig {
@@ -115,7 +140,7 @@ export class ViemChain implements Chain {
           if (receipt.status !== "success") {
             throw new Error(`transaction ${hash} ${receipt.status} for ${idempotencyKey}`);
           }
-          last = { txHash: receipt.transactionHash, status: "complete" };
+          last = { txHash: receipt.transactionHash, status: "complete", feeWei: feeFromReceipt(receipt) };
         }
         if (!last) throw new RangeError("send needs at least one call");
         return last;

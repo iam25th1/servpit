@@ -27,6 +27,11 @@ export interface TransferRecord {
   /** Only set by records written before the wallet layer moved to plain accounts. */
   userOpHash?: string;
   txHash?: string;
+  /**
+   * Fee the sender paid, from the receipt. Absent on a record written before
+   * fees were tracked, and zero on a chain that does not charge.
+   */
+  feeWei?: bigint;
   error?: string;
   createdAt: string;
   updatedAt: string;
@@ -43,7 +48,8 @@ export interface TransferInput {
   network: string;
 }
 
-type Stored = Omit<TransferRecord, "amountWei"> & { amountWei: string };
+// bigint has no JSON form, so both amounts persist as decimal strings.
+type Stored = Omit<TransferRecord, "amountWei" | "feeWei"> & { amountWei: string; feeWei?: string };
 
 interface FileShape {
   version: 1;
@@ -58,7 +64,11 @@ export class TransferLedger {
       const parsed = JSON.parse(readFileSync(file, "utf8")) as Partial<FileShape>;
       for (const stored of Object.values(parsed.transfers ?? {})) {
         if (stored && typeof stored.key === "string" && /^\d+$/.test(stored.amountWei)) {
-          this.records.set(stored.key, { ...stored, amountWei: BigInt(stored.amountWei) });
+          this.records.set(stored.key, {
+            ...stored,
+            amountWei: BigInt(stored.amountWei),
+            feeWei: stored.feeWei === undefined ? undefined : BigInt(stored.feeWei),
+          });
         }
       }
     }
@@ -119,6 +129,7 @@ export class TransferLedger {
       const receipt = await input.from.send([{ to: input.to, value: input.amountWei }], input.key);
       record.status = "complete";
       record.txHash = receipt.txHash;
+      record.feeWei = receipt.feeWei;
       record.updatedAt = new Date().toISOString();
       this.flush();
       log.info("transfer complete", { key: record.key, kind: record.kind, from: record.from, to: record.to, amountWei: record.amountWei, txHash: record.txHash });
@@ -136,7 +147,9 @@ export class TransferLedger {
   private flush(): void {
     mkdirSync(dirname(this.file), { recursive: true });
     const transfers: Record<string, Stored> = {};
-    for (const [k, r] of this.records) transfers[k] = { ...r, amountWei: r.amountWei.toString() };
+    for (const [k, r] of this.records) {
+      transfers[k] = { ...r, amountWei: r.amountWei.toString(), feeWei: r.feeWei === undefined ? undefined : r.feeWei.toString() };
+    }
     const body: FileShape = { version: 1, transfers };
     const tmp = `${this.file}.tmp`;
     writeFileSync(tmp, JSON.stringify(body, null, 2) + "\n");

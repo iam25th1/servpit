@@ -21,6 +21,7 @@ import type { FlowState } from "../machine";
 import type { ArenaStanding } from "./arenaHud";
 import { swingMeters } from "./bankrollMeter";
 import { entrantLabel } from "./entrantLabel";
+import { reconciliationNote, type ReconcileCheck } from "./reconciliationNote";
 import { transferRows } from "./transferRows";
 import styles from "./shell.module.css";
 
@@ -59,6 +60,8 @@ interface RunShape {
   /** True when the chain settles for real, so a hash is worth linking. */
   settles: boolean;
   reconciled: boolean;
+  /** Per check detail, so a failure can name what went wrong. */
+  checks?: ReconcileCheck[];
   agents: RunAgent[];
   transfers: Array<{ kind: string; agentId: string; amountWei: string; txHash: string | null; link: string | null }>;
   replay: { placements: string[] };
@@ -293,6 +296,7 @@ export function GameShell(props: GameShellProps) {
     const rootRef = useRef<HTMLDivElement>(null);
     const coinPathRef = useRef<SVGPathElement>(null);
     const prize = BigInt(run.potWei) - BigInt(run.rakeWei);
+    const note = reconciliationNote(run.reconciled, run.checks);
     const meters = swingMeters(run.agents.map((a) => ({ agentId: a.agentId, changeWei: BigInt(a.balanceAfterWei) - BigInt(a.balanceBeforeWei) })));
     const winnerName = entrantLabel(run.winner, run.agents);
 
@@ -342,7 +346,14 @@ export function GameShell(props: GameShellProps) {
           <img className={styles.winnerFace} src={facesetPath(winnerCharacter(run))} alt="" width={38 * 2} height={38 * 2} />
           <h2 className={`${styles.winnerName} ${styles.nameplate}`}>{winnerName}</h2>
           <p className={styles.winnerPot}>{prize.toString()} taken</p>
-          <p className={styles.sideNote}>Reconciliation {run.reconciled ? "held against chain balances" : "FAILED"}</p>
+          <p className={styles.sideNote}>{note.text}</p>
+          {note.failed.length > 0 && (
+            <ul className={styles.reconcileFails}>
+              {note.failed.map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ul>
+          )}
         </NinePatch>
 
         <NinePatch sprite="bg" className={styles.ledger} data-anim="ledger">
