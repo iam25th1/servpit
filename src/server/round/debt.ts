@@ -25,6 +25,8 @@ export interface AgentDebt {
   rateBps: number;
   /** The last round this debt was charged for, so a replay charges once. */
   lastAccruedRound: string | null;
+  /** The round this identity took the seat. Null for the originals. */
+  bornAtRound: string | null;
 }
 
 interface StoredDebt {
@@ -33,6 +35,7 @@ interface StoredDebt {
   interestWei: string;
   rateBps: number;
   lastAccruedRound: string | null;
+  bornAtRound?: string | null;
 }
 
 interface FileShape {
@@ -41,7 +44,7 @@ interface FileShape {
   updatedAt: string;
 }
 
-export const NO_DEBT_FOR = (identityId: string): AgentDebt => ({ identityId, principalWei: 0n, interestWei: 0n, rateBps: 0, lastAccruedRound: null });
+export const NO_DEBT_FOR = (identityId: string, bornAtRound: string | null = null): AgentDebt => ({ identityId, principalWei: 0n, interestWei: 0n, rateBps: 0, lastAccruedRound: null, bornAtRound });
 
 export const totalOwed = (debt: AgentDebt): bigint => debt.principalWei + debt.interestWei;
 
@@ -59,6 +62,7 @@ export class DebtStore {
         interestWei: BigInt(stored.interestWei),
         rateBps: stored.rateBps,
         lastAccruedRound: stored.lastAccruedRound,
+        bornAtRound: stored.bornAtRound ?? null,
       });
     }
   }
@@ -131,8 +135,8 @@ export class DebtStore {
    * What was not recovered is gone. The new occupant starts clean, which is
    * the whole reason a debt is stamped with an identity rather than a wallet.
    */
-  clear(walletId: string, nextIdentityId: string): void {
-    this.debts.set(walletId, NO_DEBT_FOR(nextIdentityId));
+  clear(walletId: string, nextIdentityId: string, bornAtRound: string | null = null): void {
+    this.debts.set(walletId, NO_DEBT_FOR(nextIdentityId, bornAtRound));
     this.flush();
   }
 
@@ -156,7 +160,7 @@ export class DebtStore {
     mkdirSync(dirname(this.file), { recursive: true });
     const debts: Record<string, StoredDebt> = {};
     for (const [walletId, d] of this.debts) {
-      debts[walletId] = { identityId: d.identityId, principalWei: d.principalWei.toString(), interestWei: d.interestWei.toString(), rateBps: d.rateBps, lastAccruedRound: d.lastAccruedRound };
+      debts[walletId] = { identityId: d.identityId, principalWei: d.principalWei.toString(), interestWei: d.interestWei.toString(), rateBps: d.rateBps, lastAccruedRound: d.lastAccruedRound, bornAtRound: d.bornAtRound };
     }
     const body: FileShape = { version: 1, debts, updatedAt: new Date().toISOString() };
     const tmp = `${this.file}.tmp`;

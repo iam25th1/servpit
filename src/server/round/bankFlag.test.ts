@@ -19,8 +19,11 @@ import { openWallets } from "../wallets/open";
 import { WalletRegistry } from "../wallets/registry";
 import { RolloverStore } from "./rollover";
 import { DebtStore } from "./debt";
+import { WreckStore } from "./wrecks";
 import { RoundStore } from "./store";
 import { planRound, runRound } from "./flow";
+import { TAPPED_OUT } from "./plan";
+import { overReached } from "./wrecks";
 
 const FUNDED_WEI = 100_000_000_000_000n;
 let dir: string;
@@ -76,6 +79,7 @@ async function harness(transport?: ChatTransport) {
       meter: new CostMeter(DEFAULT_SERV.pricing),
       rollover: new RolloverStore(join(dir, "rollover.json")),
       debts: new DebtStore(join(dir, "debts.json")),
+      wreckStore: new WreckStore(join(dir, "wrecks.json")),
       serv: transport ? new ServClient({ ...DEFAULT_SERV, backoffMs: 0 }, transport) : undefined,
       entrants: 24,
     },
@@ -172,6 +176,7 @@ describe("the bank's own decision", () => {
       meter: new CostMeter(DEFAULT_SERV.pricing),
       rollover: new RolloverStore(join(dir, "rollover.json")),
       debts: new DebtStore(join(dir, "debts.json")),
+      wreckStore: new WreckStore(join(dir, "wrecks.json")),
       serv: new ServClient({ ...DEFAULT_SERV, backoffMs: 0 }, greedy(toChips(seat) * 3)),
       entrants: 24,
     };
@@ -206,6 +211,7 @@ describe("the bank's own decision", () => {
       meter: new CostMeter(DEFAULT_SERV.pricing),
       rollover: new RolloverStore(join(dir, "rollover.json")),
       debts: new DebtStore(join(dir, "debts.json")),
+      wreckStore: new WreckStore(join(dir, "wrecks.json")),
       serv: new ServClient({ ...DEFAULT_SERV, backoffMs: 0 }, greedy(toChips(seat) * 3)),
       entrants: 24,
     };
@@ -247,6 +253,7 @@ describe("disbursement", () => {
       meter: new CostMeter(DEFAULT_SERV.pricing),
       rollover: new RolloverStore(join(dir, "rollover.json")),
       debts: new DebtStore(join(dir, "debts.json")),
+      wreckStore: new WreckStore(join(dir, "wrecks.json")),
       serv: new ServClient({ ...DEFAULT_SERV, backoffMs: 0 }, greedyTransport(toChips(seat) * stakeMultiple)),
       entrants: 24,
     };
@@ -326,6 +333,7 @@ describe("interest and repayment", () => {
       meter: new CostMeter(DEFAULT_SERV.pricing),
       rollover: new RolloverStore(join(dir, "rollover.json")),
       debts,
+      wreckStore: new WreckStore(join(dir, "wrecks.json")),
       serv: new ServClient({ ...DEFAULT_SERV, backoffMs: 0 }, duplexTransport(toChips(seat) * stakeMultiple)),
       entrants: 24,
     };
@@ -385,6 +393,7 @@ describe("interest and repayment", () => {
       meter: new CostMeter(DEFAULT_SERV.pricing),
       rollover: new RolloverStore(join(dir, "rollover.json")),
       debts,
+      wreckStore: new WreckStore(join(dir, "wrecks.json")),
       serv: undefined,
       entrants: 24,
     };
@@ -442,5 +451,119 @@ describe("with the bank off, none of this happens", () => {
       expect(run.loans).toEqual([]);
       expect(run.reconciliation.ok).toBe(true);
     }
+  });
+});
+
+describe("a broke agent does not get to sit out quietly", () => {
+  /** Everyone opens below a seat, so every agent is tapped out on round one. */
+  async function tapped(loan: { approve: boolean; amount: number; rateBps: number }) {
+    process.env.SERVPIT_BANK_ENABLED = "true";
+    const seat = stakeWeiFrom();
+    dir = mkdtempSync(join(tmpdir(), "servpit-bankflag-"));
+    const chain = new FakeChain({ initialBalanceWei: seat / 2n });
+    const wallets = await openWallets(chain, new WalletRegistry(join(dir, "wallets.json")), { bank: true });
+    chain.fund(wallets.bank!.address, seat * 200n);
+    const debts = new DebtStore(join(dir, "debts.json"));
+    const wreckStore = new WreckStore(join(dir, "wrecks.json"));
+    const ctx = {
+      chain,
+      wallets,
+      ledger: new TransferLedger(join(dir, "ledger.json")),
+      store: new RoundStore(join(dir, "rounds.json")),
+      bankroll: new BankrollCache({ ttlMs: 0, now: () => 0 }),
+      meter: new CostMeter(DEFAULT_SERV.pricing),
+      rollover: new RolloverStore(join(dir, "rollover.json")),
+      debts,
+      wreckStore,
+      serv: new ServClient({ ...DEFAULT_SERV, backoffMs: 0 }, duplexTransport(toChips(seat), loan)),
+      entrants: 24,
+    };
+    return { chain, wallets, debts, wreckStore, ctx, seat };
+  }
+
+  it("asks the bank without a model call, in the same plain words every time", async () => {
+    const { ctx } = await tapped({ approve: true, amount: 10, rateBps: 900 });
+    const plan = await planRound(ctx, "tapped");
+    for (const d of plan.decisions) {
+      expect(d.decision.reason).toBe(TAPPED_OUT);
+      // No agent call was spent on a decision there is nothing to make.
+      expect(d.source).toBe("heuristic");
+    }
+    expect(plan.loans.length).toBe(6);
+    expect(plan.deniedCredit).toEqual([]);
+  });
+
+  it("is finished when the bank says no, rather than quietly sitting out", async () => {
+    // This is the gap the simulation left open: an agent that never asks is
+    // never denied, and an agent that is never denied is never wrecked.
+    const { ctx, wreckStore } = await tapped({ approve: false, amount: 0, rateBps: 500 });
+    const plan = await planRound(ctx, "denied");
+    expect(plan.deniedCredit.length).toBe(6);
+
+    const run = await runRound(ctx, plan);
+    expect(run.wrecks.length).toBe(6);
+    for (const w of run.wrecks) expect(w.trigger).toBe("broke and denied credit");
+    expect(wreckStore.all()).toHaveLength(6);
+    expect(run.reconciliation.ok).toBe(true);
+  });
+
+  it("takes what is left and writes off the rest, into the bank's books", async () => {
+    const { chain, wallets, debts, ctx, seat } = await tapped({ approve: false, amount: 0, rateBps: 500 });
+    // Put a debt on them that their half seat cannot cover.
+    for (const id of ["atlas", "blaze", "comet", "delta", "ember", "flint"]) {
+      debts.addLoan(id, debts.currentIdentity(id), seat * 3n, 1_000);
+    }
+    const bankBefore = chain.balanceOf(wallets.bank!.address);
+    const plan = await planRound(ctx, "seize");
+    const run = await runRound(ctx, plan);
+
+    expect(run.seizures.length).toBeGreaterThan(0);
+    const seized = run.seizures.reduce((sum, s) => sum + s.amountWei, 0n);
+    expect(chain.balanceOf(wallets.bank!.address)).toBe(bankBefore + seized);
+    for (const w of run.wrecks) {
+      // It took what was there and nothing more, and the rest is written off.
+      expect(BigInt(w.seizedWei)).toBeLessThanOrEqual(BigInt(w.debtAtDeathWei));
+      expect(BigInt(w.seizedWei) + BigInt(w.writtenOffWei)).toBe(BigInt(w.debtAtDeathWei));
+      expect(BigInt(w.writtenOffWei)).toBeGreaterThan(0n);
+    }
+    expect(run.reconciliation.ok).toBe(true);
+  });
+
+  it("records what led there, not only what fired", async () => {
+    const { debts, ctx, seat } = await tapped({ approve: false, amount: 0, rateBps: 500 });
+    for (const id of ["atlas", "blaze", "comet", "delta", "ember", "flint"]) {
+      debts.addLoan(id, debts.currentIdentity(id), seat * 3n, 1_000);
+    }
+    const plan = await planRound(ctx, "record");
+    const run = await runRound(ctx, plan);
+    const w = run.wrecks[0];
+
+    expect(w.name.length).toBeGreaterThan(0);
+    expect(w.identityId).toMatch(/-\d+$/);
+    expect(BigInt(w.principalAtDeathWei)).toBe(seat * 3n);
+    // A round of interest was charged before it died, at ten per cent.
+    expect(BigInt(w.interestAtDeathWei)).toBe((seat * 3n) / 10n);
+    expect(BigInt(w.principalAtDeathWei) + BigInt(w.interestAtDeathWei)).toBe(BigInt(w.debtAtDeathWei));
+    expect(typeof w.roundsSurvived).toBe("number");
+    expect(typeof w.wins).toBe("number");
+    expect(Array.isArray(w.recentStakeMultiples)).toBe(true);
+    // Borrowed chips mean it was pushing, whatever the trigger was recorded
+    // as, which is what lets a screen say over-reached rather than denied.
+    expect(overReached({ ...w, borrowedWei: "1" })).toBe(true);
+    expect(overReached({ ...w, borrowedWei: "0", recentStakeMultiples: [1, 1] })).toBe(false);
+    expect(overReached({ ...w, borrowedWei: "0", recentStakeMultiples: [1, 3] })).toBe(true);
+  });
+
+  it("seizes once however many times the round is settled", async () => {
+    const { chain, debts, ctx, seat } = await tapped({ approve: false, amount: 0, rateBps: 500 });
+    for (const id of ["atlas", "blaze", "comet", "delta", "ember", "flint"]) {
+      debts.addLoan(id, debts.currentIdentity(id), seat * 3n, 1_000);
+    }
+    const plan = await planRound(ctx, "seizetwice");
+    await runRound(ctx, plan);
+    const applied = chain.applied;
+    const again = await runRound(ctx, plan);
+    expect(chain.applied).toBe(applied);
+    expect(again.reconciliation.ok).toBe(true);
   });
 });

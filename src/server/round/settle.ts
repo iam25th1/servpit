@@ -15,9 +15,11 @@ import { heuristicDecision } from "../decisions/heuristic";
 import { log } from "../log";
 import { fromWei, sumWei } from "../money";
 import { reconcile } from "../reconcile";
-import { collectEntry, disburseLoan, payWinner, repayBank, type TransferOutcome } from "../transfers";
+import { collectEntry, disburseLoan, payWinner, repayBank, seizeToBank, type TransferOutcome } from "../transfers";
 import { repay } from "@/economy/rules";
 import { totalOwed } from "./debt";
+import { overReached, type WreckRecord, type WreckTrigger } from "./wrecks";
+import { CREDIT_TERMS } from "@/config/economy";
 import { splitPrize, type PrizeSplit } from "./prize";
 import { bankEnabled } from "@/config/economy";
 import { splitCappedPrize } from "@/economy/prize";
@@ -191,6 +193,83 @@ export async function runRound(ctx: FlowContext, plan: RoundPlan, progress: RunP
   }
 
   ctx.bankroll.invalidate();
+  // Read once here, because a wreck is decided on what an agent is left
+  // holding after the round rather than what it started with.
+  const settledBalances = new Map<string, bigint>();
+  for (const snapshot of plan.snapshots) {
+    const wallet = ctx.wallets.agents.get(snapshot.profile.id)!;
+    settledBalances.set(snapshot.profile.id, await ctx.bankroll.get(wallet));
+  }
+
+  // Who is finished. Two conditions, and they are different failures: owing
+  // more than the ceiling allows, or unable to afford a seat with nobody
+  // willing to cover it.
+  const wrecks: WreckRecord[] = [];
+  const seizures: TransferOutcome[] = [];
+  if (bankEnabled() && bank) {
+    const ceilingWei = CREDIT_TERMS.debtCeilingStakes * plan.stakeWei;
+    const denied = new Set(plan.deniedCredit);
+    for (const snapshot of plan.snapshots) {
+      const walletId = snapshot.profile.id;
+      const identityId = ctx.debts.currentIdentity(walletId);
+      const owed = ctx.debts.get(walletId, identityId);
+      const balanceWei = settledBalances.get(walletId) ?? 0n;
+
+      const trigger: WreckTrigger | null =
+        totalOwed(owed) > ceilingWei ? "debt above the ceiling" : denied.has(walletId) && balanceWei < plan.stakeWei ? "broke and denied credit" : null;
+      if (trigger === null) continue;
+
+      // The bank takes what is there and writes off the rest. It can never
+      // take more than is owed: seizing beyond the debt would be taking money
+      // nobody is owed.
+      const owedWei = totalOwed(owed);
+      const seizedWei = balanceWei < owedWei ? balanceWei : owedWei;
+      let seizure: TransferOutcome | null = null;
+      if (seizedWei > 0n) {
+        const wallet = ctx.wallets.agents.get(walletId)!;
+        seizure = await seizeToBank(transferCtx, plan.roundId, walletId, wallet, bank, seizedWei);
+        seizures.push(seizure);
+      }
+      const split = repay({ principalWei: owed.principalWei, interestWei: owed.interestWei }, seizedWei);
+      const writtenOffWei = split.debt.principalWei + split.debt.interestWei;
+
+      const history = ctx.store.historyFor(walletId, owed.bornAtRound, toChips(plan.stakeWei));
+      const loanRecords = ctx.ledger.loansFor(walletId).filter((l) => l.status === "complete");
+      const record: WreckRecord = {
+        roundId: plan.roundId,
+        walletId,
+        identityId,
+        name: snapshot.profile.name,
+        trigger,
+        balanceAtDeathWei: balanceWei.toString(),
+        debtAtDeathWei: owedWei.toString(),
+        principalAtDeathWei: owed.principalWei.toString(),
+        interestAtDeathWei: owed.interestWei.toString(),
+        seizedWei: seizedWei.toString(),
+        writtenOffWei: writtenOffWei.toString(),
+        peakBalanceWei: history.peakBalanceWei.toString(),
+        borrowedWei: loanRecords.reduce((sum, l) => sum + l.amountWei, 0n).toString(),
+        loanCount: loanRecords.length,
+        recentStakeMultiples: history.recentStakeMultiples,
+        roundsSurvived: history.roundsSurvived,
+        wins: history.wins,
+        at: new Date().toISOString(),
+      };
+      wrecks.push(record);
+      ctx.wreckStore.save(record);
+      log.warn("agent wrecked", {
+        roundId: plan.roundId,
+        agentId: walletId,
+        trigger,
+        overReached: overReached(record),
+        seizedWei: record.seizedWei,
+        writtenOffWei: record.writtenOffWei,
+        roundsSurvived: record.roundsSurvived,
+      });
+    }
+  }
+
+  ctx.bankroll.invalidate();
   const after: Record<string, bigint> = {};
   await ctx.bankroll.warm(ctx.chain, watchedWallets);
   for (const s of plan.snapshots) after[s.address] = await ctx.bankroll.get(ctx.wallets.agents.get(s.profile.id)!);
@@ -217,11 +296,20 @@ export async function runRound(ctx: FlowContext, plan: RoundPlan, progress: RunP
       ...loans.filter((l) => l.applied).map((l) => ({ address: l.from, amountWei: l.feeWei ?? 0n })),
       ...(payout?.applied ? [{ address: payout.from, amountWei: payout.feeWei ?? 0n }] : []),
       ...(repayment?.outcome.applied ? [{ address: repayment.outcome.from, amountWei: repayment.outcome.feeWei ?? 0n }] : []),
+      ...seizures.filter((x) => x.applied).map((x) => ({ address: x.from, amountWei: x.feeWei ?? 0n })),
     ],
     loans: loans.map((l) => ({ address: l.to, amountWei: l.amountWei })),
     appliedLoans: loans.filter((l) => l.applied).map((l) => ({ address: l.to, amountWei: l.amountWei })),
-    repayments: repayment ? [{ address: repayment.outcome.from, amountWei: repayment.outcome.amountWei }] : [],
-    appliedRepayments: repayment?.outcome.applied ? [{ address: repayment.outcome.from, amountWei: repayment.outcome.amountWei }] : [],
+    repayments: [
+      ...(repayment ? [{ address: repayment.outcome.from, amountWei: repayment.outcome.amountWei }] : []),
+      // A seizure leaves an agent for the bank, exactly like a repayment.
+      // The only difference is who decided it.
+      ...seizures.map((x) => ({ address: x.from, amountWei: x.amountWei })),
+    ],
+    appliedRepayments: [
+      ...(repayment?.outcome.applied ? [{ address: repayment.outcome.from, amountWei: repayment.outcome.amountWei }] : []),
+      ...seizures.filter((x) => x.applied).map((x) => ({ address: x.from, amountWei: x.amountWei })),
+    ],
     ...(bank ? { bankAddress: bank.address } : {}),
     // No house contribution any more: a seat that did not pay adds nothing to
     // the prize. What the pot brought in from previous rounds does, and it is
@@ -286,7 +374,7 @@ export async function runRound(ctx: FlowContext, plan: RoundPlan, progress: RunP
     payoutMinorUnits: fromWei(prizeWei),
   });
 
-  return { plan, round, entries, loans, interest, repayment, payout, retained, prize, rolloverInWei, reconciliation };
+  return { plan, round, entries, loans, interest, repayment, wrecks, seizures, payout, retained, prize, rolloverInWei, reconciliation };
 }
 
 export { heuristicDecision };

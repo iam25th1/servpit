@@ -12,6 +12,7 @@ import { WalletRegistry } from "../wallets/registry";
 import { RoundStore } from "./store";
 import { RolloverStore } from "./rollover";
 import { DebtStore } from "./debt";
+import { WreckStore } from "./wrecks";
 import { planRound, runRound } from "./flow";
 import { UNREACHABLE_REASON } from "./plan";
 import { ChainUnreachableError } from "../errors";
@@ -42,10 +43,11 @@ async function harness(options: { balanceWei?: bigint; transport?: ChatTransport
   const store = new RoundStore(join(dir, "rounds.json"));
   const rollover = new RolloverStore(join(dir, "rollover.json"));
   const debts = new DebtStore(join(dir, "debts.json"));
+  const wreckStore = new WreckStore(join(dir, "wrecks.json"));
   const bankroll = new BankrollCache({ ttlMs: 0, now: () => 0 });
   const meter = new CostMeter(DEFAULT_SERV.pricing);
   const client = options.transport ? new ServClient({ ...DEFAULT_SERV, backoffMs: 0 }, options.transport) : undefined;
-  return { chain, wallets, ledger, store, bankroll, meter, rollover, ctx: { chain, wallets, ledger, store, bankroll, meter, rollover, debts, serv: client, entrants: 24 } };
+  return { chain, wallets, ledger, store, bankroll, meter, rollover, ctx: { chain, wallets, ledger, store, bankroll, meter, rollover, debts, wreckStore, serv: client, entrants: 24 } };
 }
 
 import { stakeWeiFrom, toChips } from "@/config/stake";

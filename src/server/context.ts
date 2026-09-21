@@ -13,6 +13,7 @@ import { log } from "./log";
 import { PlanStore } from "./round/planStore";
 import { RolloverStore } from "./round/rollover";
 import { DebtStore } from "./round/debt";
+import { WreckStore } from "./round/wrecks";
 import { assertBankShareIsPayable } from "@/config/economy";
 import { ViemChain } from "./wallets/viem";
 import { FakeChain } from "./wallets/fake";
@@ -53,13 +54,14 @@ async function build(): Promise<ServerContext> {
   const plans = new PlanStore(join(env.dataDir, `plans-${chain.network}.json`));
   const rollover = new RolloverStore(join(env.dataDir, `rollover-${chain.network}.json`));
   const debts = new DebtStore(join(env.dataDir, `debts-${chain.network}.json`));
+  const wreckStore = new WreckStore(join(env.dataDir, `wrecks-${chain.network}.json`));
   // There is no bank wallet in this build, so a nonzero share has nowhere to
   // go. Fail here rather than quietly rolling it over.
   assertBankShareIsPayable(false);
   const servConfig = { ...DEFAULT_SERV, model: env.serv?.model ?? DEFAULT_SERV.model };
   const serv = env.serv ? new ServClient(servConfig, createServTransport(env.serv.apiKey, servConfig)) : undefined;
   log.info("serv backend", { configured: Boolean(serv), model: serv ? servConfig.model : null });
-  const flow: FlowContext = { chain, wallets, ledger, store, bankroll, meter, serv, plans, rollover, debts, entrants: 24 };
+  const flow: FlowContext = { chain, wallets, ledger, store, bankroll, meter, serv, plans, rollover, debts, wreckStore, entrants: 24 };
   return { env, chain, registry, wallets, bankroll, flow };
 }
 
