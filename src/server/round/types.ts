@@ -9,6 +9,8 @@ import type { BankrollCache } from "../bankroll";
 import type { AgentDecision, AgentSnapshot } from "../decisions/types";
 import type { TransferLedger } from "../ledger";
 import type { PlanStore } from "./planStore";
+import type { PrizeSplit } from "./prize";
+import type { RolloverStore } from "./rollover";
 import type { ReconcileResult } from "../reconcile";
 import type { CostMeter, ServClient } from "../serv/client";
 import type { TransferOutcome } from "../transfers";
@@ -23,6 +25,12 @@ export interface FlowContext {
    * so what the player saw is exactly what settles.
    */
   plans?: PlanStore;
+  /**
+   * What the pot carries between rounds. Required rather than optional: a
+   * missing rollover store would silently drop every unclaimed prize, and
+   * that is money.
+   */
+  rollover: RolloverStore;
   chain: Chain;
   wallets: Wallets;
   ledger: TransferLedger;
@@ -65,6 +73,10 @@ export interface RoundRun {
    * shows entries that do not add up to the pot and nothing saying why.
    */
   retained: { winnerEntrantId: string; amountWei: bigint } | null;
+  /** Where the round's pool went. The only money figure the settle believes. */
+  prize: PrizeSplit;
+  /** Rollover this round inherited, already counted inside prize.poolWei. */
+  rolloverInWei: bigint;
   reconciliation: ReconcileResult;
 }
 

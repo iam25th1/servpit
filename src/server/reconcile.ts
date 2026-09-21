@@ -44,8 +44,20 @@ export interface ReconcileInput {
    * that applies nothing pays nothing.
    */
   feesWei?: Movement[];
-  /** Stake the operator pot covers for house bots, already held in the pot. */
-  houseContributionWei: bigint;
+  /**
+   * Rollover this round inherited from rounds nobody real won.
+   *
+   * This replaced a house contribution: the pot used to promise a stake on
+   * behalf of all eighteen house bots, none of which ever paid anything, and
+   * covered the difference out of its own balance. A seat that did not pay
+   * now adds nothing. Rollover is different in kind because the pot is
+   * already holding it.
+   */
+  rolloverInWei: bigint;
+  /** Left in the pot for the next round. Zero when an agent won. */
+  nextRolloverWei: bigint;
+  /** Sent to the bank treasury. Zero while there is no bank wallet. */
+  toBankWei: bigint;
   rakeWei: bigint;
 }
 
@@ -69,7 +81,9 @@ function balance(table: Record<string, bigint>, address: string, label: string):
 }
 
 export function reconcile(input: ReconcileInput): ReconcileResult {
-  assertWei(input.houseContributionWei, "houseContributionWei");
+  assertWei(input.rolloverInWei, "rolloverInWei");
+  assertWei(input.nextRolloverWei, "nextRolloverWei");
+  assertWei(input.toBankWei, "toBankWei");
   assertWei(input.rakeWei, "rakeWei");
   const checks: Check[] = [];
   const check = (name: string, expected: bigint, actual: bigint): void => {
@@ -103,11 +117,24 @@ export function reconcile(input: ReconcileInput): ReconcileResult {
   const potFee = sumWei(fees.filter((m) => m.address === input.potAddress).map((m) => m.amountWei));
   check("pot delta", sumWei(appliedEntries.map((m) => m.amountWei)) - sumWei(appliedPayouts.map((m) => m.amountWei)), potDelta + potFee);
 
-  // Entries plus the house share minus rake is the prize. A winning agent
-  // takes all of it; a house win retains all of it. Anything else is wrong.
-  const prize = entriesTotal + input.houseContributionWei - input.rakeWei;
-  const conservationOk = input.payouts.length === 0 ? prize >= 0n : payoutsTotal === prize;
-  checks.push({ name: "conservation", ok: conservationOk, expected: prize.toString(), actual: input.payouts.length === 0 ? `retained ${prize.toString()}` : payoutsTotal.toString() });
+  // Every wei the round took in is accounted for on the way out. Entries plus
+  // the rollover it inherited equal the payout plus the bank share plus the
+  // rollover it leaves plus the rake, exactly. This used to be an inequality
+  // on a house win, which could not see a prize going astray.
+  const inWei = entriesTotal + input.rolloverInWei;
+  const outWei = payoutsTotal + input.toBankWei + input.nextRolloverWei + input.rakeWei;
+  check("conservation", inWei, outWei);
+
+  // The pot can only ever send what it is already holding. The entries landed
+  // in it before the payout left, so they count. Applied movements only: a
+  // replay sends nothing, so it needs to cover nothing.
+  //
+  // This is the check the old insolvent prize would have failed. It promised
+  // 240 chips against about 50 paid in and the pot made up the difference out
+  // of its own balance until the balance ran out.
+  const sentWei = sumWei(appliedPayouts.map((m) => m.amountWei));
+  const coverWei = balance(input.before, input.potAddress, "before") + sumWei(appliedEntries.map((m) => m.amountWei));
+  checks.push({ name: "pot covers payout", ok: sentWei <= coverWei, expected: `at most ${coverWei.toString()}`, actual: sentWei.toString() });
 
   return { ok: checks.every((c) => c.ok), checks };
 }

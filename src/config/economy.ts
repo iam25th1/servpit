@@ -16,8 +16,17 @@
 // over from rounds nobody real won. The pot can always pay it, because the
 // pot is holding it.
 
-/** Share of an unclaimed pot the bank takes when a house bot wins. */
-export const DEFAULT_BANK_SHARE_ON_HOUSE_WIN = 0.5;
+import type { EconomyConfig } from "@/economy/rules";
+
+/**
+ * Share of an unclaimed pot the bank takes when a house bot wins.
+ *
+ * Zero while no bank wallet exists. At zero every unclaimed prize rolls into
+ * the next round, nothing is sent anywhere, and the pot can only ever pay out
+ * what agents paid in. Raising it needs somewhere to send the share, so
+ * assertBankShareIsPayable stops a run that has one set with no bank.
+ */
+export const DEFAULT_BANK_SHARE_ON_HOUSE_WIN = 0;
 
 export function bankShareOnHouseWin(env: NodeJS.ProcessEnv = process.env): number {
   const raw = env.SERVPIT_BANK_SHARE_ON_HOUSE_WIN?.trim();
@@ -27,4 +36,83 @@ export function bankShareOnHouseWin(env: NodeJS.ProcessEnv = process.env): numbe
     throw new RangeError(`SERVPIT_BANK_SHARE_ON_HOUSE_WIN must be between 0 and 1, got ${raw}`);
   }
   return value;
+}
+
+/**
+ * Stops a run that would owe the bank a share with no bank wallet to pay it.
+ *
+ * Loudly, at startup, rather than quietly rolling the share over. A share
+ * that silently becomes rollover is a number in a config file that does not
+ * mean what it says, on a money surface.
+ */
+export function assertBankShareIsPayable(hasBankWallet: boolean, env: NodeJS.ProcessEnv = process.env): void {
+  const share = bankShareOnHouseWin(env);
+  if (share > 0 && !hasBankWallet) {
+    throw new Error(
+      `SERVPIT_BANK_SHARE_ON_HOUSE_WIN is ${share} but there is no bank wallet to send it to. ` +
+        "Set it to 0 until a bank wallet exists, or add one.",
+    );
+  }
+}
+
+/**
+ * Credit terms, expressed in stakes rather than absolute amounts.
+ *
+ * A stake is what a seat costs, so everything here reads as "how many rounds
+ * of play". Absolute numbers would go stale the moment the stake moved, and
+ * the stake is derived from what a wallet is funded with.
+ *
+ * These are starting points. npm run sim:economy measures what they do over
+ * hundreds of rounds.
+ */
+export const CREDIT_TERMS = {
+  /** Smallest loan worth writing: one seat. */
+  minLoanStakes: 1n,
+  /** Most principal one agent may owe: five seats. */
+  maxPrincipalStakes: 5n,
+  /** A single loan may take a quarter of the treasury. */
+  maxTreasuryShareBps: 2_500,
+  /**
+   * Simple interest per round on outstanding principal.
+   *
+   * A round is a minute of play, not a month, so this reads high and is not.
+   * What it sets is how long an agent that stops repaying survives: at five
+   * stakes of principal it adds half a stake a round, and the ceiling is one
+   * stake above the principal cap, so it has two rounds to win its way back.
+   * At the 5 per cent this started at, the ceiling never fired at all in two
+   * thousand rounds: an agent always ran out of balance first and was wrecked
+   * for being broke instead.
+   */
+  interestBps: 1_000,
+  /**
+   * Total debt above six seats wrecks the agent.
+   *
+   * One stake above the principal cap, deliberately. Set it far above and the
+   * condition is dead config: the simulator measured zero ceiling wrecks in
+   * two thousand rounds at eight stakes.
+   */
+  debtCeilingStakes: 6n,
+  /**
+   * Replacement agents are born clean.
+   *
+   * Born in debt halves what the operator spends replacing wrecked agents,
+   * 208 chips against 520 over two thousand rounds, but the debt has to be
+   * funded by a bank, and there is no bank wallet in this build. Revisit it
+   * with one.
+   */
+  replacementDebtStakes: 0n,
+} as const;
+
+export function economyConfig(stakeWei: bigint, overrides: Partial<EconomyConfig> = {}): EconomyConfig {
+  if (typeof stakeWei !== "bigint" || stakeWei <= 0n) throw new RangeError(`stakeWei must be a positive bigint, got ${String(stakeWei)}`);
+  return {
+    minLoanWei: CREDIT_TERMS.minLoanStakes * stakeWei,
+    maxPrincipalWei: CREDIT_TERMS.maxPrincipalStakes * stakeWei,
+    maxTreasuryShareBps: CREDIT_TERMS.maxTreasuryShareBps,
+    interestBps: CREDIT_TERMS.interestBps,
+    debtCeilingWei: CREDIT_TERMS.debtCeilingStakes * stakeWei,
+    stakeWei,
+    replacementDebtWei: CREDIT_TERMS.replacementDebtStakes * stakeWei,
+    ...overrides,
+  };
 }

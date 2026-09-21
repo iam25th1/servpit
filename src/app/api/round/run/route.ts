@@ -6,7 +6,6 @@
 import { getSettleContext } from "@/server/settleContext";
 import { basescanAddress } from "@/server/money";
 import { weiPerChip } from "@/config/stake";
-import { toWei } from "@/server/money";
 import { entrantNames } from "@/server/round/entrantNames";
 import { roundIdFor } from "@/server/round/types";
 import { runRound } from "@/server/round/settle";
@@ -77,11 +76,14 @@ export async function POST(request: Request): Promise<Response> {
             settles: ctx.chain.settles,
             entrants: plan.entrants.map((e) => e.id),
             winner: run.round.placements[0],
-            // The engine counts in chips, so these are converted. The field
-            // is named for wei and must carry wei: the result screen divides
-            // by weiPerChip and showed a 240 chip pot as 0 when it did not.
-            potWei: toWei(run.round.pot).toString(),
-            rakeWei: toWei(run.round.rake).toString(),
+            // The pot is what agents actually paid in plus what rolled over,
+            // not the engine's twenty four seat figure. The field is named
+            // for wei and must carry wei: the result screen divides by
+            // weiPerChip and showed a 240 chip pot as 0 when it did not.
+            potWei: run.prize.poolWei.toString(),
+            rakeWei: run.prize.rakeWei.toString(),
+            rolloverInWei: run.rolloverInWei.toString(),
+            nextRolloverWei: run.prize.nextRolloverWei.toString(),
             potAddress: ctx.wallets.pot.address,
             potLink: link(ctx.wallets.pot.address),
             weiPerChip: weiPerChip().toString(),
