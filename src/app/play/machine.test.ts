@@ -112,7 +112,18 @@ describe("errors and replay", () => {
     expect(s.error).toBe("round failed");
     expect(s.player).not.toBeNull();
     expect(s.mode?.id).toBe("battleRoyale");
+    // There is a plan, so the lever is worth pulling again.
     expect(s.leverLive).toBe(true);
+  });
+
+  it("leaves the lever dead when the decision phase itself failed", () => {
+    // No plan means pullLever returns at its first guard, so a live looking
+    // lever would swallow every pull. This is what the player was left with
+    // when the first balance read timed out.
+    const s = reduce(chosen(), { type: "failed", message: "could not reach the network" });
+    expect(s.plan).toBeNull();
+    expect(s.leverLive).toBe(false);
+    expect(s.error).toBe("could not reach the network");
   });
 
   it("returns to mode select for another round, keeping the player connected", () => {

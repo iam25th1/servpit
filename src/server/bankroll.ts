@@ -28,18 +28,23 @@ export class BankrollCache {
    *
    * The per wallet get below is what the round actually calls, and it reads
    * the cache first, so warming it turns a round's seven sequential reads
-   * into one. A wallet the chain could not answer for is left out, so its get
-   * still goes to the chain and still fails honestly rather than reading back
-   * a zero balance nobody verified.
+   * into one.
+   *
+   * Returns the addresses the chain could not answer for. They are left out
+   * of the cache rather than stored as zero, because a missing balance is not
+   * a balance of nothing and a round must never act on one.
    */
-  async warm(chain: Chain, wallets: readonly Wallet[]): Promise<void> {
-    if (wallets.length === 0) return;
+  async warm(chain: Chain, wallets: readonly Wallet[]): Promise<string[]> {
+    if (wallets.length === 0) return [];
     const balances = await chain.getBalances(wallets.map((w) => w.address));
     const now = this.options.now();
+    const unread: string[] = [];
     for (const wallet of wallets) {
       const balance = balances[wallet.address];
-      if (balance !== undefined) this.entries.set(wallet.address, { balance, readAt: now });
+      if (balance === undefined) unread.push(wallet.address);
+      else this.entries.set(wallet.address, { balance, readAt: now });
     }
+    return unread;
   }
 
   invalidate(address?: string): void {

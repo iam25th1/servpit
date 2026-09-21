@@ -134,10 +134,15 @@ export function reduce(state: FlowState, event: FlowEvent): FlowState {
       return { ...state, screen: "modeSelect", plan: null, decided: [], entries: [], run: null, reelsSettled: false, leverLive: false, error: null };
 
     case "failed":
-      // A failure must never strand the player: it drops back to the slot with
-      // the lever live so they can pull again.
+      // A failure must never strand the player: it drops back to the slot so
+      // they can pull again.
+      //
+      // The lever only comes back if there is a plan behind it. A decision
+      // phase that failed has none, and a lever that looks live and does
+      // nothing is worse than one that is plainly dead: pullLever returns at
+      // its first guard, so every pull was silently ignored.
       if (state.screen === "boot" || state.screen === "title" || state.screen === "modeSelect") return { ...state, error: event.message };
-      return { ...state, screen: "slot", leverLive: true, reelsSettled: false, error: event.message };
+      return { ...state, screen: "slot", leverLive: state.plan !== null, reelsSettled: false, error: event.message };
 
     default:
       return state;

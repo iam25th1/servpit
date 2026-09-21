@@ -106,7 +106,8 @@ export type ProviderFactory = (walletId: string, privateKey: Hex, rpcUrl?: strin
 
 /** The slice of a viem public client this module uses, so tests can stub it. */
 export interface BalanceReader {
-  readBalances(addresses: readonly string[]): Promise<bigint[]>;
+  /** One entry per address, in order. null where the chain could not answer. */
+  readBalances(addresses: readonly string[]): Promise<Array<bigint | null>>;
 }
 
 /**
@@ -134,10 +135,15 @@ export function createBalanceReader(rpcUrls: readonly string[] = DEFAULT_RPC_URL
   return {
     async readBalances(addresses) {
       if (addresses.length === 0) return [];
-      return client.multicall({
+      // allowFailure, so one address the chain will not answer for costs that
+      // agent its round rather than costing every agent theirs. A transport
+      // that is down for all of them still throws, which is the case that
+      // has to stop the round.
+      const results = await client.multicall({
         contracts: addresses.map((address) => ({ address: MULTICALL3, abi: GET_ETH_BALANCE, functionName: "getEthBalance" as const, args: [address as Hex] })),
-        allowFailure: false,
+        allowFailure: true,
       });
+      return results.map((r) => (r.status === "success" ? (r.result as bigint) : null));
     },
   };
 }
@@ -204,7 +210,14 @@ export class ViemChain implements Chain {
       // Through the fallback reader, not through the provider. AgentKit's own
       // public client has one endpoint, no fallback and viem's ten second
       // default, which is exactly what took the decision phase down.
-      getBalance: async () => (await this.getBalances([walletAddress]))[walletAddress] ?? 0n,
+      getBalance: async () => {
+        const balance = (await this.getBalances([walletAddress]))[walletAddress];
+        // Never zero as a stand in for unread. A balance nobody read is not a
+        // balance, and a caller that treats it as one excludes or admits an
+        // agent on a number that came from nowhere.
+        if (balance === undefined) throw new Error(`could not read the balance of ${walletAddress}`);
+        return balance;
+      },
       send: async (calls: readonly Call[], idempotencyKey: string): Promise<TxReceipt> => {
         for (const call of calls) {
           if (!ADDRESS.test(call.to)) throw new RangeError(`transfer destination must be an address, got ${call.to}`);
@@ -242,7 +255,8 @@ export class ViemChain implements Chain {
     const balances = await this.reader.readBalances(unique);
     const out: Record<string, bigint> = {};
     unique.forEach((address, i) => {
-      out[address] = balances[i];
+      const balance = balances[i];
+      if (balance !== null && balance !== undefined) out[address] = balance;
     });
     return out;
   }
