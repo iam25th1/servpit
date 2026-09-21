@@ -25,6 +25,8 @@ const plan = (roundId: string, stakeWei = 10_000_000_000_000n): RoundPlan => ({
   servCalls: 6,
   guardRefusals: 0,
   rejections: [],
+  loans: [],
+  refusals: [],
 });
 
 describe("PlanStore", () => {

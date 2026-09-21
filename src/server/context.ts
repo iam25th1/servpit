@@ -16,6 +16,8 @@ import { assertBankShareIsPayable } from "@/config/economy";
 import { ViemChain } from "./wallets/viem";
 import { FakeChain } from "./wallets/fake";
 import { openWallets, type Wallets } from "./wallets/open";
+import { BANK_WALLET_ID } from "@/config/wallets";
+import { bankEnabled } from "@/config/economy";
 import { WalletRegistry } from "./wallets/registry";
 import type { Chain } from "./wallets/types";
 
@@ -39,7 +41,9 @@ async function build(): Promise<ServerContext> {
   const chain: Chain = env.viem ? new ViemChain(env.viem) : new FakeChain({ initialBalanceWei: FAKE_INITIAL_WEI });
   log.info("wallet backend", { backend: chain.kind, network: chain.network });
   const registry = new WalletRegistry(join(env.dataDir, `wallets-${chain.network}.json`));
-  const wallets = await openWallets(chain, registry);
+  // Only when the bank is on and there is a key for it. A round that never
+  // asks the bank for anything must not need a wallet it does not have.
+  const wallets = await openWallets(chain, registry, { bank: bankEnabled() && (chain.kind === "fake" || Boolean(env.viem?.keys[BANK_WALLET_ID])) });
   const bankroll = new BankrollCache({ ttlMs: 5_000, now: () => Date.now() });
   const ledger = new TransferLedger(join(env.dataDir, `ledger-${chain.network}.json`));
   const store = new RoundStore(join(env.dataDir, `rounds-${chain.network}.json`));

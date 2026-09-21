@@ -63,3 +63,38 @@ export async function payWinner(ctx: TransferContext, roundId: string, agentId: 
   });
   return finish(ctx, record, pot, winner, applied);
 }
+
+/**
+ * The bank to an agent, for a loan the bank already agreed to in the plan.
+ *
+ * Disbursed before entries are collected, because an agent that borrowed to
+ * reach its stake has to be holding the chips before that stake is taken.
+ *
+ * The rate is recorded with the principal, so what the debt costs to carry is
+ * on the same record as the debt. Accruing and collecting it is a later
+ * phase; this is what that will read.
+ */
+export async function disburseLoan(
+  ctx: TransferContext,
+  roundId: string,
+  agentId: string,
+  bank: Wallet,
+  borrower: Wallet,
+  principalWei: bigint,
+  rateBps: number,
+): Promise<TransferOutcome> {
+  const key = idempotencyKey(roundId, agentId, "loan");
+  const applied = ctx.ledger.get(key)?.status !== "complete";
+  const record = await ctx.ledger.transferOnce({
+    key,
+    roundId,
+    agentId,
+    kind: "loan",
+    from: bank,
+    to: borrower.address,
+    amountWei: principalWei,
+    network: ctx.network,
+    rateBps,
+  });
+  return finish(ctx, record, bank, borrower, applied);
+}

@@ -123,6 +123,24 @@ export const CREDIT_TERMS = {
 } as const;
 
 /**
+ * Whether the bank is part of the running game.
+ *
+ * Off by default, and the whole bank arrives behind it. Interest, repayment,
+ * wrecks and the bank's own screen come after this phase, so until all of it
+ * is built and verified the running game must behave exactly as it did: one
+ * fixed stake per seat, no borrowing, no lender.
+ */
+export const DEFAULT_BANK_ENABLED = false;
+
+export function bankEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  const raw = env.SERVPIT_BANK_ENABLED?.trim().toLowerCase();
+  if (raw === undefined || raw.length === 0) return DEFAULT_BANK_ENABLED;
+  if (raw === "true" || raw === "1") return true;
+  if (raw === "false" || raw === "0") return false;
+  throw new RangeError(`SERVPIT_BANK_ENABLED must be true or false, got ${raw}`);
+}
+
+/**
  * How many base stakes an agent may put on one seat.
  *
  * Three by default. One means the fixed stake the running game still uses;
@@ -130,6 +148,34 @@ export const CREDIT_TERMS = {
  * the credit rules a formality.
  */
 export const DEFAULT_MAX_STAKE_MULTIPLE = 3;
+
+/**
+ * What the bank may charge, in basis points per round.
+ *
+ * A floor because a free loan is not a loan and the bank has to earn
+ * something for the risk. A ceiling because a rate is a number a model
+ * proposes, and a model that proposes ten thousand per cent has written a
+ * death sentence rather than a loan.
+ */
+export const DEFAULT_BANK_MIN_RATE_BPS = 500;
+export const DEFAULT_BANK_MAX_RATE_BPS = 3_000;
+
+function rateFrom(env: NodeJS.ProcessEnv, name: string, fallback: number): number {
+  const raw = env[name]?.trim();
+  if (raw === undefined || raw.length === 0) return fallback;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < 0 || value > 10_000) {
+    throw new RangeError(`${name} must be a whole number of basis points between 0 and 10000, got ${raw}`);
+  }
+  return value;
+}
+
+export function bankRateBounds(env: NodeJS.ProcessEnv = process.env): { minBps: number; maxBps: number } {
+  const minBps = rateFrom(env, "SERVPIT_BANK_MIN_RATE_BPS", DEFAULT_BANK_MIN_RATE_BPS);
+  const maxBps = rateFrom(env, "SERVPIT_BANK_MAX_RATE_BPS", DEFAULT_BANK_MAX_RATE_BPS);
+  if (minBps > maxBps) throw new RangeError(`SERVPIT_BANK_MIN_RATE_BPS ${minBps} is above SERVPIT_BANK_MAX_RATE_BPS ${maxBps}`);
+  return { minBps, maxBps };
+}
 
 /** Most one loan may be, as a whole number of base stakes. */
 export function maxLoanStakes(env: NodeJS.ProcessEnv = process.env): bigint {

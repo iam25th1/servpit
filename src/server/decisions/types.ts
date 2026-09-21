@@ -14,8 +14,18 @@ export interface AgentSnapshot {
   address: string;
   /** Balance read from chain for this round. */
   balanceWei: bigint;
-  /** Stake this round asks for, in wei. */
+  /** Stake this round asks for, in wei. The floor when the bank is on. */
   stakeWei: bigint;
+  /**
+   * How many base stakes this agent may put on one seat.
+   *
+   * Absent or one means the fixed stake the game has always used. Above one
+   * only when the bank is enabled, because anything above the balance has to
+   * be borrowed from somewhere.
+   */
+  maxStakeMultiple?: number;
+  /** What this agent already owes the lender, in wei. Absent when nothing. */
+  debtWei?: bigint;
   recentOutcomes: RoundOutcome[];
 }
 

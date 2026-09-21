@@ -118,21 +118,42 @@ const SYSTEM = [
   "Taking it puts those chips at risk: one participant receives the whole pool and the rest receive nothing.",
   "Judge it on your chips, the size of the pool, how many are taking part, and how your recent periods went, under the posture you are given.",
   "Reply with a single JSON object with exactly the keys enter, stake and reason.",
-  "stake is the cost in chips, exactly the stated cost when you take it and 0 when you do not.",
-  "Never propose more chips than you hold.",
+  "stake is the number of chips you commit, inside the range you are given, and 0 when you do not take it.",
+  "If a lender is offered, chips above what you hold are borrowed at interest and must be paid back. Never name a loan amount: only your stake.",
   "reason is ONE short sentence, under twenty words, in your own voice, as if speaking aloud.",
   "Never write the words minor units, wei, allocation, posture or working balance.",
   "Never write a number longer than four digits.",
   "Examples of the register, not to be copied: Lost three straight, sitting this one out. Plenty in the tank, I am in. Everyone is cautious, so I am going big.",
 ].join(" ");
 
+/**
+ * The extra lines an agent gets when there is a lender in the pit.
+ *
+ * It is told its debt and the range it may commit, and that anything above
+ * what it holds is borrowed. It is never asked for a loan amount: the
+ * shortfall is arithmetic on figures read from the chain, and the bank
+ * decides it separately.
+ */
+function leverageLines(snapshot: AgentSnapshot, round: RoundContext): string[] {
+  const seat = toChips(round.stakeWei);
+  const ceiling = seat * Math.max(1, snapshot.maxStakeMultiple ?? 1);
+  const debt = toChips(snapshot.debtWei ?? 0n);
+  return [
+    `You may commit anything from ${seat} to ${ceiling} chips.`,
+    `Anything above what you hold is borrowed from the lender, at interest, and you must pay it back.`,
+    debt > 0 ? `You already owe the lender ${debt} chips.` : "You owe the lender nothing.",
+  ];
+}
+
 export function buildPrompt(snapshot: AgentSnapshot, round: RoundContext): { system: string; user: string } {
+  const levered = Math.max(1, snapshot.maxStakeMultiple ?? 1) > 1;
   const lines = [
     `You are ${snapshot.profile.name}.`,
     `Posture: ${snapshot.profile.descriptor}.`,
     `Voice: ${snapshot.profile.voice}`,
     `You hold ${toChips(snapshot.balanceWei)} chips.`,
-    `This period costs ${toChips(round.stakeWei)} chips.`,
+    levered ? `A seat costs ${toChips(round.stakeWei)} chips.` : `This period costs ${toChips(round.stakeWei)} chips.`,
+    ...(levered ? leverageLines(snapshot, round) : []),
     `The pool is ${toChips(round.poolWei)} chips if everyone takes part, shared between ${round.participants} of you.`,
   ];
   if (snapshot.recentOutcomes.length > 0) {
@@ -181,15 +202,29 @@ export function validateDecision(content: string, snapshot: AgentSnapshot): Vali
   // from this response.
   const balanceChips = toChips(snapshot.balanceWei);
   const roundChips = toChips(snapshot.stakeWei);
-  if (stake > balanceChips) {
-    return { ok: false, reason: `stake ${stake} is more than the ${balanceChips} chips this wallet holds` };
+  // How far above the seat price this agent may go. One, the fixed stake,
+  // unless the bank is on and there is a lender to cover the difference.
+  const ceilingChips = roundChips * Math.max(1, snapshot.maxStakeMultiple ?? 1);
+
+  if (!enter) {
+    if (stake !== 0) return { ok: false, reason: "stake must be 0 when not entering" };
+    return { ok: true, decision: { enter, stake, reason: reason.trim().slice(0, MAX_REASON) } };
   }
-  if (enter) {
+
+  if (ceilingChips === roundChips) {
+    // No bank, so there is one seat price and nothing to borrow with.
     if (stake !== roundChips) return { ok: false, reason: `stake ${stake} is not this round's ${roundChips} chips` };
+    if (stake > balanceChips) return { ok: false, reason: `stake ${stake} is more than the ${balanceChips} chips this wallet holds` };
     if (snapshot.balanceWei < snapshot.stakeWei) return { ok: false, reason: `this wallet cannot cover the ${roundChips} chips a seat costs` };
-  } else if (stake !== 0) {
-    return { ok: false, reason: "stake must be 0 when not entering" };
+    return { ok: true, decision: { enter, stake, reason: reason.trim().slice(0, MAX_REASON) } };
   }
+
+  // The bank is on, so a stake above the balance is a borrowing request and
+  // not a lie. The bound that matters is the ceiling, and whether the bank
+  // will cover the difference is decided elsewhere, against its real
+  // treasury, never here and never by the model.
+  if (stake < roundChips) return { ok: false, reason: `stake ${stake} is below the ${roundChips} chips a seat costs` };
+  if (stake > ceilingChips) return { ok: false, reason: `stake ${stake} is above the ${ceilingChips} chip ceiling` };
 
   return { ok: true, decision: { enter, stake, reason: reason.trim().slice(0, MAX_REASON) } };
 }

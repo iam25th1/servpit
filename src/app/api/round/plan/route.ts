@@ -56,6 +56,8 @@ function planShape(plan: RoundPlan, network: string, kind: string, costMicroCent
     bots: plan.bots.length,
     servCalls: plan.servCalls,
     guardRefusals: plan.guardRefusals,
+    loans: plan.loans.map((l) => ({ agentId: l.agentId, name: l.name, amount: toChips(l.principalWei), rateBps: l.rateBps, reason: l.reason, source: l.source })),
+    refusals: plan.refusals,
     costMicroCents,
     costSummary,
     decisions: plan.decisions.map((d) => decisionShape(d, link)),
@@ -81,7 +83,16 @@ export async function POST(request: Request): Promise<Response> {
     async start(controller) {
       const line = (value: unknown): void => controller.enqueue(encoder.encode(`${JSON.stringify(value)}\n`));
       try {
-        const plan = await planRound(flow, parsed.seed, (d) => line({ type: "decision", decision: decisionShape(d, link) }));
+        const plan = await planRound(
+          flow,
+          parsed.seed,
+          (d) => line({ type: "decision", decision: decisionShape(d, link) }),
+          (d, name) =>
+            line({
+              type: "loan",
+              loan: { agentId: d.agentId, name, approve: d.decision.approve, amount: d.decision.amountChips, rateBps: d.decision.rateBps, reason: d.decision.reason, source: d.source },
+            }),
+        );
         // Quoted, so settling this round reuses these decisions rather than
         // running the whole loop again against a model that may answer
         // differently the second time.
