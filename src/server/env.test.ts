@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { KEY_VARS, WALLET_IDS, keyVarFor } from "@/config/wallets";
-import { DEFAULT_RPC_URL, readEnv } from "./env";
+import { DEFAULT_RPC_URL, DEFAULT_RPC_URLS, readEnv } from "./env";
 
 /** Vitest types ProcessEnv strictly; these are plain string maps. */
 const asEnv = (v: Record<string, string>): NodeJS.ProcessEnv => v as NodeJS.ProcessEnv;
@@ -26,7 +26,7 @@ describe("readEnv wallet backend", () => {
   it("carries the keys and the rpc override on the viem backend", () => {
     const env = readEnv(asEnv({ ...fullKeys(), RPC_URL: "https://example.invalid" }));
     expect(Object.keys(env.viem!.keys).sort()).toEqual([...WALLET_IDS].sort());
-    expect(env.viem!.rpcUrl).toBe("https://example.invalid");
+    expect(env.viem!.rpcUrls).toEqual(["https://example.invalid"]);
     expect(env.network).toBe("base-sepolia");
   });
 
@@ -70,32 +70,49 @@ describe("readEnv wallet backend", () => {
   });
 });
 
-describe("the Base Sepolia endpoint", () => {
+describe("the Base Sepolia endpoints", () => {
   const keys = Object.fromEntries(KEY_VARS.map((v) => [v, `0x${"a".repeat(64)}`]));
 
-  it("defaults to the endpoint that answered fastest when this was measured", () => {
+  it("defaults to every endpoint, fastest measured first", () => {
     const env = readEnv(asEnv({ ...keys, WALLET_BACKEND: "viem" }));
-    expect(env.viem?.rpcUrl).toBe(DEFAULT_RPC_URL);
+    expect(env.viem?.rpcUrls).toEqual([...DEFAULT_RPC_URLS]);
     expect(DEFAULT_RPC_URL).toBe("https://base-sepolia-rpc.publicnode.com");
+    // More than one, or there is nothing to fall back to.
+    expect(env.viem!.rpcUrls.length).toBeGreaterThan(1);
   });
 
-  it("is overridden by BASE_SEPOLIA_RPC_URL", () => {
+  it("takes a comma separated list from BASE_SEPOLIA_RPC_URLS, in order", () => {
+    const env = readEnv(asEnv({ ...keys, WALLET_BACKEND: "viem", BASE_SEPOLIA_RPC_URLS: "https://one.test, https://two.test ,https://three.test" }));
+    expect(env.viem?.rpcUrls).toEqual(["https://one.test", "https://two.test", "https://three.test"]);
+  });
+
+  it("is overridden by BASE_SEPOLIA_RPC_URL as a single entry", () => {
     const env = readEnv(asEnv({ ...keys, WALLET_BACKEND: "viem", BASE_SEPOLIA_RPC_URL: "https://example.test/rpc" }));
-    expect(env.viem?.rpcUrl).toBe("https://example.test/rpc");
+    expect(env.viem?.rpcUrls).toEqual(["https://example.test/rpc"]);
+  });
+
+  it("prefers the list over the single entry when both are set", () => {
+    const env = readEnv(asEnv({ ...keys, WALLET_BACKEND: "viem", BASE_SEPOLIA_RPC_URL: "https://single.test", BASE_SEPOLIA_RPC_URLS: "https://a.test,https://b.test" }));
+    expect(env.viem?.rpcUrls).toEqual(["https://a.test", "https://b.test"]);
   });
 
   it("still honours RPC_URL, so an existing setup keeps working", () => {
     const env = readEnv(asEnv({ ...keys, WALLET_BACKEND: "viem", RPC_URL: "https://old.test/rpc" }));
-    expect(env.viem?.rpcUrl).toBe("https://old.test/rpc");
+    expect(env.viem?.rpcUrls).toEqual(["https://old.test/rpc"]);
   });
 
-  it("prefers the new name when both are set", () => {
+  it("prefers the new name when both single entry names are set", () => {
     const env = readEnv(asEnv({ ...keys, WALLET_BACKEND: "viem", RPC_URL: "https://old.test", BASE_SEPOLIA_RPC_URL: "https://new.test" }));
-    expect(env.viem?.rpcUrl).toBe("https://new.test");
+    expect(env.viem?.rpcUrls).toEqual(["https://new.test"]);
   });
 
-  it("falls back to the default rather than accepting an empty value", () => {
-    expect(readEnv(asEnv({ ...keys, WALLET_BACKEND: "viem", BASE_SEPOLIA_RPC_URL: "   " })).viem?.rpcUrl).toBe(DEFAULT_RPC_URL);
+  it("falls back to the defaults rather than accepting an empty value", () => {
+    expect(readEnv(asEnv({ ...keys, WALLET_BACKEND: "viem", BASE_SEPOLIA_RPC_URL: "   " })).viem?.rpcUrls).toEqual([...DEFAULT_RPC_URLS]);
+    expect(readEnv(asEnv({ ...keys, WALLET_BACKEND: "viem", BASE_SEPOLIA_RPC_URLS: " , , " })).viem?.rpcUrls).toEqual([...DEFAULT_RPC_URLS]);
+  });
+
+  it("refuses an entry in the list that is not an http url", () => {
+    expect(() => readEnv(asEnv({ ...keys, WALLET_BACKEND: "viem", BASE_SEPOLIA_RPC_URLS: "https://ok.test,ws://nope.test" }))).toThrow(/http or https/);
   });
 
   it("refuses something that is not a url rather than letting viem fail later", () => {

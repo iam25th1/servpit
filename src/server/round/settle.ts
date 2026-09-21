@@ -28,7 +28,10 @@ export async function runRound(ctx: FlowContext, plan: RoundPlan, progress: RunP
   const pot = ctx.wallets.pot;
   const watched = [pot.address, ...plan.snapshots.map((s) => s.address)];
   const before: Record<string, bigint> = {};
+  const watchedWallets = [...plan.snapshots.map((s) => ctx.wallets.agents.get(s.profile.id)!), pot];
   ctx.bankroll.invalidate();
+  // One request for all seven, rather than seven in a row.
+  await ctx.bankroll.warm(ctx.chain, watchedWallets);
   for (const s of plan.snapshots) before[s.address] = await ctx.bankroll.get(ctx.wallets.agents.get(s.profile.id)!);
   before[pot.address] = await ctx.bankroll.get(pot);
 
@@ -92,6 +95,7 @@ export async function runRound(ctx: FlowContext, plan: RoundPlan, progress: RunP
 
   ctx.bankroll.invalidate();
   const after: Record<string, bigint> = {};
+  await ctx.bankroll.warm(ctx.chain, watchedWallets);
   for (const s of plan.snapshots) after[s.address] = await ctx.bankroll.get(ctx.wallets.agents.get(s.profile.id)!);
   after[pot.address] = await ctx.bankroll.get(pot);
 

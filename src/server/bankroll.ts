@@ -2,7 +2,7 @@
 // reads inside one request; any transfer invalidates it and a short TTL
 // bounds staleness. It is never the source of truth.
 
-import type { Wallet } from "./wallets/types";
+import type { Chain, Wallet } from "./wallets/types";
 
 export interface BankrollCacheOptions {
   ttlMs: number;
@@ -21,6 +21,30 @@ export class BankrollCache {
     const balance = await wallet.getBalance();
     this.entries.set(wallet.address, { balance, readAt: now });
     return balance;
+  }
+
+  /**
+   * Fills the cache for several wallets in one chain request.
+   *
+   * The per wallet get below is what the round actually calls, and it reads
+   * the cache first, so warming it turns a round's seven sequential reads
+   * into one.
+   *
+   * Returns the addresses the chain could not answer for. They are left out
+   * of the cache rather than stored as zero, because a missing balance is not
+   * a balance of nothing and a round must never act on one.
+   */
+  async warm(chain: Chain, wallets: readonly Wallet[]): Promise<string[]> {
+    if (wallets.length === 0) return [];
+    const balances = await chain.getBalances(wallets.map((w) => w.address));
+    const now = this.options.now();
+    const unread: string[] = [];
+    for (const wallet of wallets) {
+      const balance = balances[wallet.address];
+      if (balance === undefined) unread.push(wallet.address);
+      else this.entries.set(wallet.address, { balance, readAt: now });
+    }
+    return unread;
   }
 
   invalidate(address?: string): void {

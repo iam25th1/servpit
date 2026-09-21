@@ -12,6 +12,8 @@
 
 import { toChips, weiPerChip } from "@/config/stake";
 import { getServerContext } from "@/server/context";
+import { log } from "@/server/log";
+import { internalDetail, publicError } from "@/server/publicError";
 import type { AgentDecision } from "@/server/decisions/types";
 import { basescanAddress } from "@/server/money";
 import { planRound, type RoundPlan } from "@/server/round/flow";
@@ -87,8 +89,12 @@ export async function POST(request: Request): Promise<Response> {
         line({ type: "plan", plan: planShape(plan, ctx.chain.network, ctx.chain.kind, ctx.flow.meter.estimatedMicroCents, ctx.flow.meter.summary(), link) });
       } catch (e) {
         // The client needs a terminal line whatever happens, or it waits on a
-        // stream that has already stopped producing.
-        line({ type: "error", error: e instanceof Error ? e.message : String(e) });
+        // stream that has already stopped producing. What it must never get
+        // is the thrown error: a viem transport error quotes the endpoint
+        // url, and a keyed endpoint carries its credential in that url.
+        const shown = publicError(e);
+        log.error("plan failed", { code: shown.code, detail: internalDetail(e) });
+        line({ type: "error", ...shown, error: shown.message });
       } finally {
         controller.close();
       }

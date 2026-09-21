@@ -63,6 +63,16 @@ export class FakeChain implements Chain {
     };
   }
 
+  async getBalances(addresses: readonly string[]): Promise<Record<string, bigint>> {
+    const out: Record<string, bigint> = {};
+    for (const address of new Set(addresses)) {
+      if (!ADDRESS.test(address)) throw new RangeError("address must be 20 bytes of hex");
+      this.balanceReads++;
+      out[address] = this.balances.get(address) ?? 0n;
+    }
+    return out;
+  }
+
   /** Test and faucet helper. */
   fund(address: string, wei: bigint): void {
     this.balances.set(address, (this.balances.get(address) ?? 0n) + wei);

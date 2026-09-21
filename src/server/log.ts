@@ -11,6 +11,17 @@ const API_KEY = /\bsk-[A-Za-z0-9_-]{16,}\b/g;
 const MNEMONIC = /\b(?:[a-z]{3,8}\s+){11,}[a-z]{3,8}\b/g;
 
 /**
+ * Any http url, so everything after the host can be dropped.
+ *
+ * A keyed RPC endpoint carries its credential in the path, as in
+ * https://base-sepolia.example/v2/<project key>, or in the query, or in a
+ * userinfo prefix. viem quotes the whole url in every transport error, so an
+ * error that reaches a log carries the key with it. The host is the useful
+ * part of the line and the only part kept.
+ */
+const HTTP_URL = /\bhttps?:\/\/[^\s"'<>)\]]+/g;
+
+/**
  * Fields whose values are public chain identifiers. A transaction hash is 32
  * bytes of hex, the same shape as a private key, so shape matching alone
  * would mask the evidence this system exists to produce. These objects are
@@ -26,9 +37,27 @@ export function registerSecret(value: string | undefined): void {
   if (typeof value === "string" && value.length >= 4 && !registered.includes(value)) registered.push(value);
 }
 
+/** Host kept, credential bearing path and query dropped. */
+export function maskUrl(raw: string): string {
+  try {
+    const url = new URL(raw);
+    const bare = `${url.protocol}//${url.host}`;
+    const hadMore = url.username.length > 0 || url.password.length > 0 || url.search.length > 0 || (url.pathname !== "" && url.pathname !== "/");
+    return hadMore ? `${bare}/[redacted:url]` : bare;
+  } catch {
+    return "[redacted:url]";
+  }
+}
+
 function redactString(s: string, secrets: readonly string[], chainIdField = false): string {
   let out = s;
   if (!chainIdField) out = out.replace(HEX64, "[redacted:hex64]");
+  out = out.replace(HTTP_URL, (match) => {
+    // basescan links are built by this system and carry nothing private. They
+    // are the evidence a transfer happened, so they stay whole.
+    if (/^https:\/\/[a-z-]*\.?basescan\.org\//.test(match)) return match;
+    return maskUrl(match);
+  });
   out = out.replace(API_KEY, "[redacted:key]").replace(MNEMONIC, "[redacted:mnemonic]");
   for (const secret of secrets) {
     if (secret.length >= 4) out = out.split(secret).join("[redacted:secret]");

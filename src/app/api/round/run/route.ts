@@ -4,6 +4,8 @@
 // same transfers and a retry never double pays.
 
 import { getSettleContext } from "@/server/settleContext";
+import { log } from "@/server/log";
+import { internalDetail, publicError } from "@/server/publicError";
 import { basescanAddress } from "@/server/money";
 import { weiPerChip } from "@/config/stake";
 import { entrantNames } from "@/server/round/entrantNames";
@@ -109,7 +111,11 @@ export async function POST(request: Request): Promise<Response> {
           },
         });
       } catch (e) {
-        line({ type: "error", error: e instanceof Error ? e.message : String(e) });
+        // Sanitized, for the same reason as the plan route: nothing a library
+        // wrote reaches the browser.
+        const shown = publicError(e);
+        log.error("settle failed", { code: shown.code, detail: internalDetail(e) });
+        line({ type: "error", ...shown, error: shown.message });
       } finally {
         controller.close();
       }

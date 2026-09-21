@@ -11,9 +11,10 @@
 // module is an address and a transaction hash.
 
 import { ViemWalletProvider } from "@coinbase/agentkit";
-import { createWalletClient, http } from "viem";
+import { createPublicClient, createWalletClient, fallback, http, parseAbi, type PublicClient } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { baseSepolia } from "viem/chains";
+import { DEFAULT_RPC_URLS } from "@/config/rpc";
 import { log } from "../log";
 import { guardAgentKitAnalytics } from "./analyticsGuard";
 import { ADDRESS, WALLET_ID, type Call, type Chain, type TxReceipt, type Wallet } from "./types";
@@ -60,16 +61,92 @@ export interface WalletProviderLike {
   waitForTransactionReceipt(hash: Hex): Promise<ChainReceipt>;
 }
 
+/**
+ * How long one endpoint gets before the next one is tried.
+ *
+ * viem's default is 10 s, and with its default three retries that is four
+ * attempts against one unreachable host: 44 s measured, the whole decision
+ * phase spent waiting on a single endpoint that was never going to answer.
+ * Short enough here that walking all three costs less than one old attempt.
+ */
+export const RPC_TIMEOUT_MS = 5_000;
+
+/** Times the whole chain of endpoints is walked before the read gives up. */
+export const RPC_ATTEMPTS = 2;
+
+/** Base delay between attempts. viem doubles it per attempt. */
+export const RPC_RETRY_DELAY_MS = 200;
+
+/**
+ * Multicall3, at the same address on every chain that has it, including Base
+ * Sepolia. Its getEthBalance turns one balance read per wallet into a single
+ * eth_call for all of them.
+ *
+ * Chosen over JSON-RPC batching by measurement across all three fallback
+ * endpoints: drpc answers a batch of more than three with "Batch of more than
+ * 3 requests are not allowed on free plan" (code 31), and a round reads seven
+ * wallets. Multicall worked on all three and was faster on every one of them.
+ */
+const MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11" as const;
+const GET_ETH_BALANCE = parseAbi(["function getEthBalance(address addr) view returns (uint256)"]);
+
 export interface ViemChainConfig {
   /** Private key per wallet id. Never persisted, never logged. */
   keys: Record<string, Hex>;
-  /** Defaults to the chain's public endpoint, which is rate limited. */
-  rpcUrl?: string;
+  /**
+   * Endpoints to try in order. Defaults to the chain's public endpoint, which
+   * is rate limited.
+   */
+  rpcUrls?: string[];
   /** Held back for gas. Defaults to DEFAULT_GAS_RESERVE_WEI. */
   gasReserveWei?: bigint;
 }
 
 export type ProviderFactory = (walletId: string, privateKey: Hex, rpcUrl?: string) => WalletProviderLike;
+
+/** The slice of a viem public client this module uses, so tests can stub it. */
+export interface BalanceReader {
+  /** One entry per address, in order. null where the chain could not answer. */
+  readBalances(addresses: readonly string[]): Promise<Array<bigint | null>>;
+}
+
+/**
+ * Reads balances through every endpoint in turn.
+ *
+ * This exists because AgentKit will not. ViemWalletProvider builds its own
+ * public client in its constructor, `createPublicClient({ transport: rpcUrl ?
+ * http(rpcUrl) : http() })`, and getBalance goes through that. Nothing
+ * configured on the wallet client's transport reaches a balance read, so a
+ * fallback handed to AgentKit would be ignored. Reads come through here and
+ * AgentKit keeps owning signing and sending.
+ */
+export function createBalanceReader(rpcUrls: readonly string[] = DEFAULT_RPC_URLS): BalanceReader {
+  const urls = rpcUrls.length > 0 ? rpcUrls : DEFAULT_RPC_URLS;
+  const client = createPublicClient({
+    chain: baseSepolia,
+    // fallback walks the list on failure and, with a retry count of its own,
+    // walks it again with an exponential backoff between passes.
+    transport: fallback(
+      urls.map((url) => http(url, { timeout: RPC_TIMEOUT_MS })),
+      { retryCount: RPC_ATTEMPTS - 1, retryDelay: RPC_RETRY_DELAY_MS },
+    ),
+  }) as PublicClient;
+
+  return {
+    async readBalances(addresses) {
+      if (addresses.length === 0) return [];
+      // allowFailure, so one address the chain will not answer for costs that
+      // agent its round rather than costing every agent theirs. A transport
+      // that is down for all of them still throws, which is the case that
+      // has to stop the round.
+      const results = await client.multicall({
+        contracts: addresses.map((address) => ({ address: MULTICALL3, abi: GET_ETH_BALANCE, functionName: "getEthBalance" as const, args: [address as Hex] })),
+        allowFailure: true,
+      });
+      return results.map((r) => (r.status === "success" ? (r.result as bigint) : null));
+    },
+  };
+}
 
 /** The real factory: a viem wallet client wrapped in AgentKit's provider. */
 const defaultFactory: ProviderFactory = (_walletId, privateKey, rpcUrl) => {
@@ -94,12 +171,17 @@ export class ViemChain implements Chain {
    */
   readonly gasReserveWei: bigint;
   private readonly providers = new Map<string, WalletProviderLike>();
+  private readonly reader: BalanceReader;
+  private readonly rpcUrls: readonly string[];
 
   constructor(
     private readonly config: ViemChainConfig,
     private readonly factory: ProviderFactory = defaultFactory,
+    reader?: BalanceReader,
   ) {
     this.gasReserveWei = config.gasReserveWei ?? DEFAULT_GAS_RESERVE_WEI;
+    this.rpcUrls = config.rpcUrls && config.rpcUrls.length > 0 ? config.rpcUrls : DEFAULT_RPC_URLS;
+    this.reader = reader ?? createBalanceReader(this.rpcUrls);
     // AgentKit's analytics call on provider construction is an unawaited,
     // uncaught promise. Without this, an unreachable analytics host takes the
     // process down. See analyticsGuard.ts.
@@ -125,7 +207,17 @@ export class ViemChain implements Chain {
     return {
       id,
       address: walletAddress,
-      getBalance: () => provider.getBalance(),
+      // Through the fallback reader, not through the provider. AgentKit's own
+      // public client has one endpoint, no fallback and viem's ten second
+      // default, which is exactly what took the decision phase down.
+      getBalance: async () => {
+        const balance = (await this.getBalances([walletAddress]))[walletAddress];
+        // Never zero as a stand in for unread. A balance nobody read is not a
+        // balance, and a caller that treats it as one excludes or admits an
+        // agent on a number that came from nowhere.
+        if (balance === undefined) throw new Error(`could not read the balance of ${walletAddress}`);
+        return balance;
+      },
       send: async (calls: readonly Call[], idempotencyKey: string): Promise<TxReceipt> => {
         for (const call of calls) {
           if (!ADDRESS.test(call.to)) throw new RangeError(`transfer destination must be an address, got ${call.to}`);
@@ -148,6 +240,27 @@ export class ViemChain implements Chain {
     };
   }
 
+  /**
+   * Every balance in one request.
+   *
+   * A round reads seven wallets and used to make seven round trips, one after
+   * another. They are one eth_call now, which is one thing that can time out
+   * instead of seven.
+   */
+  async getBalances(addresses: readonly string[]): Promise<Record<string, bigint>> {
+    for (const address of addresses) {
+      if (!ADDRESS.test(address)) throw new RangeError(`balance lookup needs an address, got ${address}`);
+    }
+    const unique = [...new Set(addresses)];
+    const balances = await this.reader.readBalances(unique);
+    const out: Record<string, bigint> = {};
+    unique.forEach((address, i) => {
+      const balance = balances[i];
+      if (balance !== null && balance !== undefined) out[address] = balance;
+    });
+    return out;
+  }
+
   private providerFor(id: string): WalletProviderLike {
     const existing = this.providers.get(id);
     if (existing) return existing;
@@ -155,7 +268,7 @@ export class ViemChain implements Chain {
     if (!key) {
       throw new Error(`wallet ${id} has no private key: set ${`SERVPIT_KEY_${id.toUpperCase()}`} in .env.local`);
     }
-    const provider = this.factory(id, key, this.config.rpcUrl);
+    const provider = this.factory(id, key, this.rpcUrls[0]);
     this.providers.set(id, provider);
     return provider;
   }

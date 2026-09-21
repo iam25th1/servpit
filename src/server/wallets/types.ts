@@ -46,6 +46,15 @@ export interface Chain {
   readonly gasReserveWei: bigint;
   /** Opens the wallet for an id. With an address, loads that wallet; without, creates one. */
   open(id: string, address?: string): Promise<Wallet>;
+  /**
+   * Every balance in as few requests as the chain allows.
+   *
+   * A round reads seven wallets. One at a time that is seven round trips and
+   * seven chances to time out; the real chain does it in a single eth_call.
+   * Keyed by address, and an address the chain could not answer for is absent
+   * rather than zero: a missing balance is not a balance of nothing.
+   */
+  getBalances(addresses: readonly string[]): Promise<Record<string, bigint>>;
 }
 
 export const ADDRESS = /^0x[0-9a-fA-F]{40}$/;

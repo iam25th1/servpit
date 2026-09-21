@@ -12,6 +12,8 @@ import { WalletRegistry } from "../wallets/registry";
 import { RoundStore } from "./store";
 import { RolloverStore } from "./rollover";
 import { planRound, runRound } from "./flow";
+import { UNREACHABLE_REASON } from "./plan";
+import { ChainUnreachableError } from "../errors";
 
 let dir: string;
 afterEach(() => {
@@ -245,5 +247,81 @@ describe("the pot only ever pays out what it is holding", () => {
     expect(ctx.rollover.carriedWei).toBe(first.prize.nextRolloverWei);
     expect(chain.applied).toBe(applied);
     expect(again.reconciliation.ok).toBe(true);
+  });
+});
+
+describe("an unreachable wallet costs one agent its round, not the whole round", () => {
+  /** A wallet whose balance read always fails, standing in for a dead endpoint. */
+  const breakWallet = (ctx: { wallets: { agents: Map<string, { address: string; getBalance: () => Promise<bigint>; send: unknown }> } }, agentId: string): void => {
+    const wallet = ctx.wallets.agents.get(agentId)!;
+    ctx.wallets.agents.set(agentId, { ...wallet, getBalance: async () => { throw new Error("The request took too long to respond. URL: https://rpc.example/key"); } } as never);
+  };
+
+  it("keeps going with the rest when one endpoint cannot answer for one wallet", async () => {
+    const { ctx } = await harness({ transport: enterTransport() });
+    // The chain answers for everyone except atlas, which is what multicall
+    // with allowFailure produces when one address comes back unsuccessful.
+    const atlas = ctx.wallets.agents.get("atlas")!.address;
+    const chain = ctx.chain;
+    const partial = {
+      ...chain,
+      getBalances: async (addresses: readonly string[]) => {
+        const all = await chain.getBalances(addresses);
+        delete all[atlas];
+        return all;
+      },
+    };
+    breakWallet(ctx as never, "atlas");
+    const plan = await planRound({ ...ctx, chain: partial as never }, "onedead");
+
+    expect(plan.decisions).toHaveLength(6);
+    const atlasDecision = plan.decisions.find((d) => d.agentId === "atlas")!;
+    expect(atlasDecision.decision.enter).toBe(false);
+    expect(atlasDecision.decision.reason).toBe(UNREACHABLE_REASON);
+    expect(plan.entering.map((e) => e.agentId)).not.toContain("atlas");
+    // The other five still decided, and the round still has a full field.
+    expect(plan.decisions.filter((d) => d.source === "serv")).toHaveLength(5);
+    expect(plan.entrants).toHaveLength(24);
+  });
+
+  it("reports an unreachable agent straight away rather than leaving it thinking", async () => {
+    const { ctx } = await harness({ transport: enterTransport() });
+    breakWallet(ctx as never, "comet");
+    const seen: string[] = [];
+    await planRound(ctx, "reported", (d) => seen.push(d.agentId));
+    expect(seen[0]).toBe("comet");
+    expect(seen).toHaveLength(6);
+  });
+
+  it("keeps the panel in roster order however the failures landed", async () => {
+    const { ctx } = await harness({ transport: enterTransport() });
+    breakWallet(ctx as never, "delta");
+    const plan = await planRound(ctx, "order");
+    expect(plan.decisions.map((d) => d.agentId)).toEqual(["atlas", "blaze", "comet", "delta", "ember", "flint"]);
+  });
+
+  it("stops the round only when every endpoint is dead", async () => {
+    const { ctx } = await harness({ transport: enterTransport() });
+    const dead = { ...ctx.chain, getBalances: async () => { throw new Error("The request took too long to respond. URL: https://rpc.example/key"); } };
+    await expect(planRound({ ...ctx, chain: dead as never }, "alldead")).rejects.toThrow(ChainUnreachableError);
+  });
+
+  it("stops the round when the chain answers for nobody", async () => {
+    // A read that succeeds but returns nothing is the same as no read at all.
+    const { ctx } = await harness({ transport: enterTransport() });
+    const empty = { ...ctx.chain, getBalances: async () => ({}) };
+    for (const profile of ["atlas", "blaze", "comet", "delta", "ember", "flint"]) breakWallet(ctx as never, profile);
+    await expect(planRound({ ...ctx, chain: empty as never }, "nobody")).rejects.toThrow(/no agent balance could be read/);
+  });
+
+  it("never enters an agent on a balance nobody read", async () => {
+    const { ctx } = await harness({ transport: enterTransport() });
+    breakWallet(ctx as never, "blaze");
+    const plan = await planRound(ctx, "unverified");
+    const blaze = plan.decisions.find((d) => d.agentId === "blaze")!;
+    expect(blaze.balanceWei).toBe(0n);
+    expect(blaze.decision.stake).toBe(0);
+    expect(plan.snapshots.map((s) => s.profile.id)).not.toContain("blaze");
+    expect(plan.entering.map((e) => e.agentId)).not.toContain("blaze");
   });
 });
