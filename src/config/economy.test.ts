@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assertBankShareIsPayable, bankShareOnHouseWin, DEFAULT_BANK_SHARE_ON_HOUSE_WIN } from "./economy";
+import { assertBankShareIsPayable, bankShareOnHouseWin, DEFAULT_BANK_SHARE_ON_HOUSE_WIN, economyConfig } from "./economy";
 
 /** ProcessEnv insists on NODE_ENV, and these cases are about one variable. */
 const env = (vars: Record<string, string> = {}): NodeJS.ProcessEnv => ({ NODE_ENV: "test", ...vars });
@@ -24,5 +24,31 @@ describe("bank share", () => {
     expect(() => assertBankShareIsPayable(false, env())).not.toThrow();
     expect(() => assertBankShareIsPayable(false, env({ SERVPIT_BANK_SHARE_ON_HOUSE_WIN: "0" }))).not.toThrow();
     expect(() => assertBankShareIsPayable(true, env({ SERVPIT_BANK_SHARE_ON_HOUSE_WIN: "0.5" }))).not.toThrow();
+  });
+});
+
+describe("credit terms", () => {
+  it("scales every bound with the stake, so a stake change does not leave a stale number behind", () => {
+    const small = economyConfig(10n);
+    const large = economyConfig(1_000n);
+    expect(small.minLoanWei).toBe(10n);
+    expect(small.maxPrincipalWei).toBe(50n);
+    expect(small.debtCeilingWei).toBe(80n);
+    expect(large.maxPrincipalWei).toBe(5_000n);
+    expect(large.debtCeilingWei).toBe(8_000n);
+    expect(large.stakeWei).toBe(1_000n);
+  });
+
+  it("leaves a replacement agent clean by default", () => {
+    expect(economyConfig(10n).replacementDebtWei).toBe(0n);
+  });
+
+  it("takes overrides, which is what the simulator sweeps", () => {
+    expect(economyConfig(10n, { interestBps: 0 }).interestBps).toBe(0);
+  });
+
+  it("refuses a stake that is not a positive bigint", () => {
+    expect(() => economyConfig(0n)).toThrow(/positive bigint/);
+    expect(() => economyConfig(10 as unknown as bigint)).toThrow(/positive bigint/);
   });
 });

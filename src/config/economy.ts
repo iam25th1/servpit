@@ -16,6 +16,8 @@
 // over from rounds nobody real won. The pot can always pay it, because the
 // pot is holding it.
 
+import type { EconomyConfig } from "@/economy/rules";
+
 /**
  * Share of an unclaimed pot the bank takes when a house bot wins.
  *
@@ -51,4 +53,43 @@ export function assertBankShareIsPayable(hasBankWallet: boolean, env: NodeJS.Pro
         "Set it to 0 until a bank wallet exists, or add one.",
     );
   }
+}
+
+/**
+ * Credit terms, expressed in stakes rather than absolute amounts.
+ *
+ * A stake is what a seat costs, so everything here reads as "how many rounds
+ * of play". Absolute numbers would go stale the moment the stake moved, and
+ * the stake is derived from what a wallet is funded with.
+ *
+ * These are starting points. npm run sim:economy measures what they do over
+ * hundreds of rounds.
+ */
+export const CREDIT_TERMS = {
+  /** Smallest loan worth writing: one seat. */
+  minLoanStakes: 1n,
+  /** Most principal one agent may owe: five seats. */
+  maxPrincipalStakes: 5n,
+  /** A single loan may take a quarter of the treasury. */
+  maxTreasuryShareBps: 2_500,
+  /** Simple interest per round on outstanding principal. */
+  interestBps: 500,
+  /** Total debt above eight seats wrecks the agent. */
+  debtCeilingStakes: 8n,
+  /** Replacement agents are born clean until the simulator says otherwise. */
+  replacementDebtStakes: 0n,
+} as const;
+
+export function economyConfig(stakeWei: bigint, overrides: Partial<EconomyConfig> = {}): EconomyConfig {
+  if (typeof stakeWei !== "bigint" || stakeWei <= 0n) throw new RangeError(`stakeWei must be a positive bigint, got ${String(stakeWei)}`);
+  return {
+    minLoanWei: CREDIT_TERMS.minLoanStakes * stakeWei,
+    maxPrincipalWei: CREDIT_TERMS.maxPrincipalStakes * stakeWei,
+    maxTreasuryShareBps: CREDIT_TERMS.maxTreasuryShareBps,
+    interestBps: CREDIT_TERMS.interestBps,
+    debtCeilingWei: CREDIT_TERMS.debtCeilingStakes * stakeWei,
+    stakeWei,
+    replacementDebtWei: CREDIT_TERMS.replacementDebtStakes * stakeWei,
+    ...overrides,
+  };
 }
