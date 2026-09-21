@@ -118,21 +118,42 @@ const SYSTEM = [
   "Taking it puts those chips at risk: one participant receives the whole pool and the rest receive nothing.",
   "Judge it on your chips, the size of the pool, how many are taking part, and how your recent periods went, under the posture you are given.",
   "Reply with a single JSON object with exactly the keys enter, stake and reason.",
-  "stake is the cost in chips, exactly the stated cost when you take it and 0 when you do not.",
-  "Never propose more chips than you hold.",
+  "stake is the number of chips you commit, inside the range you are given, and 0 when you do not take it.",
+  "If a lender is offered, chips above what you hold are borrowed at interest and must be paid back. Never name a loan amount: only your stake.",
   "reason is ONE short sentence, under twenty words, in your own voice, as if speaking aloud.",
   "Never write the words minor units, wei, allocation, posture or working balance.",
   "Never write a number longer than four digits.",
   "Examples of the register, not to be copied: Lost three straight, sitting this one out. Plenty in the tank, I am in. Everyone is cautious, so I am going big.",
 ].join(" ");
 
+/**
+ * The extra lines an agent gets when there is a lender in the pit.
+ *
+ * It is told its debt and the range it may commit, and that anything above
+ * what it holds is borrowed. It is never asked for a loan amount: the
+ * shortfall is arithmetic on figures read from the chain, and the bank
+ * decides it separately.
+ */
+function leverageLines(snapshot: AgentSnapshot, round: RoundContext): string[] {
+  const seat = toChips(round.stakeWei);
+  const ceiling = seat * Math.max(1, snapshot.maxStakeMultiple ?? 1);
+  const debt = toChips(snapshot.debtWei ?? 0n);
+  return [
+    `You may commit anything from ${seat} to ${ceiling} chips.`,
+    `Anything above what you hold is borrowed from the lender, at interest, and you must pay it back.`,
+    debt > 0 ? `You already owe the lender ${debt} chips.` : "You owe the lender nothing.",
+  ];
+}
+
 export function buildPrompt(snapshot: AgentSnapshot, round: RoundContext): { system: string; user: string } {
+  const levered = Math.max(1, snapshot.maxStakeMultiple ?? 1) > 1;
   const lines = [
     `You are ${snapshot.profile.name}.`,
     `Posture: ${snapshot.profile.descriptor}.`,
     `Voice: ${snapshot.profile.voice}`,
     `You hold ${toChips(snapshot.balanceWei)} chips.`,
-    `This period costs ${toChips(round.stakeWei)} chips.`,
+    levered ? `A seat costs ${toChips(round.stakeWei)} chips.` : `This period costs ${toChips(round.stakeWei)} chips.`,
+    ...(levered ? leverageLines(snapshot, round) : []),
     `The pool is ${toChips(round.poolWei)} chips if everyone takes part, shared between ${round.participants} of you.`,
   ];
   if (snapshot.recentOutcomes.length > 0) {

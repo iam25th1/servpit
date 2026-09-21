@@ -42,6 +42,14 @@ export interface TransferRecord {
    * fees were tracked, and zero on a chain that does not charge.
    */
   feeWei?: bigint;
+  /**
+   * Interest per round on a loan, in basis points. Only on a loan record.
+   *
+   * The debt itself is the loan records: principal is the amount, and this is
+   * what it costs to carry. Accruing and collecting it comes later, and this
+   * is what that will read.
+   */
+  rateBps?: number;
   error?: string;
   createdAt: string;
   updatedAt: string;
@@ -91,6 +99,27 @@ export class TransferLedger {
 
   forRound(roundId: string): TransferRecord[] {
     return [...this.records.values()].filter((r) => r.roundId === roundId).map((r) => ({ ...r }));
+  }
+
+  /**
+   * What an agent owes in principal, across every loan the bank has settled
+   * to it.
+   *
+   * Read off the transfers themselves rather than a second record that could
+   * drift from them. Interest and repayment are not in this phase, so this is
+   * principal advanced and nothing has yet reduced it.
+   */
+  principalOwed(agentId: string): bigint {
+    let owed = 0n;
+    for (const r of this.records.values()) {
+      if (r.kind === "loan" && r.agentId === agentId && r.status === "complete") owed += r.amountWei;
+    }
+    return owed;
+  }
+
+  /** Every loan settled to an agent, oldest first. */
+  loansFor(agentId: string): TransferRecord[] {
+    return [...this.records.values()].filter((r) => r.kind === "loan" && r.agentId === agentId).map((r) => ({ ...r }));
   }
 
   async transferOnce(input: TransferInput): Promise<TransferRecord> {

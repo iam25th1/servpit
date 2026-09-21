@@ -45,6 +45,29 @@ export interface EnteringAgent {
   agentId: string;
   entrantId: string;
   stakeWei: bigint;
+  /** Borrowed from the bank to reach that stake. Absent when nothing was. */
+  loanWei?: bigint;
+  /** Interest per round on that loan, in basis points. */
+  rateBps?: number;
+}
+
+/**
+ * One loan the bank agreed to, as part of the plan the player was shown.
+ *
+ * Persisted like every other decision, so the settle path disburses what was
+ * displayed and cannot work out its own answer.
+ */
+export interface PlannedLoan {
+  agentId: string;
+  name: string;
+  address: string;
+  principalWei: bigint;
+  rateBps: number;
+  reason: string;
+  source: "serv" | "heuristic";
+  rejection?: string;
+  model?: string;
+  latencyMs?: number;
 }
 
 export interface RoundPlan {
@@ -59,6 +82,10 @@ export interface RoundPlan {
   servCalls: number;
   guardRefusals: number;
   rejections: Array<{ agentId: string; reason: string }>;
+  /** Loans the bank agreed to this round. Empty when the bank is off. */
+  loans: PlannedLoan[];
+  /** Requests the bank turned down, for the panel and the log. */
+  refusals: Array<{ agentId: string; name: string; reason: string }>;
 }
 
 export interface RoundRun {

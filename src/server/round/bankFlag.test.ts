@@ -131,3 +131,79 @@ describe("with the bank on", () => {
     for (const e of plan.entering) expect(e.stakeWei).toBe(stakeWeiFrom());
   });
 });
+
+describe("the bank's own decision", () => {
+  /** Stakes three seats, which needs borrowing on a one seat balance. */
+  const greedy = (stakeChips: number) => greedyTransport(stakeChips);
+
+  it("asks the bank only for the shortfall, which the agent never states", async () => {
+    process.env.SERVPIT_BANK_ENABLED = "true";
+    const seat = stakeWeiFrom();
+    dir = mkdtempSync(join(tmpdir(), "servpit-bankflag-"));
+    // One seat of balance, so three seats needs two borrowed.
+    const chain = new FakeChain({ initialBalanceWei: seat });
+    const wallets = await openWallets(chain, new WalletRegistry(join(dir, "wallets.json")), { bank: true });
+    chain.fund(wallets.bank!.address, seat * 100n);
+    const ctx = {
+      chain,
+      wallets,
+      ledger: new TransferLedger(join(dir, "ledger.json")),
+      store: new RoundStore(join(dir, "rounds.json")),
+      bankroll: new BankrollCache({ ttlMs: 0, now: () => 0 }),
+      meter: new CostMeter(DEFAULT_SERV.pricing),
+      rollover: new RolloverStore(join(dir, "rollover.json")),
+      serv: new ServClient({ ...DEFAULT_SERV, backoffMs: 0 }, greedy(toChips(seat) * 3)),
+      entrants: 24,
+    };
+
+    const plan = await planRound(ctx, "shortfall");
+    expect(plan.loans.length).toBeGreaterThan(0);
+    for (const loan of plan.loans) {
+      // Two seats short of three, and never more than that.
+      expect(loan.principalWei).toBe(seat * 2n);
+      expect(loan.rateBps).toBeGreaterThan(0);
+    }
+    for (const e of plan.entering) {
+      expect(e.stakeWei).toBe(seat * 3n);
+      expect(e.loanWei).toBe(seat * 2n);
+    }
+  });
+
+  it("never lends more than the bank actually holds", async () => {
+    process.env.SERVPIT_BANK_ENABLED = "true";
+    const seat = stakeWeiFrom();
+    dir = mkdtempSync(join(tmpdir(), "servpit-bankflag-"));
+    const chain = new FakeChain({ initialBalanceWei: seat });
+    const wallets = await openWallets(chain, new WalletRegistry(join(dir, "wallets.json")), { bank: true });
+    // Every wallet opens on one seat, the bank included, so it cannot cover
+    // even one two seat shortfall let alone several.
+    const ctx = {
+      chain,
+      wallets,
+      ledger: new TransferLedger(join(dir, "ledger.json")),
+      store: new RoundStore(join(dir, "rounds.json")),
+      bankroll: new BankrollCache({ ttlMs: 0, now: () => 0 }),
+      meter: new CostMeter(DEFAULT_SERV.pricing),
+      rollover: new RolloverStore(join(dir, "rollover.json")),
+      serv: new ServClient({ ...DEFAULT_SERV, backoffMs: 0 }, greedy(toChips(seat) * 3)),
+      entrants: 24,
+    };
+
+    const treasuryWei = chain.balanceOf(wallets.bank!.address);
+    const plan = await planRound(ctx, "thin");
+    const lent = plan.loans.reduce((sum, l) => sum + l.principalWei, 0n);
+    expect(lent).toBeLessThanOrEqual(treasuryWei);
+    // And somebody was turned away, which is the point of the bound.
+    expect(plan.refusals.length).toBeGreaterThan(0);
+  });
+
+  it("asks nothing of a bank that is not there", async () => {
+    process.env.SERVPIT_BANK_ENABLED = "true";
+    const { ctx } = await harness(greedy(toChips(stakeWeiFrom()) * 3));
+    // No bank wallet was opened, so nothing is borrowed and agents play for
+    // what they hold.
+    const plan = await planRound(ctx, "nobank");
+    expect(plan.loans).toEqual([]);
+    for (const e of plan.entering) expect(e.loanWei).toBeUndefined();
+  });
+});

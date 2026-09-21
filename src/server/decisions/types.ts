@@ -24,6 +24,8 @@ export interface AgentSnapshot {
    * be borrowed from somewhere.
    */
   maxStakeMultiple?: number;
+  /** What this agent already owes the lender, in wei. Absent when nothing. */
+  debtWei?: bigint;
   recentOutcomes: RoundOutcome[];
 }
 

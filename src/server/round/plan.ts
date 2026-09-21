@@ -5,12 +5,14 @@
 // enforces by walking the import graph.
 
 import { NAMED_AGENTS } from "@/config/agents";
-import { bankEnabled, maxStakeMultiple } from "@/config/economy";
+import { bankEnabled, bankRateBounds, maxLoanStakes, maxStakeMultiple, CREDIT_TERMS } from "@/config/economy";
 import { clampStake } from "@/economy/prize";
 import { stakeWeiFrom, toChips } from "@/config/stake";
 import { toWei } from "../money";
+import type { PlannedLoan } from "./types";
 import type { Entrant } from "@/engine/resolveRound";
 import { decideForAgents } from "../decisions/decide";
+import { decideLoan, lendableChips, type BankDecision, type LoanBounds, type LoanRequest } from "../decisions/bank";
 import type { AgentDecision, AgentSnapshot, RoundContext } from "../decisions/types";
 import { ChainUnreachableError } from "../errors";
 import { log, redact } from "../log";
@@ -28,7 +30,12 @@ const SEED = /^[A-Za-z0-9_-]{1,64}$/;
  */
 export const UNREACHABLE_REASON = "Couldn't reach its wallet, sitting this one out";
 
-export async function planRound(ctx: FlowContext, seed: string, onDecided?: (decision: AgentDecision) => void): Promise<RoundPlan> {
+export async function planRound(
+  ctx: FlowContext,
+  seed: string,
+  onDecided?: (decision: AgentDecision) => void,
+  onLoan?: (decision: BankDecision, name: string) => void,
+): Promise<RoundPlan> {
   if (!SEED.test(seed)) throw new RangeError(`seed must match ${SEED}`);
   // A share of a funded wallet rather than a flat amount, so an agent can
   // actually run low and its reasoning has something to weigh.
@@ -79,7 +86,15 @@ export async function planRound(ctx: FlowContext, seed: string, onDecided?: (dec
       sitOut(e instanceof Error ? e.message : String(e));
       continue;
     }
-    snapshots.push({ profile, address: wallet.address, balanceWei, stakeWei, maxStakeMultiple: stakeMultiple, recentOutcomes: ctx.store.outcomesFor(profile.id) });
+    snapshots.push({
+      profile,
+      address: wallet.address,
+      balanceWei,
+      stakeWei,
+      maxStakeMultiple: stakeMultiple,
+      debtWei: ctx.ledger.principalOwed(profile.id),
+      recentOutcomes: ctx.store.outcomesFor(profile.id),
+    });
   }
 
   // Reported straight away, and before the round can stop. An agent whose
@@ -100,6 +115,15 @@ export async function planRound(ctx: FlowContext, seed: string, onDecided?: (dec
   // enter. Gas is no longer sponsored, so the bar is the stake plus whatever
   // the chain says to keep back; an agent that can cover only the stake would
   // revert part way through the round.
+  // What the bank is actually holding, read from the chain. Every bound on
+  // what it lends is measured against this and never against anything a model
+  // said about it.
+  let treasuryWei = ctx.wallets.bank && stakeMultiple > 1 ? await ctx.bankroll.get(ctx.wallets.bank) : 0n;
+  const rates = bankRateBounds();
+  const loans: PlannedLoan[] = [];
+  const refusals: Array<{ agentId: string; name: string; reason: string }> = [];
+  const borrowed = new Map<string, { principalWei: bigint; rateBps: number }>();
+
   const decisions: AgentDecision[] = [...unreachable];
   const entering: EnteringAgent[] = [];
   for (const decision of run.decisions) {
@@ -108,14 +132,78 @@ export async function planRound(ctx: FlowContext, seed: string, onDecided?: (dec
     // validator, because the number that moves money is derived once, from
     // the round's own stake, and never taken on trust from an answer.
     const chosenWei = stakeMultiple > 1 ? clampStake(stakeWei, stakeMultiple, toWei(decision.decision.stake)) : stakeWei;
+
+    // The shortfall is arithmetic on figures read from the chain. The agent
+    // never states a loan amount and is never asked for one.
+    let lentWei = 0n;
+    if (decision.decision.enter && stakeMultiple > 1 && ctx.wallets.bank) {
+      const ownWei = snapshot.balanceWei > ctx.chain.gasReserveWei ? snapshot.balanceWei - ctx.chain.gasReserveWei : 0n;
+      const shortfallWei = chosenWei > ownWei ? chosenWei - ownWei : 0n;
+      if (shortfallWei > 0n) {
+        const bounds: LoanBounds = {
+          treasuryChips: toChips(treasuryWei),
+          maxLoanChips: toChips(maxLoanStakes() * stakeWei),
+          debtCeilingChips: toChips(CREDIT_TERMS.debtCeilingStakes * stakeWei),
+          minRateBps: rates.minBps,
+          maxRateBps: rates.maxBps,
+        };
+        const request: LoanRequest = {
+          record: {
+            agentId: snapshot.profile.id,
+            name: snapshot.profile.name,
+            balanceChips: toChips(snapshot.balanceWei),
+            debtChips: toChips(snapshot.debtWei ?? 0n),
+            roundsPlayed: snapshot.recentOutcomes.length,
+            wins: snapshot.recentOutcomes.filter((o) => o.entered && o.netWei > 0n).length,
+            repaidChips: 0,
+          },
+          stakeChips: toChips(chosenWei),
+          shortfallChips: toChips(shortfallWei),
+        };
+        // A loan that would breach the debt ceiling on its own, or that the
+        // treasury cannot cover, is already zero here and the bank is not
+        // asked to pretend otherwise.
+        if (lendableChips(request, bounds) <= 0) {
+          refusals.push({ agentId: snapshot.profile.id, name: snapshot.profile.name, reason: "nothing left to lend against that record" });
+        } else {
+          const answer = await decideLoan({ client: ctx.serv, meter: ctx.meter }, request, bounds);
+          onLoan?.(answer, snapshot.profile.name);
+          if (answer.decision.approve && answer.decision.amountChips > 0) {
+            lentWei = toWei(answer.decision.amountChips);
+            treasuryWei -= lentWei;
+            borrowed.set(snapshot.profile.id, { principalWei: lentWei, rateBps: answer.decision.rateBps });
+            loans.push({
+              agentId: snapshot.profile.id,
+              name: snapshot.profile.name,
+              address: snapshot.address,
+              principalWei: lentWei,
+              rateBps: answer.decision.rateBps,
+              reason: answer.decision.reason,
+              source: answer.source,
+              rejection: answer.rejection,
+              model: answer.model,
+              latencyMs: answer.latencyMs,
+            });
+          } else {
+            refusals.push({ agentId: snapshot.profile.id, name: snapshot.profile.name, reason: answer.decision.reason });
+          }
+        }
+      }
+    }
+
+    // An agent enters at its balance plus whatever was approved, if that
+    // reaches a seat. Otherwise it sits out. There is no second call.
+    const fundedWei = snapshot.balanceWei + lentWei;
     const required = chosenWei + ctx.chain.gasReserveWei;
-    if (decision.decision.enter && snapshot.balanceWei < required) {
+    const affordable = fundedWei >= required ? chosenWei : clampStake(stakeWei, stakeMultiple, fundedWei > ctx.chain.gasReserveWei ? fundedWei - ctx.chain.gasReserveWei : 0n);
+    const finalWei = stakeMultiple > 1 ? affordable : chosenWei;
+    if (decision.decision.enter && fundedWei < finalWei + ctx.chain.gasReserveWei) {
       // Plain words and chips: this line is shown to the player, not only
       // logged. "short on gas" and "short on stake" stay as the two cases so
       // an operator can still tell them apart at a glance.
-      const shortfall = ctx.chain.gasReserveWei > 0n && snapshot.balanceWei >= chosenWei ? "gas" : "stake";
-      const held = toChips(snapshot.balanceWei);
-      const seat = toChips(chosenWei);
+      const shortfall = ctx.chain.gasReserveWei > 0n && fundedWei >= finalWei ? "gas" : "stake";
+      const held = toChips(fundedWei);
+      const seat = toChips(finalWei);
       const reason =
         shortfall === "gas"
           ? `has ${held} chips but not enough left over for fees, so it is short on gas`
@@ -125,7 +213,10 @@ export async function planRound(ctx: FlowContext, seed: string, onDecided?: (dec
       continue;
     }
     decisions.push(decision);
-    if (decision.decision.enter) entering.push({ agentId: decision.agentId, entrantId: `agent-${decision.agentId}`, stakeWei: chosenWei });
+    if (decision.decision.enter) {
+      const loan = borrowed.get(decision.agentId);
+      entering.push({ agentId: decision.agentId, entrantId: `agent-${decision.agentId}`, stakeWei: finalWei, ...(loan ? { loanWei: loan.principalWei, rateBps: loan.rateBps } : {}) });
+    }
   }
 
   const botCount = Math.max(0, ctx.entrants - entering.length);
@@ -137,7 +228,7 @@ export async function planRound(ctx: FlowContext, seed: string, onDecided?: (dec
   const order = new Map(NAMED_AGENTS.map((p, i) => [p.id, i]));
   decisions.sort((a, b) => (order.get(a.agentId) ?? 0) - (order.get(b.agentId) ?? 0));
 
-  return { roundId, seed, stakeWei, decisions, snapshots, entering, bots, entrants, servCalls: run.servCalls, guardRefusals: run.guardRefusals, rejections: run.rejections };
+  return { roundId, seed, stakeWei, decisions, snapshots, entering, bots, entrants, servCalls: run.servCalls + loans.length + refusals.length, guardRefusals: run.guardRefusals, rejections: run.rejections, loans, refusals };
 }
 
 /** Told as each entry confirms on chain, so a caller can show it landing. */

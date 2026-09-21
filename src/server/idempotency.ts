@@ -7,7 +7,12 @@ import { createHash } from "node:crypto";
 
 const PART = /^[A-Za-z0-9_-]{1,64}$/;
 
-export type TransferKind = "entry" | "payout";
+/**
+ * loan is the bank paying out an approved advance, bank wallet to agent
+ * wallet. It is a transfer like any other and carries the same identity, so a
+ * retry of the same round and agent can never disburse twice.
+ */
+export type TransferKind = "entry" | "payout" | "loan";
 
 export function idempotencyKey(roundId: string, agentId: string, kind: TransferKind): string {
   for (const [name, value] of [["roundId", roundId], ["agentId", agentId], ["kind", kind]] as const) {

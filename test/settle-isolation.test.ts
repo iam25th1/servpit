@@ -20,6 +20,7 @@ const root = resolve(__dirname, "..");
  */
 const FORBIDDEN = [
   { module: "decisions/decide", why: "decides entries" },
+  { module: "decisions/bank", why: "decides loan approvals" },
   { module: "decisions/borrow", why: "decides loan requests" },
   { module: "decisions/lend", why: "decides loan approvals" },
   { module: "serv/client", why: "calls SERV" },
@@ -90,6 +91,16 @@ describe("the settle path cannot decide anything", () => {
     const planRoute = join(root, "src/app/api/round/plan/route.ts");
     const reachable = [...reachableFrom(planRoute)].map((f) => f.slice(root.length + 1));
     expect(reachable.some((f) => f.includes("decisions/decide"))).toBe(true);
+  });
+
+  it("reaches the bank's own decision from the plan route and not from the settle route", () => {
+    // The lender is a model call like any other, so the same wall applies to
+    // it. This fails if decisions/bank is ever moved somewhere the settle
+    // path can see, and it fails if the module is renamed out from under the
+    // forbidden list above.
+    const planRoute = join(root, "src/app/api/round/plan/route.ts");
+    expect([...reachableFrom(planRoute)].some((f) => f.includes("decisions/bank"))).toBe(true);
+    expect([...reachableFrom(entry)].some((f) => f.includes("decisions/bank"))).toBe(false);
   });
 
   it("names a plan id and refuses when it has none", () => {
