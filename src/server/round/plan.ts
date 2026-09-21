@@ -5,7 +5,10 @@
 // enforces by walking the import graph.
 
 import { NAMED_AGENTS } from "@/config/agents";
+import { bankEnabled, maxStakeMultiple } from "@/config/economy";
+import { clampStake } from "@/economy/prize";
 import { stakeWeiFrom, toChips } from "@/config/stake";
+import { toWei } from "../money";
 import type { Entrant } from "@/engine/resolveRound";
 import { decideForAgents } from "../decisions/decide";
 import type { AgentDecision, AgentSnapshot, RoundContext } from "../decisions/types";
@@ -30,6 +33,10 @@ export async function planRound(ctx: FlowContext, seed: string, onDecided?: (dec
   // A share of a funded wallet rather than a flat amount, so an agent can
   // actually run low and its reasoning has something to weigh.
   const stakeWei = stakeWeiFrom();
+  // One seat price and nothing to borrow with, unless the bank is on. With it
+  // off the multiple is one, every seat costs the same, and nothing below
+  // behaves any differently than it did before the bank existed.
+  const stakeMultiple = bankEnabled() ? maxStakeMultiple() : 1;
   const roundId = roundIdFor(seed, ctx.entrants);
 
   ctx.bankroll.invalidate();
@@ -72,7 +79,7 @@ export async function planRound(ctx: FlowContext, seed: string, onDecided?: (dec
       sitOut(e instanceof Error ? e.message : String(e));
       continue;
     }
-    snapshots.push({ profile, address: wallet.address, balanceWei, stakeWei, recentOutcomes: ctx.store.outcomesFor(profile.id) });
+    snapshots.push({ profile, address: wallet.address, balanceWei, stakeWei, maxStakeMultiple: stakeMultiple, recentOutcomes: ctx.store.outcomesFor(profile.id) });
   }
 
   // Reported straight away, and before the round can stop. An agent whose
@@ -93,18 +100,22 @@ export async function planRound(ctx: FlowContext, seed: string, onDecided?: (dec
   // enter. Gas is no longer sponsored, so the bar is the stake plus whatever
   // the chain says to keep back; an agent that can cover only the stake would
   // revert part way through the round.
-  const required = stakeWei + ctx.chain.gasReserveWei;
   const decisions: AgentDecision[] = [...unreachable];
   const entering: EnteringAgent[] = [];
   for (const decision of run.decisions) {
     const snapshot = snapshots.find((s) => s.profile.id === decision.agentId)!;
+    // What this agent actually puts up. Clamped here as well as in the
+    // validator, because the number that moves money is derived once, from
+    // the round's own stake, and never taken on trust from an answer.
+    const chosenWei = stakeMultiple > 1 ? clampStake(stakeWei, stakeMultiple, toWei(decision.decision.stake)) : stakeWei;
+    const required = chosenWei + ctx.chain.gasReserveWei;
     if (decision.decision.enter && snapshot.balanceWei < required) {
       // Plain words and chips: this line is shown to the player, not only
       // logged. "short on gas" and "short on stake" stay as the two cases so
       // an operator can still tell them apart at a glance.
-      const shortfall = ctx.chain.gasReserveWei > 0n && snapshot.balanceWei >= stakeWei ? "gas" : "stake";
+      const shortfall = ctx.chain.gasReserveWei > 0n && snapshot.balanceWei >= chosenWei ? "gas" : "stake";
       const held = toChips(snapshot.balanceWei);
-      const seat = toChips(stakeWei);
+      const seat = toChips(chosenWei);
       const reason =
         shortfall === "gas"
           ? `has ${held} chips but not enough left over for fees, so it is short on gas`
@@ -114,7 +125,7 @@ export async function planRound(ctx: FlowContext, seed: string, onDecided?: (dec
       continue;
     }
     decisions.push(decision);
-    if (decision.decision.enter) entering.push({ agentId: decision.agentId, entrantId: `agent-${decision.agentId}`, stakeWei });
+    if (decision.decision.enter) entering.push({ agentId: decision.agentId, entrantId: `agent-${decision.agentId}`, stakeWei: chosenWei });
   }
 
   const botCount = Math.max(0, ctx.entrants - entering.length);

@@ -16,9 +16,22 @@ import { log } from "../log";
 import { fromWei, sumWei } from "../money";
 import { reconcile } from "../reconcile";
 import { collectEntry, payWinner, type TransferOutcome } from "../transfers";
-import { splitPrize } from "./prize";
+import { splitPrize, type PrizeSplit } from "./prize";
+import { bankEnabled } from "@/config/economy";
+import { splitCappedPrize } from "@/economy/prize";
 import type { FlowContext, RoundPlan, RoundRun } from "./types";
 import { type StoredAgentRound } from "./store";
+
+/**
+ * The capped split in the shape reconciliation already speaks.
+ *
+ * Nothing goes to the bank out of a prize in this phase. The bank's share of
+ * an unclaimed pot is a separate lever and is still zero, so a house win
+ * rolls the whole prize over exactly as it does today.
+ */
+function cappedAsSplit(capped: ReturnType<typeof splitCappedPrize>): PrizeSplit {
+  return { poolWei: capped.poolWei, rakeWei: capped.rakeWei, payoutWei: capped.payoutWei, toBankWei: 0n, nextRolloverWei: capped.nextRolloverWei };
+}
 
 export interface RunProgress {
   onEntry?: (agentId: string, outcome: TransferOutcome) => void;
@@ -69,7 +82,16 @@ export async function runRound(ctx: FlowContext, plan: RoundPlan, progress: RunP
   // of a settled round inherits the same number it did the first time.
   const entriesWei = sumWei(entries.map((e) => e.amountWei));
   const rolloverInWei = ctx.rollover.inputFor(plan.roundId);
-  const prize = splitPrize({ entriesWei, rolloverWei: rolloverInWei, rakeBps: DEFAULT_ROUND.rakeBps, agentWon: Boolean(winnerAgent) });
+
+  // With the bank off every seat costs the same, so the whole prize goes to
+  // the winner and the two models agree. With it on, seats cost what each
+  // agent chose, and a winner takes the share of the prize its own stake
+  // earned against the biggest stake in the field. The rest rolls over,
+  // which is what stops a floor stake sweeping a pot bigger stakers built.
+  const highestStakeWei = plan.entering.reduce((most, e) => (e.stakeWei > most ? e.stakeWei : most), 0n);
+  const prize = bankEnabled()
+    ? cappedAsSplit(splitCappedPrize({ poolWei: entriesWei + rolloverInWei, rakeBps: DEFAULT_ROUND.rakeBps, winnerStakeWei: winnerAgent ? winnerAgent.stakeWei : null, highestStakeWei }))
+    : splitPrize({ entriesWei, rolloverWei: rolloverInWei, rakeBps: DEFAULT_ROUND.rakeBps, agentWon: Boolean(winnerAgent) });
   const prizeWei = prize.payoutWei;
 
   let payout: TransferOutcome | null = null;

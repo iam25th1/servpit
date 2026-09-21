@@ -611,6 +611,14 @@ wallet now exists and can be funded, but no round grants a loan yet.
 `SERVPIT_BANK_SHARE_ON_HOUSE_WIN` is 0 and the server refuses to start if it is set above zero
 with nowhere to send the share.
 
+**Variable stakes and leverage exist in the simulator only.** An agent can choose a stake
+between the base and `SERVPIT_MAX_STAKE_MULTIPLE` times it, borrow the difference when it feels
+confident rather than only when it is broke, and a winner takes the share of the prize its
+stake earned against the biggest stake in the field. The six agents have different appetites
+there: Blaze reaches every round and is wrecked most, Atlas never borrows and ends flat. The
+running game still pays one fixed stake per seat and an uncapped prize. None of that model has
+touched the settle path.
+
 **The operator pays for the seats, about 54 chips per 100 rounds.** That is roughly half a
 fresh bankroll, spent replacing agents that wrecked. The bank does not cover it and is not
 expected to: over 2000 rounds at the shipped terms it ends on 300 of its opening 500, earning

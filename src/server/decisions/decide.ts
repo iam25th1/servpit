@@ -181,15 +181,29 @@ export function validateDecision(content: string, snapshot: AgentSnapshot): Vali
   // from this response.
   const balanceChips = toChips(snapshot.balanceWei);
   const roundChips = toChips(snapshot.stakeWei);
-  if (stake > balanceChips) {
-    return { ok: false, reason: `stake ${stake} is more than the ${balanceChips} chips this wallet holds` };
+  // How far above the seat price this agent may go. One, the fixed stake,
+  // unless the bank is on and there is a lender to cover the difference.
+  const ceilingChips = roundChips * Math.max(1, snapshot.maxStakeMultiple ?? 1);
+
+  if (!enter) {
+    if (stake !== 0) return { ok: false, reason: "stake must be 0 when not entering" };
+    return { ok: true, decision: { enter, stake, reason: reason.trim().slice(0, MAX_REASON) } };
   }
-  if (enter) {
+
+  if (ceilingChips === roundChips) {
+    // No bank, so there is one seat price and nothing to borrow with.
     if (stake !== roundChips) return { ok: false, reason: `stake ${stake} is not this round's ${roundChips} chips` };
+    if (stake > balanceChips) return { ok: false, reason: `stake ${stake} is more than the ${balanceChips} chips this wallet holds` };
     if (snapshot.balanceWei < snapshot.stakeWei) return { ok: false, reason: `this wallet cannot cover the ${roundChips} chips a seat costs` };
-  } else if (stake !== 0) {
-    return { ok: false, reason: "stake must be 0 when not entering" };
+    return { ok: true, decision: { enter, stake, reason: reason.trim().slice(0, MAX_REASON) } };
   }
+
+  // The bank is on, so a stake above the balance is a borrowing request and
+  // not a lie. The bound that matters is the ceiling, and whether the bank
+  // will cover the difference is decided elsewhere, against its real
+  // treasury, never here and never by the model.
+  if (stake < roundChips) return { ok: false, reason: `stake ${stake} is below the ${roundChips} chips a seat costs` };
+  if (stake > ceilingChips) return { ok: false, reason: `stake ${stake} is above the ${ceilingChips} chip ceiling` };
 
   return { ok: true, decision: { enter, stake, reason: reason.trim().slice(0, MAX_REASON) } };
 }

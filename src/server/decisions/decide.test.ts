@@ -258,7 +258,17 @@ describe("the bounds the schema no longer expresses are still enforced", () => {
   it("rejects a stake above the balance read from the chain", () => {
     const r = validateDecision('{"enter":true,"stake":2000,"reason":"Going big."}', snap);
     expect(r.ok).toBe(false);
-    expect(r.ok === false && r.reason).toContain("chips this wallet holds");
+    // With no bank there is one seat price, so anything else is refused by
+    // the figure this process read from the chain rather than by the model's
+    // own account of itself.
+    expect(r.ok === false && r.reason).toContain("is not this round's");
+  });
+
+  it("refuses a stake above what the wallet holds when there is no bank to cover it", () => {
+    const broke = { ...snap, balanceWei: 5n };
+    const r = validateDecision('{"enter":true,"stake":10,"reason":"In."}', broke);
+    expect(r.ok).toBe(false);
+    expect(r.ok === false && r.reason).toMatch(/cannot cover|wallet holds/);
   });
 
   it("rejects a stake that is not this round's allocation", () => {
@@ -448,5 +458,44 @@ describe("the register the player sees", () => {
   it("keeps a good decision intact", () => {
     const r = validateDecision('{"enter":false,"stake":0,"reason":"Lost three straight. Sitting this one out."}', snap);
     expect(r).toEqual({ ok: true, decision: { enter: false, stake: 0, reason: "Lost three straight. Sitting this one out." } });
+  });
+});
+
+describe("the stake range the bank opens up", () => {
+  // With the bank on, a stake above the balance is a borrowing request rather
+  // than a lie. What the bank will actually cover is decided elsewhere,
+  // against its real treasury, never here and never by the model.
+  const WEI_PER_CHIP = 1_000_000_000_000n;
+  const snap = snapshot();
+  const levered = { ...snap, maxStakeMultiple: 3 };
+
+  it("accepts any whole stake between the seat price and the ceiling", () => {
+    for (const stake of [10, 11, 20, 29, 30]) {
+      const r = validateDecision(`{"enter":true,"stake":${stake},"reason":"In."}`, levered);
+      expect(r.ok, String(stake)).toBe(true);
+    }
+  });
+
+  it("accepts a stake the balance does not cover, which is the point of a lender", () => {
+    const thin = { ...levered, balanceWei: 10n * WEI_PER_CHIP };
+    const r = validateDecision('{"enter":true,"stake":30,"reason":"Borrowing to push."}', thin);
+    expect(r.ok).toBe(true);
+  });
+
+  it("refuses a stake below the seat price or above the ceiling", () => {
+    expect(validateDecision('{"enter":true,"stake":9,"reason":"x"}', levered).ok).toBe(false);
+    const over = validateDecision('{"enter":true,"stake":31,"reason":"x"}', levered);
+    expect(over.ok).toBe(false);
+    expect(over.ok === false && over.reason).toContain("ceiling");
+  });
+
+  it("still refuses a stake when not entering", () => {
+    expect(validateDecision('{"enter":false,"stake":10,"reason":"x"}', levered).ok).toBe(false);
+  });
+
+  it("collapses to the fixed stake at a multiple of one", () => {
+    const fixed = { ...snap, maxStakeMultiple: 1 };
+    expect(validateDecision('{"enter":true,"stake":20,"reason":"x"}', fixed).ok).toBe(false);
+    expect(validateDecision('{"enter":true,"stake":10,"reason":"In."}', fixed).ok).toBe(true);
   });
 });

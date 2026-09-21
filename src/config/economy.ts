@@ -123,6 +123,24 @@ export const CREDIT_TERMS = {
 } as const;
 
 /**
+ * Whether the bank is part of the running game.
+ *
+ * Off by default, and the whole bank arrives behind it. Interest, repayment,
+ * wrecks and the bank's own screen come after this phase, so until all of it
+ * is built and verified the running game must behave exactly as it did: one
+ * fixed stake per seat, no borrowing, no lender.
+ */
+export const DEFAULT_BANK_ENABLED = false;
+
+export function bankEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  const raw = env.SERVPIT_BANK_ENABLED?.trim().toLowerCase();
+  if (raw === undefined || raw.length === 0) return DEFAULT_BANK_ENABLED;
+  if (raw === "true" || raw === "1") return true;
+  if (raw === "false" || raw === "0") return false;
+  throw new RangeError(`SERVPIT_BANK_ENABLED must be true or false, got ${raw}`);
+}
+
+/**
  * How many base stakes an agent may put on one seat.
  *
  * Three by default. One means the fixed stake the running game still uses;
