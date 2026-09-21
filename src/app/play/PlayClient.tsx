@@ -30,11 +30,13 @@ import { initialState, reduce, type FlowState, type Screen } from "./machine";
 import { BootScreen } from "./screens/BootScreen";
 import { TitleScreen } from "./screens/TitleScreen";
 import { GameShell } from "./screens/GameShell";
+import type { EntryShape } from "./screens/GameShell";
 import type { DecidedShape } from "./screens/lineupRows";
 import { UiKitProvider } from "@/ui/UiKit";
 import { createResponsiveScope, playTransition } from "@/ui/transitions";
 import { Stage } from "@/ui/Stage";
 import { readNdjson } from "./ndjson";
+import { requestWithTimeout } from "./request";
 import { pickPlayerDraw, type RunReel } from "./reelPick";
 import { runRequestFor } from "./roundRequest";
 import { arenaStanding, type ArenaStanding } from "./screens/arenaHud";
@@ -115,13 +117,6 @@ const MAX_SCALE = 3;
 /** Short unique token. Not a clock: this screen may not read time outside the loop. */
 const token = (): string => crypto.randomUUID().replace(/-/g, "").slice(0, 10);
 
-
-async function postJson<T>(path: string, body: unknown): Promise<T> {
-  const response = await fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-  const parsed = await response.json();
-  if (!response.ok) throw new Error(typeof parsed?.error === "string" ? parsed.error : `HTTP ${response.status}`);
-  return parsed as T;
-}
 
 export function PlayClient() {
   const [state, dispatch] = useReducer(reduce, undefined, initialState);
@@ -312,19 +307,22 @@ export function PlayClient() {
     try {
       // Streamed, so each agent appears the moment it reports rather than
       // all six appearing together after the slowest one lands.
-      const response = await fetch("/api/round/plan", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ seed: `slot-${token()}`, entrants: mode.entrants ?? 24 }),
-      });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const { response, done } = await requestWithTimeout("/api/round/plan", { seed: `slot-${token()}`, entrants: mode.entrants ?? 24 });
+      if (!response.ok) {
+        done();
+        throw new Error(`HTTP ${response.status}`);
+      }
       let streamError: string | null = null;
-      await readNdjson(response, (value) => {
-        const line = value as { type?: string; decision?: unknown; plan?: unknown; error?: string };
-        if (line.type === "decision") dispatch({ type: "agentDecided", decision: line.decision });
-        else if (line.type === "plan") dispatch({ type: "planLoaded", plan: line.plan });
-        else if (line.type === "error") streamError = line.error ?? "the round could not be planned";
-      });
+      try {
+        await readNdjson(response, (value) => {
+          const line = value as { type?: string; decision?: unknown; plan?: unknown; error?: string };
+          if (line.type === "decision") dispatch({ type: "agentDecided", decision: line.decision });
+          else if (line.type === "plan") dispatch({ type: "planLoaded", plan: line.plan });
+          else if (line.type === "error") streamError = line.error ?? "the round could not be planned";
+        });
+      } finally {
+        done();
+      }
       if (streamError !== null) throw new Error(streamError);
     } catch (e) {
       dispatch({ type: "failed", message: e instanceof Error ? e.message : String(e) });
@@ -344,7 +342,28 @@ export function PlayClient() {
 
     try {
       const mode = state.mode;
-      const settled = await postJson<RunResponse>("/api/round/run", runRequestFor(plan, mode?.entrants ?? 24));
+      // Streamed like the plan: each buy in appears as it confirms on chain,
+      // then a final line with the settled round.
+      const { response, done } = await requestWithTimeout("/api/round/run", runRequestFor(plan, mode?.entrants ?? 24));
+      if (!response.ok) {
+        done();
+        throw new Error(`HTTP ${response.status}`);
+      }
+      let received: RunResponse | undefined;
+      let runError: string | null = null;
+      try {
+        await readNdjson(response, (value) => {
+          const line = value as { type?: string; entry?: unknown; result?: RunResponse; error?: string };
+          if (line.type === "entry") dispatch({ type: "entryConfirmed", entry: line.entry });
+          else if (line.type === "result") received = line.result;
+          else if (line.type === "error") runError = line.error ?? "the round could not be settled";
+        });
+      } finally {
+        done();
+      }
+      if (runError !== null) throw new Error(runError);
+      if (!received) throw new Error("the round ended without a result");
+      const settled: RunResponse = received;
       const draw = pickPlayerDraw(settled.reels);
       if (draw) {
         const symbols = draw.symbols as [string, string, string];
@@ -479,6 +498,7 @@ export function PlayClient() {
             leverNote={leverNote}
             arena={arena}
             decided={state.decided as DecidedShape[]}
+            entries={state.entries as EntryShape[]}
             slotCanvasRef={slotCanvasRef}
             arenaCanvasRef={arenaCanvasRef}
             onChooseMode={(modeId, stake) => void chooseMode(modeId, stake)}

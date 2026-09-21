@@ -77,6 +77,10 @@ export async function POST(request: Request): Promise<Response> {
       const line = (value: unknown): void => controller.enqueue(encoder.encode(`${JSON.stringify(value)}\n`));
       try {
         const plan = await planRound(flow, parsed.seed, (d) => line({ type: "decision", decision: decisionShape(d, link) }));
+        // Quoted, so settling this round reuses these decisions rather than
+        // running the whole loop again against a model that may answer
+        // differently the second time.
+        ctx.flow.plans?.put(plan);
         line({ type: "plan", plan: planShape(plan, ctx.chain.network, ctx.chain.kind, ctx.flow.meter.estimatedMicroCents, ctx.flow.meter.summary(), link) });
       } catch (e) {
         // The client needs a terminal line whatever happens, or it waits on a

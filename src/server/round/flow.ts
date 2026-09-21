@@ -18,6 +18,7 @@ import type { BankrollCache } from "../bankroll";
 import { decideForAgents, heuristicDecision } from "../decisions/decide";
 import type { AgentDecision, AgentSnapshot, RoundContext } from "../decisions/types";
 import type { TransferLedger } from "../ledger";
+import type { PlanCache } from "./planCache";
 import { log } from "../log";
 import { fromWei, toWei } from "../money";
 import { reconcile, type ReconcileResult } from "../reconcile";
@@ -28,6 +29,8 @@ import type { Wallets } from "../wallets/open";
 import { RoundStore, type StoredAgentRound } from "./store";
 
 export interface FlowContext {
+  /** Plans already quoted, so a settle does not re-run the decision loop. */
+  plans?: PlanCache;
   chain: Chain;
   wallets: Wallets;
   ledger: TransferLedger;
@@ -130,7 +133,12 @@ export async function planRound(ctx: FlowContext, seed: string, onDecided?: (dec
   return { roundId, seed, stakeWei, decisions, snapshots, entering, bots, entrants, servCalls: run.servCalls, guardRefusals: run.guardRefusals, rejections: run.rejections };
 }
 
-export async function runRound(ctx: FlowContext, plan: RoundPlan): Promise<RoundRun> {
+/** Told as each entry confirms on chain, so a caller can show it landing. */
+export interface RunProgress {
+  onEntry?: (agentId: string, outcome: TransferOutcome) => void;
+}
+
+export async function runRound(ctx: FlowContext, plan: RoundPlan, progress: RunProgress = {}): Promise<RoundRun> {
   const pot = ctx.wallets.pot;
   const watched = [pot.address, ...plan.snapshots.map((s) => s.address)];
   const before: Record<string, bigint> = {};
@@ -138,10 +146,17 @@ export async function runRound(ctx: FlowContext, plan: RoundPlan): Promise<Round
   for (const s of plan.snapshots) before[s.address] = await ctx.bankroll.get(ctx.wallets.agents.get(s.profile.id)!);
   before[pot.address] = await ctx.bankroll.get(pot);
 
+  // Sequential on purpose. Each send waits for its own receipt before the
+  // next nonce is requested, which is what makes a collision structurally
+  // impossible on a chain where nonces are left to the node. It is also the
+  // slowest part of a round, so each confirmation is reported as it lands
+  // rather than all of them at the end.
   const entries: TransferOutcome[] = [];
   for (const entrant of plan.entering) {
     const wallet = ctx.wallets.agents.get(entrant.agentId)!;
-    entries.push(await collectEntry({ ledger: ctx.ledger, bankroll: ctx.bankroll, network: ctx.chain.network, settles: ctx.chain.settles }, plan.roundId, entrant.agentId, wallet, pot, entrant.stakeWei));
+    const outcome = await collectEntry({ ledger: ctx.ledger, bankroll: ctx.bankroll, network: ctx.chain.network, settles: ctx.chain.settles }, plan.roundId, entrant.agentId, wallet, pot, entrant.stakeWei);
+    entries.push(outcome);
+    progress.onEntry?.(entrant.agentId, outcome);
   }
 
   const round = resolveRound(plan.seed, plan.entrants, DEFAULT_ROUND);

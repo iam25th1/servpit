@@ -338,6 +338,12 @@
   letter-spacing: 0.04em;
 }
 
+/* The transaction under a buy in that has confirmed. */
+.entryHash {
+  font-size: var(--text-micro);
+  overflow-wrap: anywhere;
+}
+
 .agentVerdict {
   font-size: var(--text-micro);
   color: var(--on-surface-dim, var(--bone-dim));

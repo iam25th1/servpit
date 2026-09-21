@@ -40,6 +40,8 @@ export interface FlowState {
    * slowest finishes. Cleared whenever a new round starts.
    */
   decided: unknown[];
+  /** Buy ins confirmed on chain so far, in the order they landed. */
+  entries: unknown[];
   run: unknown | null;
   /** True only while a pull would be accepted. */
   leverLive: boolean;
@@ -52,6 +54,7 @@ export type FlowEvent =
   | { type: "connected"; player: Player }
   | { type: "modeChosen"; modeId: string; stake: StakeTierId }
   | { type: "agentDecided"; decision: unknown }
+  | { type: "entryConfirmed"; entry: unknown }
   | { type: "planLoaded"; plan: unknown }
   | { type: "leverPulled" }
   | { type: "reelsSettled" }
@@ -61,7 +64,7 @@ export type FlowEvent =
   | { type: "failed"; message: string };
 
 export function initialState(): FlowState {
-  return { screen: "boot", player: null, mode: null, stake: null, plan: null, decided: [], run: null, leverLive: false, reelsSettled: false, error: null };
+  return { screen: "boot", player: null, mode: null, stake: null, plan: null, decided: [], entries: [], run: null, leverLive: false, reelsSettled: false, error: null };
 }
 
 /** Both halves of the handoff are in, so the arena can take over. */
@@ -89,7 +92,7 @@ export function reduce(state: FlowState, event: FlowEvent): FlowState {
       if (mode.locked) return { ...state, error: `${mode.name} is not open yet` };
       const stake = mode.stakes?.find((s) => s.id === event.stake);
       if (!stake) return { ...state, error: `Unknown stake tier for ${mode.name}` };
-      return { ...state, screen: "lobby", mode, stake: stake.id, plan: null, decided: [], run: null, reelsSettled: false, leverLive: false, error: null };
+      return { ...state, screen: "lobby", mode, stake: stake.id, plan: null, decided: [], entries: [], run: null, reelsSettled: false, leverLive: false, error: null };
     }
 
     case "agentDecided":
@@ -98,6 +101,12 @@ export function reduce(state: FlowState, event: FlowEvent): FlowState {
       if (state.screen !== "lobby") return state;
       return { ...state, decided: [...state.decided, event.decision] };
 
+    case "entryConfirmed":
+      // Only while the round is settling. Anything later belongs to the
+      // result screen, which reads the full transfer list.
+      if (state.screen !== "spinning") return state;
+      return { ...state, entries: [...state.entries, event.entry] };
+
     case "planLoaded":
       if (state.screen !== "lobby") return state;
       // The lever only comes alive once the player can see who is in and why.
@@ -105,7 +114,8 @@ export function reduce(state: FlowState, event: FlowEvent): FlowState {
 
     case "leverPulled":
       if (state.screen !== "slot" || !state.leverLive) return state;
-      return { ...state, screen: "spinning", leverLive: false, reelsSettled: false, error: null };
+      // A fresh list: the buy ins about to confirm belong to this pull.
+      return { ...state, screen: "spinning", entries: [], leverLive: false, reelsSettled: false, error: null };
 
     case "reelsSettled":
       if (state.screen !== "spinning") return state;
@@ -121,7 +131,7 @@ export function reduce(state: FlowState, event: FlowEvent): FlowState {
 
     case "playAgain":
       if (state.screen !== "result") return state;
-      return { ...state, screen: "modeSelect", plan: null, decided: [], run: null, reelsSettled: false, leverLive: false, error: null };
+      return { ...state, screen: "modeSelect", plan: null, decided: [], entries: [], run: null, reelsSettled: false, leverLive: false, error: null };
 
     case "failed":
       // A failure must never strand the player: it drops back to the slot with

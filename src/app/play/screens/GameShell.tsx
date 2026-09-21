@@ -22,6 +22,19 @@ import type { ArenaStanding } from "./arenaHud";
 import { swingMeters } from "./bankrollMeter";
 import { entrantLabel } from "./entrantLabel";
 import { decidedCount, lineupRows, type DecidedShape } from "./lineupRows";
+
+/** One buy in, as the settle stream reports it. */
+export interface EntryShape {
+  agentId: string;
+  name: string;
+  amountWei: string;
+  txHash: string | null;
+  link: string | null;
+  applied: boolean;
+}
+
+/** A hash short enough for a narrow column, or a word when there is none. */
+const shortHash = (hash: string | null): string => (hash ? `${hash.slice(0, 8)}...${hash.slice(-6)}` : "confirmed");
 import { reconciliationNote, type ReconcileCheck } from "./reconciliationNote";
 import { transferRows } from "./transferRows";
 import styles from "./shell.module.css";
@@ -76,6 +89,8 @@ export interface GameShellProps {
   leverNote: string;
   /** Live from the replay's timeline, not from the final placement list. */
   arena: ArenaStanding;
+  /** Buy ins confirmed on chain so far, streamed while the round settles. */
+  entries: EntryShape[];
   /** Decisions streamed so far, before the whole plan has landed. */
   decided: DecidedShape[];
   slotCanvasRef: RefObject<HTMLCanvasElement | null>;
@@ -88,7 +103,7 @@ export interface GameShellProps {
 
 
 export function GameShell(props: GameShellProps) {
-  const { state, plan, run, decided } = props;
+  const { state, plan, run, decided, entries } = props;
   const { ui, modeIcon, facesetPath } = useUiKit();
   const showStage = state.screen === "lobby" || state.screen === "slot" || state.screen === "spinning" || state.screen === "arena";
 
@@ -119,14 +134,20 @@ export function GameShell(props: GameShellProps) {
             {state.screen !== "arena" && (
               <>
                 <Button onClick={props.onPull} disabled={!state.leverLive}>
-                  {state.screen === "lobby" ? "Agents deciding" : state.leverLive ? "Pull the lever" : "Locked in"}
+                  {state.screen === "lobby" ? "Agents deciding" : state.leverLive ? "Pull the lever" : "Agents buying in"}
                 </Button>
                 <p className={styles.leverNote}>{props.leverNote}</p>
               </>
             )}
           </div>
 
-          {state.screen === "arena" ? <ArenaHud run={run} arena={props.arena} /> : <Lineup plan={plan} decided={decided} error={state.error} />}
+          {state.screen === "arena" ? (
+            <ArenaHud run={run} arena={props.arena} />
+          ) : state.screen === "spinning" ? (
+            <BuyIns plan={plan} entries={entries} error={state.error} />
+          ) : (
+            <Lineup plan={plan} decided={decided} error={state.error} />
+          )}
       </div>
 
       {state.screen === "result" && run && <ResultScreen run={run} onPlayAgain={props.onPlayAgain} />}
@@ -263,6 +284,65 @@ export function GameShell(props: GameShellProps) {
               </div>
             </li>
           ))}
+        </ul>
+        {error && <p className={styles.error}>{error}</p>}
+      </NinePatch>
+    );
+  }
+
+  /**
+   * The buy ins landing, one at a time, while the round settles.
+   *
+   * This was a frozen "Locked in" for 68.9 seconds. Collecting entries is
+   * sequential by necessity, because each send waits for its own receipt
+   * before the next nonce is requested. The wait is the same length; what
+   * changed is that the agents are now visibly paying in, with their real
+   * transactions on screen, instead of nothing happening.
+   *
+   * Real confirmations drive this. Nothing here is on a timer.
+   */
+  function BuyIns({ plan, entries, error }: { plan: PlanShape | null; entries: EntryShape[]; error: string | null }) {
+    const expected = plan ? plan.decisions.filter((d) => d.enter) : [];
+    const paid = new Map(entries.map((e) => [e.agentId, e]));
+    return (
+      <NinePatch sprite="bg" data-anim="buyins" className={styles.hud}>
+        <h2 className={styles.sideHead}>Buying in</h2>
+        <p className={styles.sideNote}>
+          {entries.length < expected.length
+            ? `${entries.length} of ${expected.length} have paid the pot. Each one is a real transaction.`
+            : `All ${expected.length} are in. Spinning the reels.`}
+        </p>
+        <ul className={styles.lineup}>
+          {expected.map((d) => {
+            const entry = paid.get(d.agentId);
+            return (
+              <li key={d.agentId} className={styles.agentRow} data-paid={entry ? "true" : "false"}>
+                <div className={styles.agentPortrait}>
+                  <img className={`${styles.faceset} ${entry ? "" : styles.thinkingFace}`} src={facesetPath(characterFor(d.agentId))} alt="" width={38} height={38} />
+                </div>
+                <div className={styles.agentBody}>
+                  <span className={styles.agentLine}>
+                    <span className={styles.agentName}>
+                      {d.name} <span className={entry ? styles.in : styles.agentVerdict}>{entry ? "paid in" : "buying in"}</span>
+                    </span>
+                  </span>
+                  {entry ? (
+                    <span className={styles.entryHash}>
+                      {entry.link ? (
+                        <a className={styles.transferHash} href={entry.link} target="_blank" rel="noreferrer">
+                          {shortHash(entry.txHash)}
+                        </a>
+                      ) : (
+                        <span className={styles.dim}>{shortHash(entry.txHash)}</span>
+                      )}
+                    </span>
+                  ) : (
+                    <div className={styles.thinkingBubble} aria-label="waiting for the chain" />
+                  )}
+                </div>
+              </li>
+            );
+          })}
         </ul>
         {error && <p className={styles.error}>{error}</p>}
       </NinePatch>
