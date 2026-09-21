@@ -11,6 +11,7 @@ import { clampStake } from "@/economy/prize";
 import { stakeWeiFrom, toChips } from "@/config/stake";
 import { toWei } from "../money";
 import type { PlannedLoan } from "./types";
+import { totalOwed } from "./debt";
 import type { Entrant } from "@/engine/resolveRound";
 import { decideForAgents } from "../decisions/decide";
 import { decideLoan, lendableChips, type BankDecision, type LoanBounds, type LoanRequest } from "../decisions/bank";
@@ -86,7 +87,16 @@ export async function planRound(
     const profile = profileFor(seat.id, ctx.debts.currentIdentity(seat.id));
     // Keyed by the seat, because that is what owns the wallet, the debt and
     // every idempotency key. The name is whoever is sitting in it.
-    const base = { agentId: seat.id, name: profile.name, strategy: profile.strategy, address: wallet.address, face: faceFor(seat.id, ctx.debts.currentIdentity(seat.id)) };
+    const base = {
+      agentId: seat.id,
+      name: profile.name,
+      strategy: profile.strategy,
+      address: wallet.address,
+      face: faceFor(seat.id, ctx.debts.currentIdentity(seat.id)),
+      // From the debt store, which carries accrued interest. The ledger only
+      // knows what was advanced, and what an agent owes is more than that.
+      debtWei: bankEnabled() ? totalOwed(ctx.debts.get(seat.id, ctx.debts.currentIdentity(seat.id))) : undefined,
+    };
     const sitOut = (reason: string): void => {
       log.warn("balance unreadable, agent sits this round out", { agentId: seat.id, address: wallet.address, reason: redact(reason) });
       unreachable.push({ ...base, balanceWei: 0n, decision: { enter: false, stake: 0, reason: UNREACHABLE_REASON }, source: "heuristic", rejection: UNREACHABLE_REASON });
@@ -108,7 +118,7 @@ export async function planRound(
       balanceWei,
       stakeWei,
       maxStakeMultiple: stakeMultiple,
-      debtWei: ctx.ledger.principalOwed(profile.id),
+      debtWei: totalOwed(ctx.debts.get(seat.id, ctx.debts.currentIdentity(seat.id))),
       recentOutcomes: ctx.store.outcomesFor(profile.id),
     });
   }
@@ -162,7 +172,7 @@ export async function planRound(
   let treasuryWei = ctx.wallets.bank && stakeMultiple > 1 ? await ctx.bankroll.get(ctx.wallets.bank) : 0n;
   const rates = bankRateBounds();
   const loans: PlannedLoan[] = [];
-  const refusals: Array<{ agentId: string; name: string; reason: string }> = [];
+  const refusals: Array<{ agentId: string; name: string; reason: string; askedWei: bigint; tappedOut: boolean }> = [];
   const borrowed = new Map<string, { principalWei: bigint; rateBps: number }>();
   // Agents that could not cover a seat and were turned down. They are out,
   // and the settle path is what ends them.
@@ -207,8 +217,9 @@ export async function planRound(
         // A loan that would breach the debt ceiling on its own, or that the
         // treasury cannot cover, is already zero here and the bank is not
         // asked to pretend otherwise.
+        const tappedOutHere = tappedIds.has(snapshot.profile.id);
         if (lendableChips(request, bounds) <= 0) {
-          refusals.push({ agentId: snapshot.profile.id, name: snapshot.profile.name, reason: "nothing left to lend against that record" });
+          refusals.push({ agentId: snapshot.profile.id, name: snapshot.profile.name, reason: "Nothing left to lend against that record.", askedWei: shortfallWei, tappedOut: tappedOutHere });
           if (tappedIds.has(snapshot.profile.id)) deniedCredit.push(snapshot.profile.id);
         } else {
           const answer = await decideLoan({ client: ctx.serv, meter: ctx.meter }, request, bounds);
@@ -221,6 +232,8 @@ export async function planRound(
               agentId: snapshot.profile.id,
               name: snapshot.profile.name,
               address: snapshot.address,
+              askedWei: shortfallWei,
+              tappedOut: tappedOutHere,
               principalWei: lentWei,
               rateBps: answer.decision.rateBps,
               reason: answer.decision.reason,
@@ -230,7 +243,7 @@ export async function planRound(
               latencyMs: answer.latencyMs,
             });
           } else {
-            refusals.push({ agentId: snapshot.profile.id, name: snapshot.profile.name, reason: answer.decision.reason });
+            refusals.push({ agentId: snapshot.profile.id, name: snapshot.profile.name, reason: answer.decision.reason, askedWei: shortfallWei, tappedOut: tappedOutHere });
             if (tappedIds.has(snapshot.profile.id)) deniedCredit.push(snapshot.profile.id);
           }
         }

@@ -96,4 +96,28 @@ describe("a round a house bot won", () => {
     const rows = transferRows([{ kind: "payout", agentId: "blaze", amountWei: "2400", txHash: null, link: null }]);
     expect(rows[0].hashShort).toBe("pending");
   });
+
+  it("names a loan as the bank paying the agent, before the entry it paid for", () => {
+    const hash = "0x" + "d".repeat(64);
+    const rows = transferRows([
+      entry("blaze", "0x" + "e".repeat(64)),
+      { kind: "loan", agentId: "blaze", amountWei: "1000", txHash: hash, link: `https://sepolia.basescan.org/tx/${hash}` },
+    ]);
+    expect(rows.map((r) => r.kind)).toEqual(["loan", "entry"]);
+    expect(rows[0].label).toBe("blaze borrowed from Marrow");
+    expect(rows[0].explorable).toBe(true);
+  });
+
+  it("names the bank's other movements in plain language", () => {
+    const rows = transferRows([
+      { kind: "repayment", agentId: "blaze", amountWei: "300", txHash: null, link: null },
+      { kind: "seizure", agentId: "flint", amountWei: "40", txHash: null, link: null },
+      { kind: "refill", agentId: "flint", amountWei: "1000", txHash: null, link: null },
+    ]);
+    expect(rows.map((r) => r.label)).toEqual([
+      "blaze repaid Marrow",
+      "flint handed Marrow what was left",
+      "flint was staked by the operator",
+    ]);
+  });
 });

@@ -28,11 +28,26 @@ export interface TransferRow {
 
 const shorten = (hash: string): string => `${hash.slice(0, 8)}...${hash.slice(-6)}`;
 
+// One plain phrase per kind. The bank's movements read as what happened to
+// the agent, not as the ledger's word for it, because "loan" beside a name
+// does not say which way the chips went.
+const VERBS: Record<string, string> = {
+  entry: "paid in",
+  payout: "paid out",
+  retained: "won, prize kept in the pot",
+  loan: "borrowed from Marrow",
+  repayment: "repaid Marrow",
+  seizure: "handed Marrow what was left",
+  refill: "was staked by the operator",
+};
+
 export function transferRows(transfers: readonly TransferInput[]): TransferRow[] {
-  // The entries first, then whatever happened to the prize. A retention
-  // sorts where the payout would have been, because it answers the same
-  // question: where the pot went.
-  const order = (kind: string): number => (kind === "payout" || kind === "retained" ? 1 : 0);
+  // The round's own order: a loan lands before the entry it paid for, the
+  // entries before whatever happened to the prize, and what the bank took
+  // back after the prize arrived. A retention sorts where the payout would
+  // have been, because it answers the same question: where the pot went.
+  const ORDER: Record<string, number> = { loan: 0, entry: 1, payout: 2, retained: 2, repayment: 3, seizure: 4, refill: 5 };
+  const order = (kind: string): number => ORDER[kind] ?? 1;
   return [...transfers]
     .sort((a, b) => order(a.kind) - order(b.kind))
     .map((t) => {
@@ -41,7 +56,7 @@ export function transferRows(transfers: readonly TransferInput[]): TransferRow[]
       // A retention is not a transfer and never gets a hash, so it says so
       // rather than sitting on "pending" forever.
       const retained = t.kind === "retained";
-      const verb = retained ? "won, prize kept in the pot" : t.kind === "payout" ? "paid out" : "paid in";
+      const verb = VERBS[t.kind] ?? "paid in";
       return {
         kind: t.kind,
         label: `${t.agentId} ${verb}`,

@@ -599,6 +599,48 @@ a.transferHash {
   grid-template-columns: minmax(0, 1fr);
 }
 
+/* What the winner owed, taken off the top.
+
+   Three lines rather than one net figure: a win that mostly went to the
+   lender is a different story from a win that did not, and a single number
+   tells neither. */
+.garnish {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: var(--space-snug) 0 0;
+  padding: var(--space-snug);
+  background: var(--pit-deep);
+  color: var(--bone);
+  --on-surface-dim: var(--bone-dim);
+}
+
+.garnishLine {
+  font-size: var(--text-small);
+  margin: 0;
+}
+
+.garnishLine strong {
+  color: var(--bad);
+  font-family: var(--font-ui);
+}
+
+.garnishSplit {
+  font-size: var(--text-micro);
+  color: var(--on-surface-dim, var(--bone-dim));
+  margin: 0;
+}
+
+.garnishKept {
+  font-size: var(--text-small);
+  margin: 0;
+}
+
+.garnishKept strong {
+  color: var(--amber);
+  font-family: var(--font-ui);
+}
+
 /* Marrow's panel.
 
    The lender sits under the cabinet, in the space the lever does not use,
@@ -608,6 +650,25 @@ a.transferHash {
 
    Flat surfaces and the same token palette as every other panel: no gradient,
    no coloured bar down the side, no purple. */
+/* A balance and a debt, side by side and never the same colour. An agent
+   playing on borrowed chips is the thing worth seeing, and two figures in one
+   tone read as one figure. */
+.purse {
+  display: inline-flex;
+  gap: var(--space-snug);
+  font-size: var(--text-micro);
+  margin-left: auto;
+}
+
+.holds {
+  color: var(--on-surface-dim, var(--bone-dim));
+}
+
+.owes {
+  color: var(--bad);
+  font-family: var(--font-ui);
+}
+
 .bank {
   display: flex;
   flex-direction: column;
@@ -615,18 +676,36 @@ a.transferHash {
   flex: none;
   width: 100%;
   box-sizing: border-box;
-  min-height: 0;
+  /* Bounded, because the stage does not scroll. The beats list is capped in
+     the component as well, and this is the belt to that pair of braces: a
+     long round can never push the cabinet off the top. */
+  max-height: 122px;
+  overflow: hidden;
 }
 
 .bankHead {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: var(--space-snug);
+}
+
+.bankName {
+  font-family: var(--font-ui);
+  font-size: var(--text-lead);
+  letter-spacing: 0.05em;
+  margin: 0;
+}
+
+.bankBook {
+  font-size: var(--text-micro);
+  color: var(--on-surface-dim, var(--bone-dim));
+  margin: 0;
 }
 
 .bankFace {
   image-rendering: pixelated;
   flex: none;
+  align-self: center;
 }
 
 .bankTreasury {
@@ -672,6 +751,20 @@ a.transferHash {
   color: var(--on-surface-dim, var(--bone-dim));
 }
 
+/* The exchange during the buy in phase, where there is room for all of it.
+   Bounded so a long round cannot push the entries off the panel. */
+.beatList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-tight);
+  margin: 0 0 var(--space-snug);
+  padding: 0;
+  list-style: none;
+  max-height: 210px;
+  overflow: hidden;
+  flex: none;
+}
+
 .rulings {
   display: flex;
   flex-direction: column;
@@ -687,8 +780,26 @@ a.transferHash {
   gap: 1px;
 }
 
+/* An ask is the agent talking and sits indented under nothing; a ruling is
+   Marrow answering and carries the amber the rest of the pit uses for a
+   commitment. A refusal is the bad token, which is the only place red
+   appears in this panel. */
 .rulingLine {
   font-size: var(--text-micro);
+}
+
+.ruling[data-beat="ask"] .rulingLine {
+  color: var(--on-surface-dim, var(--bone-dim));
+}
+
+.ruling[data-beat="lend"] .rulingLine {
+  color: var(--amber);
+  font-family: var(--font-ui);
+}
+
+.ruling[data-beat="refuse"] .rulingLine {
+  color: var(--bad);
+  font-family: var(--font-ui);
 }
 
 .rulingReason {

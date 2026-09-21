@@ -35,6 +35,8 @@ function decisionShape(d: AgentDecision, link: Linker) {
     face: d.face ?? null,
     link: link(d.address),
     balanceWei: d.balanceWei.toString(),
+    balance: toChips(d.balanceWei),
+    debt: d.debtWei === undefined ? 0 : toChips(d.debtWei),
     enter: d.decision.enter,
     stake: d.decision.stake,
     reason: d.decision.reason,
@@ -58,8 +60,8 @@ function planShape(plan: RoundPlan, network: string, kind: string, costMicroCent
     bots: plan.bots.length,
     servCalls: plan.servCalls,
     guardRefusals: plan.guardRefusals,
-    loans: plan.loans.map((l) => ({ agentId: l.agentId, name: l.name, amount: toChips(l.principalWei), rateBps: l.rateBps, reason: l.reason, source: l.source })),
-    refusals: plan.refusals,
+    loans: plan.loans.map((l) => ({ agentId: l.agentId, name: l.name, asked: toChips(l.askedWei), tappedOut: l.tappedOut, amount: toChips(l.principalWei), rateBps: l.rateBps, reason: l.reason, source: l.source })),
+    refusals: plan.refusals.map((r) => ({ agentId: r.agentId, name: r.name, asked: toChips(r.askedWei), tappedOut: r.tappedOut, reason: r.reason })),
     tappedOut: plan.decisions.filter((d) => d.decision.reason === TAPPED_OUT).map((d) => d.agentId),
     bank: plan.bank
       ? {

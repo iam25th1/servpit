@@ -72,6 +72,10 @@ export interface PlannedLoan {
   agentId: string;
   name: string;
   address: string;
+  /** What the agent was short, which is what it asked for. */
+  askedWei: bigint;
+  /** Whether it asked because it wanted more or because it had nothing. */
+  tappedOut: boolean;
   principalWei: bigint;
   rateBps: number;
   reason: string;
@@ -96,7 +100,7 @@ export interface RoundPlan {
   /** Loans the bank agreed to this round. Empty when the bank is off. */
   loans: PlannedLoan[];
   /** Requests the bank turned down, for the panel and the log. */
-  refusals: Array<{ agentId: string; name: string; reason: string }>;
+  refusals: Array<{ agentId: string; name: string; reason: string; askedWei: bigint; tappedOut: boolean }>;
   /**
    * The lender's state as the round was planned. Null when the bank is off,
    * which is what tells the client there is no lender to draw.

@@ -9,7 +9,7 @@ import { animate, stagger, utils } from "animejs";
 import { createMotionPath } from "animejs/svg";
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { GAME_MODES } from "@/config/modes";
-import { BankPanel, type BankShape, type LoanShape, type RefusalShape } from "./BankPanel";
+import { BankPanel, loanBeats, type BankShape, type LoanShape, type RefusalShape } from "./BankPanel";
 import { Button } from "@/ui/Button";
 import { Dialog } from "@/ui/Dialog";
 import { Meter } from "@/ui/Meter";
@@ -86,6 +86,8 @@ interface RunShape {
   /** Per check detail, so a failure can name what went wrong. */
   checks?: ReconcileCheck[];
   agents: RunAgent[];
+  /** What a winner handed the lender before it kept anything. Null when none. */
+  repayment?: { agentId: string; name: string; interestWei: string; principalWei: string; paidWei: string; link: string | null } | null;
   transfers: Array<{ kind: string; agentId: string; amountWei: string; txHash: string | null; link: string | null }>;
   replay: { placements: string[] };
 }
@@ -291,7 +293,7 @@ export function GameShell(props: GameShellProps) {
               <div className={styles.agentPortrait}>
                 <img
                   className={`${styles.faceset} ${row.state === "waiting" ? styles.thinkingFace : ""}`}
-                  src={facesetPath(characterFor(row.agentId))}
+                  src={facesetPath(row.state === "decided" && row.decision.face ? row.decision.face : characterFor(row.agentId))}
                   alt=""
                   width={38}
                   height={38}
@@ -307,6 +309,16 @@ export function GameShell(props: GameShellProps) {
                       <span className={styles.agentVerdict}>thinking</span>
                     )}
                   </span>
+                  {/* What it holds and what it owes, kept apart. A balance and
+                      a debt read as one number if they share a colour, and an
+                      agent playing on borrowed chips is the thing worth
+                      seeing. Only drawn when the bank is on. */}
+                  {row.state === "decided" && row.decision.balance !== undefined && (
+                    <span className={styles.purse}>
+                      <span className={styles.holds}>{row.decision.balance} chips</span>
+                      {row.decision.debt ? <span className={styles.owes}>owes {row.decision.debt}</span> : null}
+                    </span>
+                  )}
                 </span>
                 {row.state === "decided" ? <Dialog scale={2}>{row.decision.reason}</Dialog> : <div className={styles.thinkingBubble} aria-label="thinking" />}
               </div>
@@ -332,6 +344,16 @@ export function GameShell(props: GameShellProps) {
   function BuyIns({ plan, entries, error, onRetry }: { plan: PlanShape | null; entries: EntryShape[]; error: string | null; onRetry: () => void }) {
     const expected = plan ? plan.decisions.filter((d) => d.enter) : [];
     const paid = new Map(entries.map((e) => [e.agentId, e]));
+    // The round's lending, in the order it happened, on the screen where the
+    // money moves. Staggered as a sequence rather than appearing at once,
+    // because an ask and its answer read as an exchange only in that order.
+    const beats = plan?.bank ? loanBeats(plan.loans ?? [], plan.refusals ?? []) : [];
+    const beatsRef = useRef<HTMLUListElement>(null);
+    useEffect(() => {
+      const rows = beatsRef.current ? [...beatsRef.current.querySelectorAll<HTMLElement>("li")] : [];
+      if (rows.length > 0) void staggerIn(rows);
+    }, [beats.length]);
+
     return (
       <NinePatch sprite="bg" data-anim="buyins" className={styles.hud}>
         <h2 className={styles.sideHead}>Buying in</h2>
@@ -340,6 +362,16 @@ export function GameShell(props: GameShellProps) {
             ? `${entries.length} of ${expected.length} have paid the pot. Each one is a real transaction.`
             : `All ${expected.length} are in. Spinning the reels.`}
         </p>
+        {beats.length > 0 && (
+          <ul ref={beatsRef} className={styles.beatList} aria-label="what Marrow did this round">
+            {beats.map((beat) => (
+              <li key={beat.key} className={styles.ruling} data-beat={beat.kind}>
+                <span className={styles.rulingLine}>{beat.line}</span>
+                {beat.aside && <span className={styles.rulingReason}>{beat.aside}</span>}
+              </li>
+            ))}
+          </ul>
+        )}
         <ul className={styles.lineup}>
           {expected.map((d) => {
             const entry = paid.get(d.agentId);
@@ -478,6 +510,28 @@ export function GameShell(props: GameShellProps) {
           <img className={styles.winnerFace} src={facesetPath(winnerCharacter(run))} alt="" width={38 * 2} height={38 * 2} />
           <h2 className={`${styles.winnerName} ${styles.nameplate}`}>{winnerName}</h2>
           <p className={styles.winnerPot}>{chips(prize)} chips taken</p>
+          {/* What a winner owed comes off the top, before it is treated as
+              keeping anything. Three figures rather than one net number,
+              because a win that mostly went to the lender is a different
+              story from a win that did not. */}
+          {run.repayment && (
+            <div className={styles.garnish} data-anim="garnish">
+              <p className={styles.garnishLine}>
+                {run.repayment.name} owed Marrow <strong>{chips(BigInt(run.repayment.paidWei))}</strong> chips.
+              </p>
+              <p className={styles.garnishSplit}>
+                {chips(BigInt(run.repayment.interestWei))} interest and {chips(BigInt(run.repayment.principalWei))} principal went straight back.
+              </p>
+              <p className={styles.garnishKept}>
+                It kept <strong>{chips(prize - BigInt(run.repayment.paidWei))}</strong> chips.
+              </p>
+              {run.repayment.link && (
+                <a className={styles.transferHash} href={run.repayment.link} target="_blank" rel="noreferrer">
+                  the repayment on Basescan
+                </a>
+              )}
+            </div>
+          )}
           <p className={styles.sideNote}>{note.text}</p>
           {note.failed.length > 0 && (
             <ul className={styles.reconcileFails}>

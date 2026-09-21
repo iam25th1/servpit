@@ -97,6 +97,7 @@ interface RunResponse {
   reconciled: boolean;
   transfers: RunTransfer[];
   agents: RunAgent[];
+  repayment?: { agentId: string; name: string; interestWei: string; principalWei: string; paidWei: string; link: string | null } | null;
   reels: RunReel[];
   replay: { characters: never[]; log: never[]; placements: string[] };
 }

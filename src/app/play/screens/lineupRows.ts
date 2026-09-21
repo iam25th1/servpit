@@ -14,6 +14,12 @@ export interface DecidedShape {
   enter: boolean;
   stake: number;
   reason: string;
+  /** Chips in the wallet. Absent on a decision streamed before the bank existed. */
+  balance?: number;
+  /** Chips owed to the lender. Zero or absent when it owes nothing. */
+  debt?: number;
+  /** The roster face for a replacement. Null or absent for the originals. */
+  face?: string | null;
 }
 
 export type LineupRow =

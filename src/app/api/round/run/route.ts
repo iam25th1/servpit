@@ -113,6 +113,21 @@ export async function POST(request: Request): Promise<Response> {
               ...run.entries.map((e) => ({ kind: e.kind, agentId: e.agentId, amountWei: e.amountWei.toString(), txHash: e.txHash ?? null, link: e.link, applied: e.applied })),
               ...(run.payout ? [{ kind: run.payout.kind, agentId: run.payout.agentId, amountWei: run.payout.amountWei.toString(), txHash: run.payout.txHash ?? null, link: run.payout.link, applied: run.payout.applied }] : []),
               ...(run.retained ? [{ kind: "retained", agentId: run.retained.winnerEntrantId, amountWei: run.retained.amountWei.toString(), txHash: null, link: null, applied: false }] : []),
+              // The garnishment is chips that moved, so it belongs in the
+              // list that claims to hold every transfer this round, not only
+              // in the winner's panel where it is explained.
+              ...(run.repayment
+                ? [
+                    {
+                      kind: run.repayment.outcome.kind,
+                      agentId: run.repayment.agentId,
+                      amountWei: run.repayment.outcome.amountWei.toString(),
+                      txHash: run.repayment.outcome.txHash ?? null,
+                      link: run.repayment.outcome.link,
+                      applied: run.repayment.outcome.applied,
+                    },
+                  ]
+                : []),
             ],
             // What the bank did this round. Empty with the flag off, so the
             // client renders nothing it did not render before.
