@@ -92,6 +92,8 @@ export interface RoundRun {
   plan: RoundPlan;
   round: RoundResult;
   entries: TransferOutcome[];
+  /** Loans the bank settled this round, before entries were collected. */
+  loans: TransferOutcome[];
   payout: TransferOutcome | null;
   /**
    * Set when a house bot won. Eighteen of the twenty four entrants have no

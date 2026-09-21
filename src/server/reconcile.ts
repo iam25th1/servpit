@@ -59,6 +59,18 @@ export interface ReconcileInput {
   /** Sent to the bank treasury. Zero while there is no bank wallet. */
   toBankWei: bigint;
   rakeWei: bigint;
+  /**
+   * Loans disbursed this round, keyed by the agent that received one.
+   *
+   * A borrowed chip reaches the pot through the agent, so it is already
+   * inside entries. What this adds is the other side of it: the agent's
+   * balance rose by the loan before its entry was taken, and the bank's fell
+   * by the same amount.
+   */
+  loans?: Movement[];
+  appliedLoans?: Movement[];
+  /** The bank's wallet, when there is one. Checked like the pot. */
+  bankAddress?: string;
 }
 
 export interface Check {
@@ -92,10 +104,14 @@ export function reconcile(input: ReconcileInput): ReconcileResult {
 
   const appliedEntries = input.appliedEntries ?? input.entries;
   const appliedPayouts = input.appliedPayouts ?? input.payouts;
+  const allLoans = input.loans ?? [];
+  const appliedLoans = input.appliedLoans ?? allLoans;
+  for (const l of allLoans) assertWei(l.amountWei, `loan to ${l.address}`);
   const fees = input.feesWei ?? [];
   for (const f of fees) assertWei(f.amountWei, `fee for ${f.address}`);
-  const wallets = new Set<string>([...input.entries, ...input.payouts].map((m) => m.address));
+  const wallets = new Set<string>([...input.entries, ...input.payouts, ...allLoans].map((m) => m.address));
   wallets.delete(input.potAddress);
+  if (input.bankAddress !== undefined) wallets.delete(input.bankAddress);
   for (const address of [...wallets].sort()) {
     const delta = balance(input.after, address, "after") - balance(input.before, address, "before");
     const paidIn = sumWei(appliedEntries.filter((m) => m.address === address).map((m) => m.amountWei));
@@ -104,7 +120,10 @@ export function reconcile(input: ReconcileInput): ReconcileResult {
     // the delta with the fee added back. Expressed on the expected side so a
     // failure still reports the stake figures the operator reasons about.
     const feePaid = sumWei(fees.filter((m) => m.address === address).map((m) => m.amountWei));
-    check(`wallet ${address} delta`, paidOut - paidIn, delta + feePaid);
+    // A loan arrives before the entry leaves, so it is an inflow to this
+    // wallet on the same side of the ledger as a payout.
+    const borrowed = sumWei(appliedLoans.filter((m) => m.address === address).map((m) => m.amountWei));
+    check(`wallet ${address} delta`, paidOut + borrowed - paidIn, delta + feePaid);
   }
 
   const entriesTotal = sumWei(input.entries.map((m) => m.amountWei));
@@ -116,6 +135,14 @@ export function reconcile(input: ReconcileInput): ReconcileResult {
   // the payout's fee.
   const potFee = sumWei(fees.filter((m) => m.address === input.potAddress).map((m) => m.amountWei));
   check("pot delta", sumWei(appliedEntries.map((m) => m.amountWei)) - sumWei(appliedPayouts.map((m) => m.amountWei)), potDelta + potFee);
+
+  if (input.bankAddress !== undefined) {
+    // The bank only ever sends, and only what it lent. It pays the gas on
+    // each disbursement, like any other sender.
+    const bankDelta = balance(input.after, input.bankAddress, "after") - balance(input.before, input.bankAddress, "before");
+    const bankFee = sumWei(fees.filter((m) => m.address === input.bankAddress).map((m) => m.amountWei));
+    check("bank delta", -sumWei(appliedLoans.map((m) => m.amountWei)), bankDelta + bankFee);
+  }
 
   // Every wei the round took in is accounted for on the way out. Entries plus
   // the rollover it inherited equal the payout plus the bank share plus the
@@ -135,6 +162,14 @@ export function reconcile(input: ReconcileInput): ReconcileResult {
   const sentWei = sumWei(appliedPayouts.map((m) => m.amountWei));
   const coverWei = balance(input.before, input.potAddress, "before") + sumWei(appliedEntries.map((m) => m.amountWei));
   checks.push({ name: "pot covers payout", ok: sentWei <= coverWei, expected: `at most ${coverWei.toString()}`, actual: sentWei.toString() });
+
+  if (input.bankAddress !== undefined) {
+    // The bank can only ever lend what it is holding. Nothing a model said
+    // about the treasury gets a vote here.
+    const lentWei = sumWei(appliedLoans.map((m) => m.amountWei));
+    const heldWei = balance(input.before, input.bankAddress, "before");
+    checks.push({ name: "bank covers its loans", ok: lentWei <= heldWei, expected: `at most ${heldWei.toString()}`, actual: lentWei.toString() });
+  }
 
   return { ok: checks.every((c) => c.ok), checks };
 }

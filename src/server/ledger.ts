@@ -64,6 +64,8 @@ export interface TransferInput {
   to: string;
   amountWei: bigint;
   network: string;
+  /** Interest per round on a loan, in basis points. Only on a loan. */
+  rateBps?: number;
 }
 
 // bigint has no JSON form, so both amounts persist as decimal strings.
@@ -163,6 +165,7 @@ export class TransferLedger {
       amountWei: input.amountWei,
       network: input.network,
       status: "pending",
+      ...(input.rateBps === undefined ? {} : { rateBps: input.rateBps }),
       createdAt: now,
       updatedAt: now,
     };

@@ -53,6 +53,18 @@ export async function POST(request: Request): Promise<Response> {
         // length, but it is now the agents paying in one by one with their
         // transactions on screen rather than nothing at all.
         const run = await runRound(flow, plan, {
+          onLoan: (agentId, outcome) =>
+            line({
+              type: "loan",
+              loan: {
+                agentId,
+                name: byId.get(agentId) ?? agentId,
+                amountWei: outcome.amountWei.toString(),
+                txHash: outcome.txHash ?? null,
+                link: outcome.link,
+                applied: outcome.applied,
+              },
+            }),
           onEntry: (agentId, outcome) =>
             line({
               type: "entry",
@@ -96,6 +108,7 @@ export async function POST(request: Request): Promise<Response> {
             costMicroCents: ctx.flow.meter.estimatedMicroCents,
             costSummary: ctx.flow.meter.summary(),
             transfers: [
+              ...run.loans.map((l) => ({ kind: l.kind, agentId: l.agentId, amountWei: l.amountWei.toString(), txHash: l.txHash ?? null, link: l.link, applied: l.applied })),
               ...run.entries.map((e) => ({ kind: e.kind, agentId: e.agentId, amountWei: e.amountWei.toString(), txHash: e.txHash ?? null, link: e.link, applied: e.applied })),
               ...(run.payout ? [{ kind: run.payout.kind, agentId: run.payout.agentId, amountWei: run.payout.amountWei.toString(), txHash: run.payout.txHash ?? null, link: run.payout.link, applied: run.payout.applied }] : []),
               ...(run.retained ? [{ kind: "retained", agentId: run.retained.winnerEntrantId, amountWei: run.retained.amountWei.toString(), txHash: null, link: null, applied: false }] : []),

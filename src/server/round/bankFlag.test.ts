@@ -207,3 +207,81 @@ describe("the bank's own decision", () => {
     for (const e of plan.entering) expect(e.loanWei).toBeUndefined();
   });
 });
+
+describe("disbursement", () => {
+  async function levered(stakeMultiple: number) {
+    process.env.SERVPIT_BANK_ENABLED = "true";
+    const seat = stakeWeiFrom();
+    dir = mkdtempSync(join(tmpdir(), "servpit-bankflag-"));
+    const chain = new FakeChain({ initialBalanceWei: seat });
+    const wallets = await openWallets(chain, new WalletRegistry(join(dir, "wallets.json")), { bank: true });
+    chain.fund(wallets.bank!.address, seat * 200n);
+    const ledger = new TransferLedger(join(dir, "ledger.json"));
+    const ctx = {
+      chain,
+      wallets,
+      ledger,
+      store: new RoundStore(join(dir, "rounds.json")),
+      bankroll: new BankrollCache({ ttlMs: 0, now: () => 0 }),
+      meter: new CostMeter(DEFAULT_SERV.pricing),
+      rollover: new RolloverStore(join(dir, "rollover.json")),
+      serv: new ServClient({ ...DEFAULT_SERV, backoffMs: 0 }, greedyTransport(toChips(seat) * stakeMultiple)),
+      entrants: 24,
+    };
+    return { chain, wallets, ledger, ctx, seat };
+  }
+
+  it("pays the bank's loans out before entries, and reconciles across agents, pot and bank", async () => {
+    const { chain, wallets, ctx, seat } = await levered(3);
+    const bankBefore = chain.balanceOf(wallets.bank!.address);
+    const plan = await planRound(ctx, "disburse");
+    const run = await runRound(ctx, plan);
+
+    expect(run.loans.length).toBe(plan.loans.length);
+    expect(run.loans.length).toBeGreaterThan(0);
+    for (const l of run.loans) {
+      expect(l.kind).toBe("loan");
+      expect(l.status).toBe("complete");
+    }
+    const lent = run.loans.reduce((sum, l) => sum + l.amountWei, 0n);
+    expect(chain.balanceOf(wallets.bank!.address)).toBe(bankBefore - lent);
+    expect(run.reconciliation.ok).toBe(true);
+    expect(run.reconciliation.checks.map((c) => c.name)).toContain("bank delta");
+    expect(run.reconciliation.checks.map((c) => c.name)).toContain("bank covers its loans");
+    // Every seat was three stakes, funded by one held and two borrowed.
+    for (const e of plan.entering) expect(e.stakeWei).toBe(seat * 3n);
+  });
+
+  it("records the debt with its rate, so the next phase can charge for it", async () => {
+    const { ledger, ctx } = await levered(3);
+    const plan = await planRound(ctx, "debt");
+    await runRound(ctx, plan);
+    for (const loan of plan.loans) {
+      expect(ledger.principalOwed(loan.agentId)).toBe(loan.principalWei);
+      const records = ledger.loansFor(loan.agentId);
+      expect(records).toHaveLength(1);
+      expect(records[0].rateBps).toBe(loan.rateBps);
+      expect(records[0].status).toBe("complete");
+    }
+  });
+
+  it("disburses once however many times the round is settled", async () => {
+    const { chain, ctx } = await levered(3);
+    const plan = await planRound(ctx, "twice");
+    await runRound(ctx, plan);
+    const applied = chain.applied;
+    const again = await runRound(ctx, plan);
+    expect(chain.applied).toBe(applied);
+    expect(again.loans.every((l) => !l.applied)).toBe(true);
+    expect(again.reconciliation.ok).toBe(true);
+  });
+
+  it("carries the debt into the next round's prompt", async () => {
+    const { ctx } = await levered(3);
+    const first = await planRound(ctx, "one");
+    await runRound(ctx, first);
+    const second = await planRound(ctx, "two");
+    const owed = second.snapshots.filter((s) => (s.debtWei ?? 0n) > 0n);
+    expect(owed.length).toBeGreaterThan(0);
+  });
+});
