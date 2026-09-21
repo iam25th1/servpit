@@ -35,7 +35,8 @@ export interface ChatResponse {
 }
 
 export interface ChatTransport {
-  create(request: ChatRequest, options: { signal: AbortSignal }): Promise<ChatResponse>;
+  /** timeoutMs, when given, is this request's own budget rather than the client's. */
+  create(request: ChatRequest, options: { signal: AbortSignal; timeoutMs?: number }): Promise<ChatResponse>;
 }
 
 export class ServError extends Error {
@@ -50,6 +51,31 @@ export interface CompleteInput {
   user: string;
   schemaName: string;
   schema: Record<string, unknown>;
+  /**
+   * Longer budgets for a question that takes longer to answer.
+   *
+   * The agent's question is "do I play and for how much", and it comes back
+   * in about twelve seconds. The lender's is four numbers and a judgement
+   * about somebody's record, and it was measured at fifteen to eighteen
+   * seconds against the live endpoint: every bank call was being aborted at
+   * the per attempt timeout and every loan on chain carried the fallback
+   * lender's words instead of Marrow's. Six agents decide at once and the
+   * phase ends with the slowest, which is what the default budget protects;
+   * the bank decides one at a time, so it can afford to wait.
+   */
+  timeoutMs?: number;
+  deadlineMs?: number;
+  /**
+   * A bigger answer budget for a question that needs one.
+   *
+   * SERV returns empty content with finish_reason stop when the model runs
+   * out of completion budget, and it does that after three seconds rather
+   * than after a timeout, so it reads as a broken endpoint rather than as a
+   * question that needed more room. Measured against the live endpoint: the
+   * same lender prompt failed twice at four hundred and answered twice at
+   * eight hundred.
+   */
+  maxCompletionTokens?: number;
 }
 
 export interface CompleteOutput {
@@ -115,7 +141,7 @@ export class ServClient {
         { role: "user", content: input.user },
       ],
       temperature: this.config.temperature,
-      max_completion_tokens: this.config.maxCompletionTokens,
+      max_completion_tokens: input.maxCompletionTokens ?? this.config.maxCompletionTokens,
       response_format: { type: "json_schema", json_schema: { name: input.schemaName, strict: true, schema: input.schema } },
     };
     const tools = servTools(this.config);
@@ -130,7 +156,8 @@ export class ServClient {
     // the larger of the two would let a per attempt setting quietly override
     // the bound on what one agent can cost the phase; each attempt is clamped
     // to what is left instead.
-    const deadline = started + this.config.deadlineMs;
+    const deadline = started + (input.deadlineMs ?? this.config.deadlineMs);
+    const perAttemptMs = input.timeoutMs ?? this.config.timeoutMs;
     let lastError: unknown;
     let outOfTime = false;
     for (let attempt = 1; attempt <= Math.max(1, this.config.attempts); attempt++) {
@@ -140,9 +167,9 @@ export class ServClient {
         break;
       }
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), Math.min(this.config.timeoutMs, remaining));
+      const timer = setTimeout(() => controller.abort(), Math.min(perAttemptMs, remaining));
       try {
-        const response = await this.transport.create(request, { signal: controller.signal });
+        const response = await this.transport.create(request, { signal: controller.signal, timeoutMs: Math.min(perAttemptMs, remaining) });
         const choice = response.choices?.[0];
         const content = choice?.message?.content;
         const guardRefusal = Boolean(choice?.message?.refusal) || choice?.finish_reason === "content_filter";

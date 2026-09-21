@@ -39,10 +39,11 @@ describe("ServClient request shape", () => {
     expect(shadow.hint.default).toBe(DEFAULT_SERV.shadowHint);
     expect(shadow.max_iterations.default).toBe(3);
     expect(body.temperature).toBe(0.2);
-    // Three and a half times the measured completion size. SERV bills its
-    // 402 against the estimated maximum cost, so a ceiling nothing reaches
-    // still refuses requests the account can afford.
-    expect(body.max_completion_tokens).toBe(120);
+    // Whatever the config says, and the config is what the lender needs:
+    // measured against the live endpoint, 120 never answered a bank prompt
+    // at all and every loan fell back to the deterministic lender.
+    expect(body.max_completion_tokens).toBe(DEFAULT_SERV.maxCompletionTokens);
+    expect(DEFAULT_SERV.maxCompletionTokens).toBeGreaterThanOrEqual(200);
   });
 
   it("omits disabled tools", async () => {

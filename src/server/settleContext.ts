@@ -57,8 +57,9 @@ async function build(): Promise<SettleContext> {
   const rollover = new RolloverStore(join(env.dataDir, `rollover-${chain.network}.json`), chain.network);
   const debts = new DebtStore(join(env.dataDir, `debts-${chain.network}.json`), chain.network);
   const wreckStore = new WreckStore(join(env.dataDir, `wrecks-${chain.network}.json`), chain.network);
-  // No bank wallet in this build, so a nonzero share has nowhere to go. This
-  // is the path that settles, so it is the path that must refuse to start.
+  // A bank wallet exists now, and nothing sends it a share of a house win.
+  // This is the path that settles, so it is the path that must refuse to
+  // start while a share is set with no transfer behind it.
   assertBankShareIsPayable(false);
   // No serv: a settle has nothing to ask.
   const flow: FlowContext = { chain, wallets, ledger, store, bankroll, meter, plans, rollover, debts, wreckStore, settleLockFile: join(env.dataDir, `settle-${chain.network}.lock`), entrants: 24 };

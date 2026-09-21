@@ -15,7 +15,7 @@
 
 import { log } from "../log";
 import type { CostMeter, ServClient } from "../serv/client";
-import { reasonFault } from "./decide";
+import { plainPunctuation, reasonFault } from "./decide";
 import type { DecisionSource } from "./types";
 
 /** What the lender is called, and how it talks. */
@@ -83,6 +83,32 @@ export interface BankDecision {
 }
 
 const MAX_REASON = 400;
+
+/**
+ * What the lender gets to think for, per attempt and in total.
+ *
+ * Longer than an agent's, and deliberately not the same setting: the agent
+ * budget is what stops one slow operator holding up the other five, and six
+ * of those run at once. The bank asks one question at a time.
+ */
+export const BANK_TIMEOUT_MS = 40_000;
+export const BANK_DEADLINE_MS = 90_000;
+
+/**
+ * Room for the lender to answer in.
+ *
+ * Not the size of the answer, which is a sentence and three numbers, but the
+ * size of the budget the model needs to produce one. At four hundred the
+ * gateway returned empty content with finish_reason stop, twice in a row on
+ * one borrower's record and three times in a row during a live round, and
+ * every one of those loans went out with the deterministic lender's words on
+ * it. The same prompt answered twice at eight hundred.
+ *
+ * It costs nothing extra to allow: SERV bills what it emits. What it does
+ * raise is the estimated maximum cost SERV checks a balance against, so this
+ * is the first thing that will refuse on an account down to its last cents.
+ */
+export const BANK_MAX_COMPLETION_TOKENS = 800;
 
 const BANK_SYSTEM = [
   `You are ${BANK_NAME}, the only lender in the pit.`,
@@ -155,7 +181,7 @@ export function validateLoanDecision(content: string, request: LoanRequest, boun
   const fault = reasonFault(reason);
   if (fault !== null) return { ok: false, reason: fault };
 
-  const trimmed = reason.trim().slice(0, MAX_REASON);
+  const trimmed = plainPunctuation(reason.trim()).slice(0, MAX_REASON);
   if (!approve) {
     if (amount !== 0) return { ok: false, reason: "amount must be 0 when refusing" };
     return { ok: true, decision: { approve: false, amountChips: 0, rateBps: bounds.minRateBps, reason: trimmed } };
@@ -207,7 +233,20 @@ export async function decideLoan(deps: BankDeps, request: LoanRequest, bounds: L
 
   const { system, user } = buildBankPrompt(request, bounds);
   try {
-    const result = await deps.client.complete({ system, user, schemaName: "loan_decision", schema: BANK_DECISION_SCHEMA as unknown as Record<string, unknown> });
+    const result = await deps.client.complete({
+      system,
+      user,
+      schemaName: "loan_decision",
+      schema: BANK_DECISION_SCHEMA as unknown as Record<string, unknown>,
+      // Measured at fifteen to eighteen seconds against the live endpoint,
+      // against the agent's twelve. At the shared budget every bank call was
+      // aborted mid answer and every loan carried the fallback lender's
+      // words. One of these runs at a time, so the wait costs nobody else
+      // their round.
+      timeoutMs: BANK_TIMEOUT_MS,
+      deadlineMs: BANK_DEADLINE_MS,
+      maxCompletionTokens: BANK_MAX_COMPLETION_TOKENS,
+    });
     deps.meter.record(result.usage);
 
     const validated = validateLoanDecision(result.content, request, bounds);

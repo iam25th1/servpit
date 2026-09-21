@@ -7,7 +7,7 @@ import { createServTransport } from "../../src/server/serv/transport";
 async function main(): Promise<void> {
   const key = process.env.SERV_API_KEY;
   if (!key) return void console.log("SERV_API_KEY is not set.");
-  const config = { ...DEFAULT_SERV, attempts: 1, timeoutMs: 20_000 };
+  const config = { ...DEFAULT_SERV, attempts: 3, timeoutMs: 60_000 };
   const client = new ServClient(config, createServTransport(key, config));
   try {
     const r = await client.complete({ system: "Answer with a single JSON object.", user: 'Reply with {"ok":true}.', schemaName: "probe", schema: { type: "object", additionalProperties: false, required: ["ok"], properties: { ok: { type: "boolean" } } } });

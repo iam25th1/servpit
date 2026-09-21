@@ -229,10 +229,15 @@ what a fully degraded round looks like.
 
 ---
 
-## The bank, behind a flag
+## The bank, live on Base Sepolia
 
-`SERVPIT_BANK_ENABLED` is off by default and the running game is the one that has been settling
-rounds since 12a. With it on, a seventh agent joins the pit without taking a seat in it.
+`SERVPIT_BANK_ENABLED` is on. A seventh agent has joined the pit without taking a seat in it,
+and it settles with real money: nine rounds on Base Sepolia, every one reconciled, every hash
+below on the block explorer. `docs/bank-live.md` is the full record, including what going live
+found that a local chain could not.
+
+Setting the flag to false gives back exactly the game that shipped in 12a: one fixed stake per
+seat, no borrowing, no lender, and no screen that mentions one.
 
 Marrow is the lender. It is asked one request at a time, it answers in JSON, and nothing it
 says about money is believed: every bound on what it approves is checked against figures the
@@ -250,11 +255,31 @@ A loan is an exchange rather than a log line: the ask, then the answer, then the
 Marrow's own voice. They stagger in as a sequence because an ask and its answer only read as an
 exchange in that order.
 
+In round [`r-4f99838371ef97f6`](https://sepolia.basescan.org/tx/0xc57090dd6bf1863c3a05413e1b2ae73583246821e945bca64325f03c46c62c4d)
+three agents borrowed to put up more than the 10 chip seat: Blaze took
+[19 chips](https://sepolia.basescan.org/tx/0xc57090dd6bf1863c3a05413e1b2ae73583246821e945bca64325f03c46c62c4d)
+to stake 26, Flint took
+[19](https://sepolia.basescan.org/tx/0xeced1705a98c69fa7dd3705b33ba8a98637fac62273a136abaf03be66d158b7e)
+to stake 26, and Delta took
+[2](https://sepolia.basescan.org/tx/0x1a2fb27c41cadd9c01136f3fd41b5e7976d9bf194b282e7a368d147a43de3579)
+to stake 29. Marrow's own refusals, over SERV, read like this:
+
+> No track record here, and I don't lend to ghosts.
+
+> Five rounds, zero wins, nothing repaid, you're drowning before you even bet.
+
 ![The result screen, with the winner's debt taken off the top](docs/media/bank-result.png)
 
 A winner that owed is shown what it owed, what went back as interest and principal, and what it
 actually kept. The repayment is in the transfer list with everything else, and on Base Sepolia
 every row links to the block explorer.
+
+Flint won 252 chips with 19 borrowed and
+[handed 19 back](https://sepolia.basescan.org/tx/0xa3aba6edde9adbfbf51e59e04f3f71a297c14f3d15083d87428e158bc537c36b)
+before it kept anything. Delta did the same for
+[2 chips](https://sepolia.basescan.org/tx/0xcd8433767cb7ae1c25401f0eb03be5c1f061e20cc57c4bd675566fbec5bfdd51)
+in a later round, and then survived the wreck check that round, because a debt settled out of a
+win is a debt settled.
 
 ![A seat being emptied](docs/media/bank-wreck.png)
 
@@ -263,11 +288,31 @@ recovered are said plainly, and whoever takes the chair introduces itself. Vesti
 holds here as everywhere else: every part of that is element local, and nothing shakes, blurs,
 rotates or moves the stage.
 
+Five agents have been carried out on Base Sepolia. Blaze went over the debt ceiling in round
+`r-d1aa8c4a54ed0ee3` after 27 rounds and 25 chips were written off; Comet followed for 10 in
+`r-d2e443f8f5fb88c0`. The bank seized nothing from either, and that is the shipped settings
+rather than a failure: a seizure can only send what the wallet can send after the gas reserve,
+and the reserve is two seats. An agent that has just played holds about the reserve and no
+more. So the bank writes off where it cannot seize, and the round carries on.
+
+**No replacement has been funded on the real chain.** The operator wallet
+`0xA0F963841EcC29b0663bb6eA583097cAA49835FC` is empty, so every emptied seat has stayed empty
+with a plain reason and the round has completed anyway, which is the behaviour this wanted to
+prove. Fund that wallet and the next wreck refills its seat with a real transfer, with no code
+or config change; that path is tested both ways against the local chain.
+
 ![The graveyard](docs/media/bank-graveyard.png)
 
 The graveyard is reachable from the menu and keeps everyone: face, name, rounds survived, wins,
 peak balance, what it owed at the end, and whether it over-reached or ran out of credit. Eight
 slabs to a page, because the stage is a fixed 1280 by 720 and does not scroll.
+
+### What a round costs
+
+About a cent of SERV: six agent decisions plus one for every loan the bank is asked about.
+Measured over the nine live rounds, $0.0086 with nobody borrowing and $0.0126 with four
+borrowers asking. Every one of those rounds reconciled across the agents, the pot, the bank and
+the operator, with conservation and both solvency checks passing.
 
 ---
 
@@ -646,19 +691,33 @@ a house edge wearing a costume.
 
 **Rake defaults to zero.** The revenue mechanism exists in config and is switched off.
 
-**The whole economy is behind `SERVPIT_BANK_ENABLED`, which is off.** Loan origination, per
-round interest, repayment from winnings, both wreck conditions, seizure, write-off and
-replacement all settle on chain with the flag on, and every one of them is a real transfer with
-its own idempotency key. With the flag off none of it runs and the game is byte for byte the
-one that shipped in 12a. `SERVPIT_BANK_SHARE_ON_HOUSE_WIN` is 0 and the server refuses to start
-if it is set above zero with nowhere to send the share.
+**The bank is on, and two of its paths have never run on the real chain.** Loan origination,
+per round interest, repayment from winnings, both wreck conditions, write-off and replacement
+have all settled on Base Sepolia. A non zero seizure has not, and neither has a replacement
+funded by the operator: the first needs a wrecked agent holding more than the gas reserve,
+which these settings make rare, and the second needs somebody to fund the operator wallet.
+Both are tested against the local chain. `SERVPIT_BANK_SHARE_ON_HOUSE_WIN` is 0, nothing sends
+the bank a share of a house win, and the server refuses to start if a share is set anyway.
 
-**Variable stakes and leverage only exist behind the flag.** An agent can choose a stake
+**The gas reserve is two seats, and it decides more than gas.** A seat costs 10 chips and
+`SERVPIT_GAS_RESERVE_ETH` holds back 20 more, so an agent needs 30 chips to play the cheapest
+round there is. An agent between 10 and 30 chips cannot play and cannot be wrecked either: it
+is not broke by the rules, so it sits out every round until somebody funds it. Four of the six
+spent an evening in exactly that state. The lender can cover the gap now, because a borrower
+asks for the stake and the reserve rather than the stake alone, but it has to agree to.
+
+**Variable stakes and leverage are live.** An agent can choose a stake
 between the base and `SERVPIT_MAX_STAKE_MULTIPLE` times it, borrow the difference when it feels
 confident rather than only when it is broke, and a winner takes the share of the prize its
 stake earned against the biggest stake in the field. The six agents have different appetites
 there: Blaze reaches every round and is wrecked most, Atlas never borrows and ends flat. With
 the flag off the game still pays one fixed stake per seat and an uncapped prize.
+
+**Marrow has approved nothing over SERV yet.** Six live decisions, all refusals, every one of
+them because the borrower was carrying a debt or had no wins in its last five rounds. The
+loans that have settled were approved by the deterministic lender while the model path was
+broken, which is fixed and documented in `docs/bank-live.md`. An approval in its own words is
+still to come.
 
 **The fake chain's rollover outlives its balances.** `WALLET_BACKEND=fake` holds every balance
 in memory and starts again at each launch, while the rollover from a house win is a file that

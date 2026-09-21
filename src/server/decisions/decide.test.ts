@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { NAMED_AGENTS } from "@/config/agents";
 import { DEFAULT_SERV } from "@/config/serv";
 import { CostMeter, ServClient, type ChatTransport } from "../serv/client";
-import { DECISION_SCHEMA, FORBIDDEN_WORDS, MAX_REASON_WORDS, UNSUPPORTED_SCHEMA_KEYWORDS, buildPrompt, decideForAgents, heuristicDecision, reasonFault, schemaKeywords, validateDecision } from "./decide";
+import { DECISION_SCHEMA, FORBIDDEN_WORDS, MAX_REASON_WORDS, UNSUPPORTED_SCHEMA_KEYWORDS, buildPrompt, decideForAgents, heuristicDecision, plainPunctuation, reasonFault, schemaKeywords, validateDecision } from "./decide";
 import type { AgentSnapshot } from "./types";
 
 const snapshot = (patch: Partial<AgentSnapshot> = {}): AgentSnapshot => ({
@@ -497,5 +497,25 @@ describe("the stake range the bank opens up", () => {
     const fixed = { ...snap, maxStakeMultiple: 1 };
     expect(validateDecision('{"enter":true,"stake":20,"reason":"x"}', fixed).ok).toBe(false);
     expect(validateDecision('{"enter":true,"stake":10,"reason":"In."}', fixed).ok).toBe(true);
+  });
+});
+
+describe("the house punctuation", () => {
+  // Built from character codes on both sides: this file may not contain the
+  // characters it is about, and the repo policy test is what says so.
+  const em = String.fromCharCode(0x2014);
+  const en = String.fromCharCode(0x2013);
+
+  it("turns a long dash into a comma, keeping the words", () => {
+    expect(plainPunctuation(`Zero wins${em}you are not ready for more rope.`)).toBe("Zero wins, you are not ready for more rope.");
+    expect(plainPunctuation(`Five rounds ${en} no wins.`)).toBe("Five rounds, no wins.");
+  });
+
+  it("leaves a line that never had one alone", () => {
+    expect(plainPunctuation("Clean slate, so I will carry you.")).toBe("Clean slate, so I will carry you.");
+  });
+
+  it("leaves a hyphen alone, which is punctuation a player can read", () => {
+    expect(plainPunctuation("A streak-chaser knows better.")).toBe("A streak-chaser knows better.");
   });
 });

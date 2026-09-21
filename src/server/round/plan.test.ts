@@ -370,6 +370,7 @@ describe("every decision says who is sitting there and what it owes", () => {
   });
 
   it("says nothing about debt with the bank off, so the lineup is what it was", async () => {
+    process.env.SERVPIT_BANK_ENABLED = "false";
     const { ctx } = await harness({ transport: enterTransport() });
     const plan = await planRound(ctx, "demo");
     expect(plan.decisions.every((d) => d.debtWei === undefined)).toBe(true);

@@ -183,3 +183,28 @@ describe("the lender's prompt", () => {
     expect(user).toContain("You may lend at most 7");
   });
 });
+
+describe("the lender's own words", () => {
+  // The first live decisions Marrow ever made came back with a long dash in
+  // them, which this repo bans everywhere including in a line a player reads.
+  // Refusing the answer over punctuation would hand the round to the fallback
+  // lender, so the dash becomes a comma.
+  it("takes the long dash out of an approval", () => {
+    const em = String.fromCharCode(0x2014);
+    const answer = JSON.stringify({ approve: true, amount: 1, rateBps: 800, reason: `Clean record${em}I will carry you.` });
+    const result = validateLoanDecision(answer, request(), bounds());
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.decision.reason).toBe("Clean record, I will carry you.");
+    expect(result.decision.reason).not.toMatch(new RegExp(String.fromCharCode(0x2013, 0x2014).split("").join("|")));
+  });
+
+  it("takes it out of a refusal too", () => {
+    const en = String.fromCharCode(0x2013);
+    const answer = JSON.stringify({ approve: false, amount: 0, rateBps: 500, reason: `Zero wins ${en} nothing paid back.` });
+    const result = validateLoanDecision(answer, request(), bounds());
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.decision.reason).toBe("Zero wins, nothing paid back.");
+  });
+});

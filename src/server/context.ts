@@ -55,8 +55,10 @@ async function build(): Promise<ServerContext> {
   const rollover = new RolloverStore(join(env.dataDir, `rollover-${chain.network}.json`), chain.network);
   const debts = new DebtStore(join(env.dataDir, `debts-${chain.network}.json`), chain.network);
   const wreckStore = new WreckStore(join(env.dataDir, `wrecks-${chain.network}.json`), chain.network);
-  // There is no bank wallet in this build, so a nonzero share has nowhere to
-  // go. Fail here rather than quietly rolling it over.
+  // A bank wallet exists now, and nothing sends it a share of a house win:
+  // the prize model computes that share as zero and no transfer carries it.
+  // So the answer is still false, and a nonzero share still refuses to start
+  // rather than being quietly rolled over into the next pot.
   assertBankShareIsPayable(false);
   const servConfig = { ...DEFAULT_SERV, model: env.serv?.model ?? DEFAULT_SERV.model };
   const serv = env.serv ? new ServClient(servConfig, createServTransport(env.serv.apiKey, servConfig)) : undefined;

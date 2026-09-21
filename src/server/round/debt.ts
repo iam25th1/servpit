@@ -39,6 +39,15 @@ export interface AgentDebt {
   borrowedWei: bigint;
   loanCount: number;
   /**
+   * Everything this identity has handed back, principal and interest.
+   *
+   * The lender is told it when it decides, and it was told zero every time
+   * until now: the figure was a placeholder in the prompt, so an agent that
+   * had repaid every chip it ever borrowed looked exactly like one that had
+   * never paid back anything. Per identity, like the borrowing it answers to.
+   */
+  repaidWei: bigint;
+  /**
    * Which of the replacement pool is sitting here, by its roster id.
    *
    * Null for one of the six who started, and absent on a record written
@@ -59,6 +68,7 @@ interface StoredDebt {
   bornAtRound?: string | null;
   borrowedWei?: string;
   loanCount?: number;
+  repaidWei?: string;
   occupantId?: string | null;
 }
 
@@ -71,6 +81,7 @@ export const NO_DEBT_FOR = (identityId: string, bornAtRound: string | null = nul
   bornAtRound,
   borrowedWei: 0n,
   loanCount: 0,
+  repaidWei: 0n,
   occupantId,
 });
 
@@ -110,6 +121,7 @@ export class DebtStore {
         bornAtRound: debt.bornAtRound ?? null,
         borrowedWei: debt.borrowedWei !== undefined && /^\d+$/.test(debt.borrowedWei) ? BigInt(debt.borrowedWei) : BigInt(debt.principalWei),
         loanCount: debt.loanCount ?? 0,
+        repaidWei: debt.repaidWei !== undefined && /^\d+$/.test(debt.repaidWei) ? BigInt(debt.repaidWei) : 0n,
         occupantId: debt.occupantId ?? null,
       });
     }
@@ -178,7 +190,12 @@ export class DebtStore {
     if (principalWei > current.principalWei || interestWei > current.interestWei) {
       throw new RangeError(`cannot repay more than is owed for ${walletId}`);
     }
-    const next: AgentDebt = { ...current, principalWei: current.principalWei - principalWei, interestWei: current.interestWei - interestWei };
+    const next: AgentDebt = {
+      ...current,
+      principalWei: current.principalWei - principalWei,
+      interestWei: current.interestWei - interestWei,
+      repaidWei: current.repaidWei + principalWei + interestWei,
+    };
     this.debts.set(walletId, next);
     this.flush();
     return { ...next };
@@ -243,6 +260,7 @@ export class DebtStore {
         bornAtRound: d.bornAtRound,
         borrowedWei: d.borrowedWei.toString(),
         loanCount: d.loanCount,
+        repaidWei: d.repaidWei.toString(),
         occupantId: d.occupantId ?? null,
       };
     }

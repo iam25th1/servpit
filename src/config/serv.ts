@@ -80,16 +80,30 @@ export const DEFAULT_SERV: ServConfig = {
     "Reject and regenerate if reason contains any number longer than four digits.",
   shadowMaxIterations: 3,
   temperature: 0.2,
-  // Measured across 36 live calls, a completion is about 33 tokens: one short
-  // sentence and three small numbers. This was 400, and SERV bills its 402
-  // against the estimated maximum cost rather than the actual one, so a
-  // ceiling nothing ever reached was refusing requests on an account that
-  // had the money for them. 120 is three and a half times the measured size.
+  // An agent's completion is about 33 tokens, measured across 36 live calls:
+  // one short sentence and three small numbers. The lender's is not. 12d cut
+  // this to 120 because SERV bills its 402 against the estimated maximum cost
+  // rather than the actual one, and an account with 5 cents on it was being
+  // refused requests it could afford.
+  //
+  // At 120 every bank call came back empty with finish_reason stop, three
+  // attempts in a row, and Marrow fell back to the deterministic lender
+  // without anything on the surface saying so: every loan on chain carried
+  // "Clean slate, so I will carry you" rather than a decision. Measured
+  // against the live endpoint with the real bank prompt: 120 never answered,
+  // 160 answered once in two, 200 and 256 answered every time. 400 is the
+  // value this had before 12d and leaves room for a lender that thinks
+  // before it speaks.
+  //
+  // This is a ceiling on an estimate, not a spend: the completions themselves
+  // are still tens of tokens. If the account runs down to cents again, this
+  // is the first thing that will 402, and the answer is credit rather than a
+  // budget too small for the question.
   //
   // Lowering the Shadow Agent iteration count would cut the estimate further
   // and is deliberately not done. It is a safety net on a money surface, and
   // an empty account is not a reason to weaken one.
-  maxCompletionTokens: 120,
+  maxCompletionTokens: 400,
   // 15 s per attempt against a measured healthy maximum of 11.9 s, and 25 s
   // for the agent in total. Worst case per agent was 61.2 s.
   timeoutMs: 15_000,
