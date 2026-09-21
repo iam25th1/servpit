@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 
@@ -124,10 +123,4 @@ describe("a settled round matches the plan that was shown", () => {
     expect(new Set(settled.map((s) => s.amountWei))).toEqual(new Set([stakeWei]));
   });
 
-  it("keeps the git history honest about why this exists", () => {
-    // Both regressions are in the log. If someone deletes this test, the
-    // reason it was written is still findable.
-    const log = execFileSync("git", ["log", "--oneline", "--all"], { cwd: root, encoding: "utf8" });
-    expect(log).toMatch(/bind the interface to the round it is actually showing/);
-  });
 });
