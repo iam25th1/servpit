@@ -24,6 +24,7 @@ import { faceFor, generationOf, profileFor } from "@/config/replacements";
 import { CHIPS_PER_FUNDED_WALLET } from "@/config/stake";
 import { splitPrize, type PrizeSplit } from "./prize";
 import { bankEnabled } from "@/config/economy";
+import { withSettleLock } from "./settleLock";
 import { splitCappedPrize } from "@/economy/prize";
 import type { FlowContext, RoundPlan, RoundRun } from "./types";
 import { type StoredAgentRound } from "./store";
@@ -44,7 +45,19 @@ export interface RunProgress {
   onLoan?: (agentId: string, outcome: TransferOutcome) => void;
 }
 
+/**
+ * Settles a round, with at most one settle running at a time.
+ *
+ * The lock is here rather than in the route, so a script settling beside the
+ * dev server is held to the same rule as a second browser tab. A context with
+ * no lock file, which is what a test builds, runs unlocked.
+ */
 export async function runRound(ctx: FlowContext, plan: RoundPlan, progress: RunProgress = {}): Promise<RoundRun> {
+  if (ctx.settleLockFile === undefined) return settleRound(ctx, plan, progress);
+  return withSettleLock(ctx.settleLockFile, () => settleRound(ctx, plan, progress));
+}
+
+async function settleRound(ctx: FlowContext, plan: RoundPlan, progress: RunProgress): Promise<RoundRun> {
   const pot = ctx.wallets.pot;
   const watched = [pot.address, ...plan.snapshots.map((s) => s.address)];
   const bank = ctx.wallets.bank;

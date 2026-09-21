@@ -17,6 +17,17 @@ export interface FakeChainOptions {
    * the one that used to lose the hash.
    */
   receiptWaitFails?: (txHash: string) => boolean;
+  /**
+   * The transaction is accepted, never mines, and moves nothing. The chain
+   * cannot say what became of it, which is the state a resend exists for.
+   */
+  stallsBroadcast?: (txHash: string) => boolean;
+  /**
+   * The transaction mines and moves the money, and the chain will not admit
+   * it exists. The nastier half of the same case: the resend has to be
+   * refused by the nonce, because nothing else knows the money has moved.
+   */
+  hidesBroadcast?: (txHash: string) => boolean;
 }
 
 export class FakeChain implements Chain {
@@ -27,6 +38,8 @@ export class FakeChain implements Chain {
   /** Free by default; a test can charge gas to exercise that exclusion. */
   readonly gasReserveWei: bigint;
   applied = 0;
+  /** Broadcasts, including the ones that moved nothing. */
+  broadcasts = 0;
   balanceReads = 0;
   private readonly balances = new Map<string, bigint>();
   private readonly receipts = new Map<string, TxReceipt>();
@@ -34,6 +47,14 @@ export class FakeChain implements Chain {
 
   /** Transactions broadcast but whose receipt wait was made to fail. */
   private readonly broadcast = new Map<string, TxReceipt>();
+  /** Next nonce per address, and the nonces that have actually mined. */
+  private readonly nonces = new Map<string, number>();
+  private readonly mined = new Map<string, Set<number>>();
+  private readonly txNonces = new Map<string, number>();
+  /** Broadcast, unmined, and unaccountable. */
+  private readonly stalled = new Set<string>();
+  /** Mined, and unaccountable. */
+  private readonly hidden = new Set<string>();
 
   constructor(private readonly options: FakeChainOptions = {}) {
     this.initial = options.initialBalanceWei ?? 0n;
@@ -52,31 +73,54 @@ export class FakeChain implements Chain {
         this.balanceReads++;
         return this.balances.get(addr) ?? 0n;
       },
-      send: async (calls, idempotencyKey, onBroadcast) => {
-        const seen = this.receipts.get(idempotencyKey);
-        if (seen) return seen;
+      send: async (calls, idempotencyKey, options) => {
+        // The key dedupe stands in for the layer above the chain. A resend
+        // under an explicit nonce is deliberately not covered by it: that is
+        // the case where the chain's own nonce is the only net, and the whole
+        // point is to prove it holds.
+        if (options?.nonce === undefined) {
+          const seen = this.receipts.get(idempotencyKey);
+          if (seen) return seen;
+        }
+        const used = this.minedNonces(addr);
+        const nonce = options?.nonce ?? this.nonces.get(addr) ?? 0;
+        if (used.has(nonce)) throw new Error(`nonce too low: ${nonce} has already been used by ${addr}`);
         const total = sumWei(calls.map((c) => c.value));
         const balance = this.balances.get(addr) ?? 0n;
         if (balance < total) throw new Error(`insufficient balance: ${balance} wei < ${total} wei`);
-        this.balances.set(addr, balance - total);
-        for (const c of calls) this.balances.set(c.to, (this.balances.get(c.to) ?? 0n) + c.value);
-        this.applied++;
         // Every resend of the same idempotency key would be a different
         // transaction on a real chain, so the hash varies with how many times
         // this wallet has actually broadcast.
-        const digest = createHash("sha256").update(`fake-tx/${idempotencyKey}/${this.applied}`).digest("hex");
+        this.broadcasts++;
+        const digest = createHash("sha256").update(`fake-tx/${idempotencyKey}/${this.broadcasts}`).digest("hex");
         // The fake chain charges nothing, so a wallet's balance delta is its
         // stake movement exactly, which is what it was on the real chain too
         // until agents stopped being sponsored.
         const receipt: TxReceipt = { txHash: `0x${digest.slice(0, 64)}`, status: "complete", feeWei: 0n };
-        onBroadcast?.(receipt.txHash);
+        this.txNonces.set(receipt.txHash, nonce);
+        options?.onBroadcast?.(receipt.txHash);
+
+        if (this.options.stallsBroadcast?.(receipt.txHash)) {
+          // Accepted and then nothing: no money, no nonce, no answer.
+          this.stalled.add(receipt.txHash);
+          throw new Error("The request took too long to respond. Details: The request timed out.");
+        }
+
+        this.balances.set(addr, balance - total);
+        for (const c of calls) this.balances.set(c.to, (this.balances.get(c.to) ?? 0n) + c.value);
+        this.applied++;
+        used.add(nonce);
+        this.nonces.set(addr, Math.max(this.nonces.get(addr) ?? 0, nonce + 1));
         this.broadcast.set(receipt.txHash, receipt);
+        if (this.options.hidesBroadcast?.(receipt.txHash)) this.hidden.add(receipt.txHash);
         if (this.options.receiptWaitFails?.(receipt.txHash)) {
           throw new Error("The request took too long to respond. Details: The request timed out.");
         }
         this.receipts.set(idempotencyKey, receipt);
         return receipt;
       },
+      nextNonce: async () => this.nonces.get(addr) ?? 0,
+      nonceOf: async (txHash) => this.txNonces.get(txHash) ?? null,
       awaitReceipt: async (txHash) => {
         const receipt = this.broadcast.get(txHash);
         if (!receipt) throw new Error(`no transaction ${txHash}`);
@@ -85,6 +129,7 @@ export class FakeChain implements Chain {
       },
       checkBroadcast: async (txHash) => {
         if (!TX_HASH.test(txHash)) throw new RangeError("txHash must be 32 bytes of hex");
+        if (this.stalled.has(txHash) || this.hidden.has(txHash)) return { state: "unknown" };
         const receipt = this.broadcast.get(txHash);
         return receipt ? { state: "mined", receipt } : { state: "dropped" };
       },
@@ -99,6 +144,14 @@ export class FakeChain implements Chain {
       out[address] = this.balances.get(address) ?? 0n;
     }
     return out;
+  }
+
+  private minedNonces(address: string): Set<number> {
+    const held = this.mined.get(address);
+    if (held) return held;
+    const fresh = new Set<number>();
+    this.mined.set(address, fresh);
+    return fresh;
   }
 
   /** Test and faucet helper. */

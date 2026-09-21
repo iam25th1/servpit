@@ -49,6 +49,12 @@ export interface FlowContext {
   bankroll: BankrollCache;
   meter: CostMeter;
   serv?: ServClient;
+  /**
+   * The file that says a settle is running. Optional so a test context can
+   * leave it out and run without the lock; every context that serves a player
+   * sets it.
+   */
+  settleLockFile?: string;
   entrants: number;
 }
 

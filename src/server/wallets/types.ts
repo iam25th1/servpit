@@ -40,6 +40,25 @@ export type BroadcastState =
   /** Unknown to the chain while the sender still has work queued. Never resend. */
   | { state: "unknown" };
 
+export interface SendOptions {
+  /**
+   * Fires with the hash the moment the transaction is accepted by the node,
+   * before the wait for its receipt. A receipt wait that times out must not
+   * lose the hash: without it the caller cannot tell a transfer that landed
+   * from one that never left, and resending is a double payment.
+   */
+  onBroadcast?: (txHash: string) => void;
+  /**
+   * Send under this exact nonce rather than the next one.
+   *
+   * Only for resending a transfer the chain will not account for. One
+   * transaction per nonce can ever mine, so a resend under the nonce the
+   * original used replaces it or loses to it, and either way the money moves
+   * once. Sending the same transfer under a fresh nonce is what pays twice.
+   */
+  nonce?: number;
+}
+
 export interface Wallet {
   readonly id: string;
   readonly address: string;
@@ -49,13 +68,18 @@ export interface Wallet {
    * Sends the calls and resolves once they are on chain. A smart wallet could
    * batch them; an externally owned account sends them in order. The receipt
    * describes the last one.
-   *
-   * onBroadcast fires with the hash the moment the transaction is accepted by
-   * the node, before the wait for its receipt. A receipt wait that times out
-   * must not lose the hash: without it the caller cannot tell a transfer that
-   * landed from one that never left, and resending is a double payment.
    */
-  send(calls: readonly Call[], idempotencyKey: string, onBroadcast?: (txHash: string) => void): Promise<TxReceipt>;
+  send(calls: readonly Call[], idempotencyKey: string, options?: SendOptions): Promise<TxReceipt>;
+  /**
+   * The nonce the next transaction from this wallet will use.
+   *
+   * Read before sending and recorded with the transfer, so a resend can be
+   * made under the same one. It is only the nonce that will be used because
+   * one settle runs at a time and nothing else holds this key.
+   */
+  nextNonce(): Promise<number>;
+  /** The nonce a broadcast transaction used, or null when the chain cannot say. */
+  nonceOf(txHash: string): Promise<number | null>;
   /** Waits again for a transaction already broadcast. */
   awaitReceipt(txHash: string): Promise<TxReceipt>;
   /** What became of a transaction this wallet broadcast. */

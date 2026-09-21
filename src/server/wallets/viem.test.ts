@@ -33,6 +33,12 @@ const stubReader = (balances: Record<string, bigint>): ChainReader & { calls: nu
     async checkBroadcast() {
       return { state: "dropped" } as const;
     },
+    async nextNonce() {
+      return 0;
+    },
+    async nonceOf() {
+      return null;
+    },
   };
   return reader;
 };
@@ -95,7 +101,7 @@ describe("ViemChain wiring", () => {
 describe("ViemChain balances and transfers", () => {
   it("reads the balance from the chain every time, never from a cached copy", async () => {
     let balance = 500n;
-    const chain = chainWith({ atlas: stubProvider(ADDR_A).provider }, { atlas: KEY_A }, { readBalances: async (a: readonly string[]) => a.map(() => balance), checkBroadcast: async () => ({ state: "dropped" }) as const });
+    const chain = chainWith({ atlas: stubProvider(ADDR_A).provider }, { atlas: KEY_A }, { readBalances: async (a: readonly string[]) => a.map(() => balance), checkBroadcast: async () => ({ state: "dropped" }) as const, nextNonce: async () => 0, nonceOf: async () => null });
     const wallet = await chain.open("atlas");
     expect(await wallet.getBalance()).toBe(500n);
     balance = 900n;

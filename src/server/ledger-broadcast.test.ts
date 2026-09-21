@@ -21,10 +21,10 @@ afterEach(() => {
 const FUNDED = 1_000_000n;
 const AMOUNT = 10_000n;
 
-async function harness(options: { receiptWaitFails?: (txHash: string) => boolean } = {}) {
+async function harness(options: { receiptWaitFails?: (txHash: string) => boolean; stallsBroadcast?: (txHash: string) => boolean; hidesBroadcast?: (txHash: string) => boolean } = {}) {
   dir = mkdtempSync(join(tmpdir(), "servpit-broadcast-"));
   const file = join(dir, "ledger.json");
-  const chain = new FakeChain({ initialBalanceWei: FUNDED, receiptWaitFails: options.receiptWaitFails });
+  const chain = new FakeChain({ initialBalanceWei: FUNDED, ...options });
   const from = await chain.open("atlas");
   const to = await chain.open("pot");
   const ledger = new TransferLedger(file);
@@ -94,34 +94,44 @@ describe("a receipt wait that times out after the transfer landed", () => {
     expect(ledger.get("k-1")!.status).toBe("broadcast");
   });
 
-  it("refuses outright while the chain cannot say what became of it", async () => {
+  it("refuses outright when the chain cannot say and no nonce was recorded", async () => {
     const { chain, from, ledger, transfer } = await harness({ receiptWaitFails: () => true });
-    await expect(transfer()).rejects.toThrow(/too long/);
+    // A wallet whose nonce could not be read: the record has a hash and
+    // nothing to resend under, which is where refusing is the only answer.
+    const nonceless: Wallet = { ...from, nextNonce: async () => Promise.reject(new Error("rpc down")) };
+    await expect(transfer(ledger, nonceless)).rejects.toThrow(/too long/);
+    expect(ledger.get("k-1")!.nonce).toBeUndefined();
     const applied = chain.applied;
 
-    const unsure: Wallet = { ...from, checkBroadcast: async (): Promise<BroadcastState> => ({ state: "unknown" }) };
+    const unsure: Wallet = { ...nonceless, checkBroadcast: async (): Promise<BroadcastState> => ({ state: "unknown" }) };
     await expect(transfer(ledger, unsure)).rejects.toThrow(/Refusing to send it again/);
     expect(chain.applied).toBe(applied);
   });
 
-  it("sends again only once the chain confirms the transaction is gone", async () => {
-    let failWait = true;
-    const { chain, from, to, ledger, transfer } = await harness({ receiptWaitFails: () => failWait });
+  it("sends again under the same nonce once the chain confirms the transaction is gone", async () => {
+    // Stalled once, so the fake chain agrees with the stub: nothing moved and
+    // the nonce it went out under is still free. The resend is allowed to
+    // land, which is the half of it being tested.
+    let stalled = false;
+    const { chain, from, to, ledger, transfer } = await harness({
+      stallsBroadcast: () => {
+        if (stalled) return false;
+        stalled = true;
+        return true;
+      },
+    });
     await expect(transfer()).rejects.toThrow(/too long/);
     const applied = chain.applied;
+    const nonce = ledger.get("k-1")!.nonce;
+    expect(nonce).toBe(0);
 
-    failWait = false;
-    // The fake chain reports dropped for a hash it never saw; here the earlier
-    // broadcast is explicitly declared gone.
     const dropped: Wallet = { ...from, checkBroadcast: async (): Promise<BroadcastState> => ({ state: "dropped" }) };
     const settled = await transfer(ledger, dropped);
 
     expect(chain.applied).toBe(applied + 1);
     expect(settled.status).toBe("complete");
-    // Once, for the resend, because the first one was never charged: the fake
-    // chain applied it, so the balance reflects both. What matters is that the
-    // resend only happened after a confirmed drop.
-    expect(chain.balanceOf(to.address)).toBe(FUNDED + AMOUNT * 2n);
+    expect(ledger.get("k-1")!.nonce).toBe(nonce);
+    expect(chain.balanceOf(to.address)).toBe(FUNDED + AMOUNT);
   });
 
   it("marks a reverted transaction failed and does not send it again", async () => {
@@ -144,5 +154,75 @@ describe("a receipt wait that times out after the transfer landed", () => {
     ).rejects.toThrow(/connection refused/);
     expect(ledger.get("k-2")!.status).toBe("failed");
     expect(ledger.get("k-2")!.txHash).toBeUndefined();
+  });
+
+  // What the nonce is for. A transfer the chain will not account for has two
+  // possible histories and no way to tell them apart from here: it landed and
+  // the node has lost sight of it, or it never landed at all. Sending again
+  // under the nonce it went out under is safe in both, because one
+  // transaction per nonce can ever mine.
+  describe("a transfer the chain will not account for", () => {
+    it("records the nonce it went out under, with every hash it has been sent as", async () => {
+      const { ledger, transfer, file } = await harness({ receiptWaitFails: () => true });
+      await expect(transfer()).rejects.toThrow(/too long/);
+      const record = ledger.get("k-1")!;
+      expect(record.nonce).toBe(0);
+      expect(record.hashes).toEqual([record.txHash]);
+      const stored = JSON.parse(readFileSync(file, "utf8")).transfers["k-1"];
+      expect(stored.nonce).toBe(0);
+    });
+
+    it("lands the resend when the original never did, and moves the money once", async () => {
+      let stalled = false;
+      const { chain, to, ledger, transfer } = await harness({
+        stallsBroadcast: () => {
+          if (stalled) return false;
+          stalled = true;
+          return true;
+        },
+      });
+      await expect(transfer()).rejects.toThrow(/too long/);
+      expect(chain.applied).toBe(0);
+      const first = ledger.get("k-1")!;
+
+      const settled = await transfer();
+
+      expect(settled.status).toBe("complete");
+      expect(settled.nonce).toBe(first.nonce);
+      expect(settled.hashes).toHaveLength(2);
+      expect(settled.txHash).not.toBe(first.txHash);
+      // Once. Two hashes, one transaction, one payment.
+      expect(chain.applied).toBe(1);
+      expect(chain.balanceOf(to.address)).toBe(FUNDED + AMOUNT);
+    });
+
+    it("fails the resend harmlessly when the original had already landed", async () => {
+      // The money moved and the chain will not admit the transaction exists.
+      // The resend goes out under the same nonce and is refused by the chain,
+      // which is the whole safety property: nothing is paid twice.
+      const { chain, to, ledger, transfer } = await harness({ hidesBroadcast: () => true, receiptWaitFails: () => true });
+      await expect(transfer()).rejects.toThrow(/too long/);
+      expect(chain.applied).toBe(1);
+      const applied = chain.applied;
+
+      await expect(transfer()).rejects.toThrow(/nonce too low/);
+
+      expect(chain.applied).toBe(applied);
+      expect(chain.balanceOf(to.address)).toBe(FUNDED + AMOUNT);
+      // Still broadcast, not failed: the money did move, and saying otherwise
+      // would invite somebody to send it again.
+      expect(ledger.get("k-1")!.status).toBe("broadcast");
+    });
+
+    it("keeps the same nonce across several attempts, never taking a fresh one", async () => {
+      const { ledger, transfer } = await harness({ stallsBroadcast: () => true });
+      await expect(transfer()).rejects.toThrow(/too long/);
+      const nonce = ledger.get("k-1")!.nonce;
+      await expect(transfer()).rejects.toThrow(/too long/);
+      await expect(transfer()).rejects.toThrow(/too long/);
+      const record = ledger.get("k-1")!;
+      expect(record.nonce).toBe(nonce);
+      expect(record.hashes).toHaveLength(3);
+    });
   });
 });

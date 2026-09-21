@@ -9,19 +9,17 @@ import { createServTransport } from "./serv/transport";
 import { RoundStore } from "./round/store";
 import type { FlowContext } from "./round/flow";
 import { readEnv, type ServerEnv } from "./env";
-import { weiPerChip } from "@/config/stake";
 import { log } from "./log";
 import { PlanStore } from "./round/planStore";
 import { RolloverStore } from "./round/rollover";
 import { DebtStore } from "./round/debt";
 import { WreckStore } from "./round/wrecks";
 import { assertBankShareIsPayable } from "@/config/economy";
-import { ViemChain } from "./wallets/viem";
-import { FakeChain } from "./wallets/fake";
 import { openWallets, type Wallets } from "./wallets/open";
 import { BANK_WALLET_ID, OPERATOR_WALLET_ID } from "@/config/wallets";
 import { bankEnabled } from "@/config/economy";
 import { WalletRegistry } from "./wallets/registry";
+import { getChain } from "./chain";
 import type { Chain } from "./wallets/types";
 
 export interface ServerContext {
@@ -36,26 +34,9 @@ export interface ServerContext {
 
 let pending: Promise<ServerContext> | undefined;
 
-/**
- * Fake chain wallets start with a testnet sized float so local rounds can run.
- *
- * SERVPIT_FAKE_BALANCE_CHIPS lowers it, which is the only way to see an agent
- * short of a seat without touching a real wallet. It does nothing on the viem
- * backend, where balances come from the chain.
- */
-const FAKE_INITIAL_WEI = 1_000_000_000_000_000n;
-
-function fakeOpeningWei(env: NodeJS.ProcessEnv): bigint {
-  const raw = env.SERVPIT_FAKE_BALANCE_CHIPS?.trim();
-  if (raw === undefined || raw.length === 0) return FAKE_INITIAL_WEI;
-  const chips = Number(raw);
-  if (!Number.isInteger(chips) || chips < 0) throw new RangeError(`SERVPIT_FAKE_BALANCE_CHIPS must be a whole number of chips, got ${raw}`);
-  return BigInt(chips) * weiPerChip(env);
-}
-
 async function build(): Promise<ServerContext> {
   const env = readEnv();
-  const chain: Chain = env.viem ? new ViemChain(env.viem) : new FakeChain({ initialBalanceWei: fakeOpeningWei(process.env) });
+  const chain: Chain = getChain(env);
   log.info("wallet backend", { backend: chain.kind, network: chain.network });
   const registry = new WalletRegistry(join(env.dataDir, `wallets-${chain.network}.json`), chain.network);
   // Only when the bank is on and there is a key for it. A round that never
@@ -80,7 +61,7 @@ async function build(): Promise<ServerContext> {
   const servConfig = { ...DEFAULT_SERV, model: env.serv?.model ?? DEFAULT_SERV.model };
   const serv = env.serv ? new ServClient(servConfig, createServTransport(env.serv.apiKey, servConfig)) : undefined;
   log.info("serv backend", { configured: Boolean(serv), model: serv ? servConfig.model : null });
-  const flow: FlowContext = { chain, wallets, ledger, store, bankroll, meter, serv, plans, rollover, debts, wreckStore, entrants: 24 };
+  const flow: FlowContext = { chain, wallets, ledger, store, bankroll, meter, serv, plans, rollover, debts, wreckStore, settleLockFile: join(env.dataDir, `settle-${chain.network}.lock`), entrants: 24 };
   return { env, chain, registry, wallets, bankroll, flow };
 }
 
