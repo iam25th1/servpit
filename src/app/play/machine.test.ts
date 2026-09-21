@@ -7,7 +7,7 @@ const run = { roundId: "r-1", winner: "agent-atlas", replay: { log: [{}], charac
 
 const booted = (): FlowState => reduce(initialState(), { type: "assetsReady" });
 const connected = (): FlowState => reduce(booted(), { type: "connected", player: { id: "p1", label: "0xabc" } });
-const chosen = (): FlowState => reduce(connected(), { type: "modeChosen", modeId: "battleRoyale", stake: "low" });
+const chosen = (): FlowState => reduce(connected(), { type: "modeChosen", modeId: "battleRoyale" });
 const lobby = (): FlowState => reduce(chosen(), { type: "planLoaded", plan });
 const pulled = (): FlowState => reduce(lobby(), { type: "leverPulled" });
 
@@ -38,25 +38,32 @@ describe("flow start", () => {
 
   it("refuses a locked mode and stays put", () => {
     const locked = GAME_MODES.find((m) => m.locked)!;
-    const s = reduce(connected(), { type: "modeChosen", modeId: locked.id, stake: "low" });
+    const s = reduce(connected(), { type: "modeChosen", modeId: locked.id });
     expect(s.screen).toBe("modeSelect");
     expect(s.mode).toBeNull();
     expect(s.error).toMatch(/not open yet/i);
   });
 
-  it("refuses an unknown mode or an unknown stake", () => {
-    expect(reduce(connected(), { type: "modeChosen", modeId: "nope", stake: "low" }).screen).toBe("modeSelect");
-    expect(reduce(connected(), { type: "modeChosen", modeId: "battleRoyale", stake: "vip" as "low" }).mode).toBeNull();
+  it("refuses an unknown mode", () => {
+    const s = reduce(connected(), { type: "modeChosen", modeId: "nope" });
+    expect(s.screen).toBe("modeSelect");
+    expect(s.mode).toBeNull();
   });
 
-  it("accepts Battle Royale at either stake tier", () => {
-    for (const stake of ["low", "high"] as const) {
-      const s = reduce(connected(), { type: "modeChosen", modeId: "battleRoyale", stake });
-      expect(s.screen).toBe("lobby");
-      expect(s.mode?.id).toBe("battleRoyale");
-      expect(s.stake).toBe(stake);
-      expect(s.leverLive).toBe(false);
-    }
+  it("accepts Battle Royale, which has one stake and no tier to pick", () => {
+    // Low and High used to sit on this card and decide nothing: the request
+    // carries a seed and an entrant count, so the tier never reached the
+    // server. A seat costs a fixed share of what a wallet is funded with.
+    const s = reduce(connected(), { type: "modeChosen", modeId: "battleRoyale" });
+    expect(s.screen).toBe("lobby");
+    expect(s.mode?.id).toBe("battleRoyale");
+    expect(s.leverLive).toBe(false);
+  });
+
+  it("offers exactly one way into the only playable mode", () => {
+    const playable = GAME_MODES.filter((m) => !m.locked);
+    expect(playable).toHaveLength(1);
+    expect(Object.keys(playable[0])).not.toContain("stakes");
   });
 });
 
@@ -136,16 +143,16 @@ describe("errors and replay", () => {
   });
 
   it("clears a stale error when the next mode is chosen", () => {
-    const errored = reduce(connected(), { type: "modeChosen", modeId: "duel", stake: "low" });
+    const errored = reduce(connected(), { type: "modeChosen", modeId: "duel" });
     expect(errored.error).not.toBeNull();
-    expect(reduce(errored, { type: "modeChosen", modeId: "battleRoyale", stake: "low" }).error).toBeNull();
+    expect(reduce(errored, { type: "modeChosen", modeId: "battleRoyale" }).error).toBeNull();
   });
 
   it("ignores events that do not belong to the current screen", () => {
     const s = connected();
     expect(reduce(s, { type: "reelsSettled" })).toBe(s);
     expect(reduce(s, { type: "playbackFinished" })).toBe(s);
-    expect(reduce(initialState(), { type: "modeChosen", modeId: "battleRoyale", stake: "low" }).screen).toBe("boot");
+    expect(reduce(initialState(), { type: "modeChosen", modeId: "battleRoyale" }).screen).toBe("boot");
   });
 });
 
@@ -154,7 +161,7 @@ describe("decisions arriving one at a time", () => {
     let s = initialState();
     s = reduce(s, { type: "assetsReady" });
     s = reduce(s, { type: "connected", player: { id: "p", label: "Guest" } });
-    return reduce(s, { type: "modeChosen", modeId: "battleRoyale", stake: "low" });
+    return reduce(s, { type: "modeChosen", modeId: "battleRoyale" });
   };
 
   it("collects each decision as it lands, in arrival order", () => {
@@ -182,7 +189,7 @@ describe("decisions arriving one at a time", () => {
     // Reducer level, because reaching mode select again means driving the
     // whole flow and the thing under test is the transition.
     const stale = { ...initialState(), screen: "modeSelect" as const, decided: [{ agentId: "delta" }] };
-    const next = reduce(stale, { type: "modeChosen", modeId: "battleRoyale", stake: "low" });
+    const next = reduce(stale, { type: "modeChosen", modeId: "battleRoyale" });
     expect(next.screen).toBe("lobby");
     expect(next.decided).toEqual([]);
   });

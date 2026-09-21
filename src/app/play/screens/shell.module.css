@@ -170,14 +170,17 @@
   padding: 2px 8px;
 }
 
-.stakes {
+/* One control, not a row of tiers. The Low and High tabs that used to sit
+   here decided nothing: the request carries a seed and an entrant count, so
+   the tier never reached the server. */
+.enter {
   display: flex;
   gap: var(--space-tight);
 }
 
 /* The tab sprite is white art, so the label is ink. Bone on it measured
    1.87:1 and was the unreadable "Low 100 / High 1000" row. */
-.stakeTab {
+.enterTab {
   flex: 1;
   font-family: var(--font-ui);
   font-size: var(--text-body);
@@ -188,7 +191,7 @@
   box-sizing: border-box;
 }
 
-.stakeTab:focus-visible {
+.enterTab:focus-visible {
   outline: 2px solid var(--amber);
   outline-offset: 2px;
 }

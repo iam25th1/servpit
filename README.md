@@ -616,12 +616,8 @@ credit would be an operator funded facility rather than a business.
 **Round history is a JSON file.** Not a database.
 
 **One mode ships, at one stake.** Battle Royale. Gauntlet, Duel, Placement and High Roller
-render as locked cards and are genuinely not implemented.
-
-**The stake tabs are cosmetic.** Low and High are offered on the mode card, but the request the
-client sends carries only a seed and an entrant count, so the tier never reaches the server and
-a seat always costs a tenth of a funded wallet. The labels on those tabs are left over from the
-flat stake the game used before the stake became a fraction of funding.
+render as locked cards and are genuinely not implemented. A seat costs a fixed share of what a
+wallet is funded with, set by `SERVPIT_STAKE_FRACTION`, and the player does not choose it.
 
 **Randomness is server-side, not on-chain.** Commit-reveal is the honest design for this and is
 not built. It is called a seeded resolver here rather than on-chain randomness, because a sharp
