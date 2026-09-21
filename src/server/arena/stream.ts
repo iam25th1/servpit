@@ -1,0 +1,60 @@
+// The phase stream: one event when the pit moves, and nothing in between.
+//
+// The worker writes the arena file; a reader watches it. Watching is a poll
+// rather than fs.watch, because the file is replaced by a rename on every
+// write and a watcher on the old inode stops hearing about it. The store
+// stats the file first and only parses when it has changed, so a poll is a
+// stat.
+//
+// Not in the route file because src/app may not open a timer: that ban keeps
+// the animation clock in one place, and a server side poll is not an
+// animation clock, but the rule is worth more than the exception.
+
+import { arenaReader } from "./read";
+import { arenaView, phaseEvent } from "./view";
+
+/** How often the file is checked. A phase lasts seconds at least. */
+export const POLL_MS = 1_000;
+
+export interface PhaseStreamOptions {
+  /** Ends the stream when the client goes away. */
+  signal: AbortSignal;
+  send: (event: string, data: unknown) => void;
+  close: () => void;
+  pollMs?: number;
+}
+
+/**
+ * Sends the current phase, then one event per change until the client leaves.
+ *
+ * The first event is sent immediately so a page that joins mid round knows
+ * where it is without waiting for the next change.
+ */
+export function streamPhases(options: PhaseStreamOptions): void {
+  const reader = arenaReader();
+  const pollMs = options.pollMs ?? POLL_MS;
+  let last = "";
+
+  const tick = (): void => {
+    try {
+      const event = phaseEvent(arenaView(reader.state(), reader.chain));
+      const key = JSON.stringify(event);
+      if (key === last) return;
+      last = key;
+      options.send("phase", event);
+    } catch {
+      // A read that fails is not worth telling a viewer about in a stream
+      // whose next tick will try again, and the error itself may quote an
+      // endpoint. The route's own handler logs a failure that matters.
+    }
+  };
+
+  tick();
+  const timer = setInterval(tick, pollMs);
+  const stop = (): void => {
+    clearInterval(timer);
+    options.close();
+  };
+  if (options.signal.aborted) stop();
+  else options.signal.addEventListener("abort", stop, { once: true });
+}
