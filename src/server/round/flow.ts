@@ -173,6 +173,17 @@ export async function runRound(ctx: FlowContext, plan: RoundPlan): Promise<Round
     payouts: payout ? [{ address: payout.to, amountWei: payout.amountWei }] : [],
     appliedEntries: entries.filter((e) => e.applied).map((e) => ({ address: e.from, amountWei: e.amountWei })),
     appliedPayouts: payout?.applied ? [{ address: payout.to, amountWei: payout.amountWei }] : [],
+    // Only what was actually sent in this window paid a fee. A replay of a
+    // settled round resends nothing, so it owes nothing, and its wallet
+    // deltas are zero on both sides.
+    //
+    // The fee is charged to the sender: an entry costs the agent, a payout
+    // costs the pot. The pot is not checked per wallet, so its fee is read
+    // and simply never used, which is correct rather than an oversight.
+    feesWei: [
+      ...entries.filter((e) => e.applied).map((e) => ({ address: e.from, amountWei: e.feeWei ?? 0n })),
+      ...(payout?.applied ? [{ address: payout.from, amountWei: payout.feeWei ?? 0n }] : []),
+    ],
     houseContributionWei: plan.stakeWei * BigInt(plan.bots.length),
     rakeWei: toWei(round.rake),
   });

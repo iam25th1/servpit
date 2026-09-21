@@ -24,6 +24,26 @@ export interface ReconcileInput {
    */
   appliedEntries?: Movement[];
   appliedPayouts?: Movement[];
+  /**
+   * Transaction fees paid out of each wallet during this execution window,
+   * taken from the receipts.
+   *
+   * Until the phase 5 viem swap the agents were CDP smart wallets and the
+   * paymaster paid their gas, so a wallet's raw balance delta was exactly
+   * its stake movement and this did not exist. Plain accounts pay their own
+   * fees, so the delta now carries a cost the stake accounting knows nothing
+   * about: the first settled round on Base Sepolia showed -132252136528 wei
+   * against an expected -100, and the difference was the fee to the wei.
+   *
+   * It is a receipt figure and never an estimate, and never the gap between
+   * expected and observed. Deriving it from the gap would make every wallet
+   * check pass by construction, which on a money surface is worse than the
+   * wrong answer it replaced.
+   *
+   * Only fees from transfers applied in this window belong here. A replay
+   * that applies nothing pays nothing.
+   */
+  feesWei?: Movement[];
   /** Stake the operator pot covers for house bots, already held in the pot. */
   houseContributionWei: bigint;
   rakeWei: bigint;
@@ -58,13 +78,19 @@ export function reconcile(input: ReconcileInput): ReconcileResult {
 
   const appliedEntries = input.appliedEntries ?? input.entries;
   const appliedPayouts = input.appliedPayouts ?? input.payouts;
+  const fees = input.feesWei ?? [];
+  for (const f of fees) assertWei(f.amountWei, `fee for ${f.address}`);
   const wallets = new Set<string>([...input.entries, ...input.payouts].map((m) => m.address));
   wallets.delete(input.potAddress);
   for (const address of [...wallets].sort()) {
     const delta = balance(input.after, address, "after") - balance(input.before, address, "before");
     const paidIn = sumWei(appliedEntries.filter((m) => m.address === address).map((m) => m.amountWei));
     const paidOut = sumWei(appliedPayouts.filter((m) => m.address === address).map((m) => m.amountWei));
-    check(`wallet ${address} delta`, paidOut - paidIn, delta);
+    // The fee leaves the wallet alongside the stake, so the stake movement is
+    // the delta with the fee added back. Expressed on the expected side so a
+    // failure still reports the stake figures the operator reasons about.
+    const feePaid = sumWei(fees.filter((m) => m.address === address).map((m) => m.amountWei));
+    check(`wallet ${address} delta`, paidOut - paidIn, delta + feePaid);
   }
 
   const entriesTotal = sumWei(input.entries.map((m) => m.amountWei));

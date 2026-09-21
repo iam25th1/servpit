@@ -12,6 +12,12 @@ export interface Call {
 export interface TxReceipt {
   txHash: string;
   status: "complete";
+  /**
+   * What the sender paid in fees, from the receipt. Zero on a chain that does
+   * not charge. Reconciliation needs it because a plain account funds its own
+   * gas, so a raw balance delta is the stake plus this.
+   */
+  feeWei: bigint;
 }
 
 export interface Wallet {

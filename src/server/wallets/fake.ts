@@ -53,7 +53,10 @@ export class FakeChain implements Chain {
         for (const c of calls) this.balances.set(c.to, (this.balances.get(c.to) ?? 0n) + c.value);
         this.applied++;
         const digest = createHash("sha256").update(`fake-tx/${idempotencyKey}`).digest("hex");
-        const receipt: TxReceipt = { txHash: `0x${digest.slice(0, 64)}`, status: "complete" };
+        // The fake chain charges nothing, so a wallet's balance delta is its
+        // stake movement exactly, which is what it was on the real chain too
+        // until agents stopped being sponsored.
+        const receipt: TxReceipt = { txHash: `0x${digest.slice(0, 64)}`, status: "complete", feeWei: 0n };
         this.receipts.set(idempotencyKey, receipt);
         return receipt;
       },
