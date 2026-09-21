@@ -22,7 +22,7 @@ import type { FlowState } from "../machine";
 import type { ArenaStanding } from "./arenaHud";
 import { swingMeters } from "./bankrollMeter";
 import { entrantLabel } from "./entrantLabel";
-import { decidedCount, lineupRows, type DecidedShape } from "./lineupRows";
+import { decidedCount, lineupRows, type DecidedShape, type OccupantShape } from "./lineupRows";
 import { GRAVES_PER_PAGE, graveyardPage, type GraveShape } from "./graveyardRows";
 import { wreckMoments, type ReplacementShape, type WreckShape } from "./wreckMoment";
 
@@ -115,6 +115,8 @@ export interface GameShellProps {
   entries: EntryShape[];
   /** Decisions streamed so far, before the whole plan has landed. */
   decided: DecidedShape[];
+  /** Who is in each seat, which the stream reports before anybody decides. */
+  occupants: OccupantShape[];
   /** True only with the bank on, which is the only thing that makes a grave. */
   bankEnabled: boolean;
   /** The wall, once it has been read. Null while the request is in flight. */
@@ -135,7 +137,7 @@ export interface GameShellProps {
 
 
 export function GameShell(props: GameShellProps) {
-  const { state, plan, run, decided, entries } = props;
+  const { state, plan, run, decided, entries, occupants } = props;
   const { ui, modeIcon, facesetPath } = useUiKit();
   const showStage = state.screen === "lobby" || state.screen === "slot" || state.screen === "spinning" || state.screen === "arena";
 
@@ -185,7 +187,7 @@ export function GameShell(props: GameShellProps) {
           ) : state.screen === "spinning" ? (
             <BuyIns plan={plan} entries={entries} error={state.error} onRetry={props.onRetry} />
           ) : (
-            <Lineup plan={plan} decided={decided} error={state.error} onRetry={props.onRetry} />
+            <Lineup plan={plan} decided={decided} occupants={occupants} error={state.error} onRetry={props.onRetry} />
           )}
       </div>
 
@@ -296,11 +298,23 @@ export function GameShell(props: GameShellProps) {
     );
   }
 
-  function Lineup({ plan, decided, error, onRetry }: { plan: PlanShape | null; decided: DecidedShape[]; error: string | null; onRetry: () => void }) {
+  function Lineup({
+    plan,
+    decided,
+    occupants,
+    error,
+    onRetry,
+  }: {
+    plan: PlanShape | null;
+    decided: DecidedShape[];
+    occupants: OccupantShape[];
+    error: string | null;
+    onRetry: () => void;
+  }) {
     const listRef = useRef<HTMLUListElement>(null);
     // The plan's decisions win once it lands, so a late stream line cannot
     // leave a row showing something the round did not use.
-    const rows = lineupRows(plan ? plan.decisions : decided);
+    const rows = lineupRows(plan ? plan.decisions : decided, occupants);
     const done = decidedCount(rows);
     useEffect(() => {
       // Only the row that just filled in. Restaggering the whole list on
@@ -325,7 +339,7 @@ export function GameShell(props: GameShellProps) {
               <div className={styles.agentPortrait}>
                 <img
                   className={`${styles.faceset} ${row.state === "waiting" ? styles.thinkingFace : ""}`}
-                  src={facesetPath(row.state === "decided" && row.decision.face ? row.decision.face : characterFor(row.agentId))}
+                  src={facesetPath(row.face ?? characterFor(row.agentId))}
                   alt=""
                   width={38}
                   height={38}

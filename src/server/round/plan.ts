@@ -41,6 +41,22 @@ export const UNREACHABLE_REASON = "Couldn't reach its wallet, sitting this one o
  */
 export const TAPPED_OUT = "I'm tapped out. I need a loan.";
 
+/**
+ * Who is sitting in each seat, before anybody has decided anything.
+ *
+ * The lineup draws a row per seat from the moment a round starts, and until
+ * this it drew them from the roster: a seat whose original was carried out
+ * showed the dead agent's name for as long as the panel was waiting. Cheap
+ * enough to send first, because it reads the debt store and nothing else.
+ */
+export function seatOccupants(ctx: FlowContext): Array<{ agentId: string; name: string; face: string | null }> {
+  return NAMED_AGENTS.map((seat) => {
+    const identityId = ctx.debts.currentIdentity(seat.id);
+    const occupantId = ctx.debts.occupantOf(seat.id);
+    return { agentId: seat.id, name: profileFor(seat.id, identityId, occupantId).name, face: faceFor(seat.id, identityId, occupantId) };
+  });
+}
+
 export async function planRound(
   ctx: FlowContext,
   seed: string,
@@ -89,7 +105,9 @@ export async function planRound(
     // Who is in this seat now. After a wreck the wallet is reused and the
     // occupant is not, so the panel shows somebody new rather than the same
     // six names cycling forever.
-    const profile = profileFor(seat.id, ctx.debts.currentIdentity(seat.id));
+    const identityId = ctx.debts.currentIdentity(seat.id);
+    const occupantId = ctx.debts.occupantOf(seat.id);
+    const profile = profileFor(seat.id, identityId, occupantId);
     // Keyed by the seat, because that is what owns the wallet, the debt and
     // every idempotency key. The name is whoever is sitting in it.
     const base = {
@@ -97,10 +115,10 @@ export async function planRound(
       name: profile.name,
       strategy: profile.strategy,
       address: wallet.address,
-      face: faceFor(seat.id, ctx.debts.currentIdentity(seat.id)),
+      face: faceFor(seat.id, identityId, occupantId),
       // From the debt store, which carries accrued interest. The ledger only
       // knows what was advanced, and what an agent owes is more than that.
-      debtWei: bankEnabled() ? totalOwed(ctx.debts.get(seat.id, ctx.debts.currentIdentity(seat.id))) : undefined,
+      debtWei: bankEnabled() ? totalOwed(ctx.debts.get(seat.id, identityId)) : undefined,
     };
     seats.set(seat.id, { face: base.face, debtWei: base.debtWei });
     const sitOut = (reason: string): void => {
@@ -124,7 +142,7 @@ export async function planRound(
       balanceWei,
       stakeWei,
       maxStakeMultiple: stakeMultiple,
-      debtWei: totalOwed(ctx.debts.get(seat.id, ctx.debts.currentIdentity(seat.id))),
+      debtWei: totalOwed(ctx.debts.get(seat.id, identityId)),
       recentOutcomes: ctx.store.outcomesFor(profile.id),
     });
   }

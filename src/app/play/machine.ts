@@ -45,6 +45,11 @@ export interface FlowState {
    * slowest finishes. Cleared whenever a new round starts.
    */
   decided: unknown[];
+  /**
+   * Who is in each seat, as the plan stream reports it before any of them
+   * decide. A seat outlives its occupant, so the roster is not an answer.
+   */
+  occupants: unknown[];
   /** Buy ins confirmed on chain so far, in the order they landed. */
   entries: unknown[];
   run: unknown | null;
@@ -58,6 +63,7 @@ export type FlowEvent =
   | { type: "assetsReady" }
   | { type: "connected"; player: Player }
   | { type: "modeChosen"; modeId: string }
+  | { type: "occupantsKnown"; occupants: unknown[] }
   | { type: "agentDecided"; decision: unknown }
   | { type: "entryConfirmed"; entry: unknown }
   | { type: "planLoaded"; plan: unknown }
@@ -72,7 +78,7 @@ export type FlowEvent =
   | { type: "failed"; message: string };
 
 export function initialState(): FlowState {
-  return { screen: "boot", player: null, mode: null, plan: null, decided: [], entries: [], run: null, leverLive: false, reelsSettled: false, error: null };
+  return { screen: "boot", player: null, mode: null, plan: null, decided: [], occupants: [], entries: [], run: null, leverLive: false, reelsSettled: false, error: null };
 }
 
 /** Both halves of the handoff are in, so the arena can take over. */
@@ -98,8 +104,14 @@ export function reduce(state: FlowState, event: FlowEvent): FlowState {
       const mode = GAME_MODES.find((m) => m.id === event.modeId);
       if (!mode) return { ...state, error: `Unknown mode ${event.modeId}` };
       if (mode.locked) return { ...state, error: `${mode.name} is not open yet` };
-      return { ...state, screen: "lobby", mode, plan: null, decided: [], entries: [], run: null, reelsSettled: false, leverLive: false, error: null };
+      return { ...state, screen: "lobby", mode, plan: null, decided: [], occupants: [], entries: [], run: null, reelsSettled: false, leverLive: false, error: null };
     }
+
+    case "occupantsKnown":
+      // Only while the lobby is gathering. Later it would rename rows the
+      // player is already reading.
+      if (state.screen !== "lobby") return state;
+      return { ...state, occupants: event.occupants };
 
     case "agentDecided":
       // Only while the lobby is still gathering them. A late line after the
@@ -153,7 +165,7 @@ export function reduce(state: FlowState, event: FlowEvent): FlowState {
 
     case "playAgain":
       if (state.screen !== "result") return state;
-      return { ...state, screen: "modeSelect", plan: null, decided: [], entries: [], run: null, reelsSettled: false, leverLive: false, error: null };
+      return { ...state, screen: "modeSelect", plan: null, decided: [], occupants: [], entries: [], run: null, reelsSettled: false, leverLive: false, error: null };
 
     case "failed":
       // A failure must never strand the player: it drops back to the slot so

@@ -20,7 +20,7 @@ import { repay } from "@/economy/rules";
 import { totalOwed } from "./debt";
 import { overReached, type WreckRecord, type WreckTrigger } from "./wrecks";
 import { CREDIT_TERMS } from "@/config/economy";
-import { faceFor, generationOf, profileFor } from "@/config/replacements";
+import { chooseOccupant, faceFor, generationOf } from "@/config/replacements";
 import { CHIPS_PER_FUNDED_WALLET } from "@/config/stake";
 import { splitPrize, type PrizeSplit } from "./prize";
 import { bankEnabled } from "@/config/economy";
@@ -258,6 +258,9 @@ async function settleRound(ctx: FlowContext, plan: RoundPlan, progress: RunProgr
         walletId,
         identityId,
         name: snapshot.profile.name,
+        // The face it wore, kept with the record. Derived later it would be
+        // whoever is in the seat now, which is the agent that replaced it.
+        face: faceFor(walletId, identityId, owed.occupantId),
         trigger,
         balanceAtDeathWei: balanceWei.toString(),
         debtAtDeathWei: owedWei.toString(),
@@ -283,12 +286,16 @@ async function settleRound(ctx: FlowContext, plan: RoundPlan, progress: RunProgr
       // owed it. The identity is what a debt is stamped with, so bumping it
       // is what makes the next agent clean rather than an act of forgiveness.
       const nextIdentityId = `${walletId}-${generationOf(identityId) + 1}`;
-      ctx.debts.clear(walletId, nextIdentityId, plan.roundId);
+      // Whoever is free. Chosen against the other seats rather than from the
+      // generation, so two seats can never hold the same occupant at once.
+      const occupant = chooseOccupant(walletId, ctx.debts.seatedOccupants(walletId));
+      ctx.debts.clear(walletId, nextIdentityId, plan.roundId, occupant.id);
       const arrival: RoundRun["replacements"][number] = {
         walletId,
         identityId: nextIdentityId,
-        name: profileFor(walletId, nextIdentityId).name,
-        face: faceFor(walletId, nextIdentityId),
+        name: occupant.name,
+        face: occupant.face,
+        occupantId: occupant.id,
         fundedWei: 0n,
         outcome: null,
       };

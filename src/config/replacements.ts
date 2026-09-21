@@ -121,34 +121,70 @@ export function generationOf(identityId: string): number {
 }
 
 /**
+ * The replacement a seat gets when nothing says which one.
+ *
+ * Kept for records written before the occupant was stored: they carry a
+ * generation and nothing else, and this is what they were read with.
+ */
+function byGeneration(identityId: string): Replacement {
+  const generation = generationOf(identityId);
+  return REPLACEMENTS[(generation - 2) % REPLACEMENTS.length] ?? REPLACEMENTS[0];
+}
+
+/** One of the pool, by its id. Undefined for a name that is not in it. */
+export function replacementById(occupantId: string | null | undefined): Replacement | undefined {
+  if (!occupantId) return undefined;
+  return REPLACEMENTS.find((r) => r.id === occupantId);
+}
+
+/**
+ * Who takes an emptied seat, given who is sitting in the others.
+ *
+ * Walking the pool by generation alone put the same person in two seats at
+ * once: two seats on their second occupant were both Onyx, with one name and
+ * one face between them, which is not a pit of six agents. The pool is walked
+ * from a point that depends on the seat, and anyone already seated is passed
+ * over, so two seats can never hold the same occupant at the same time.
+ *
+ * The pool is the same size as the roster, so there is always somebody free.
+ * If there were not, the walk comes back to where it started and takes that
+ * one rather than leaving the seat empty.
+ */
+export function chooseOccupant(walletId: string, taken: Iterable<string>): Replacement {
+  const seated = new Set(taken);
+  const seat = NAMED_AGENTS.findIndex((p) => p.id === walletId);
+  const start = seat < 0 ? 0 : seat;
+  for (let i = 0; i < REPLACEMENTS.length; i++) {
+    const candidate = REPLACEMENTS[(start + i) % REPLACEMENTS.length];
+    if (!seated.has(candidate.id)) return candidate;
+  }
+  return REPLACEMENTS[start % REPLACEMENTS.length];
+}
+
+/**
  * Who is in this seat now.
  *
- * Generation one is the agent that started there. After that the pool is
- * walked in order and then reused, so a long run of wrecks keeps producing
- * somebody rather than running out of people.
- *
- * Derived from the identity rather than stored, so there is one source of
- * truth for who is in a seat and it is the same thing a debt is stamped with.
+ * Generation one is the agent that started there. After that it is whoever
+ * was recorded when the seat was refilled, and for a record written before
+ * occupants were recorded, whoever the generation points at.
  */
-export function profileFor(walletId: string, identityId: string): AgentProfile {
+export function profileFor(walletId: string, identityId: string, occupantId?: string | null): AgentProfile {
   const generation = generationOf(identityId);
   if (generation <= 1) {
     const original = NAMED_AGENTS.find((p) => p.id === walletId);
     if (original) return original;
   }
-  return REPLACEMENTS[(generation - 2) % REPLACEMENTS.length] ?? REPLACEMENTS[0];
+  return replacementById(occupantId) ?? byGeneration(identityId);
 }
 
 /** The face the panel draws for whoever is in this seat. */
-export function faceFor(walletId: string, identityId: string): string | null {
-  const generation = generationOf(identityId);
-  if (generation <= 1) return null;
-  return (REPLACEMENTS[(generation - 2) % REPLACEMENTS.length] ?? REPLACEMENTS[0]).face;
+export function faceFor(walletId: string, identityId: string, occupantId?: string | null): string | null {
+  if (generationOf(identityId) <= 1) return null;
+  return (replacementById(occupantId) ?? byGeneration(identityId)).face;
 }
 
 /** What whoever is in this seat said when they took it. Null for an original. */
-export function arrivalFor(walletId: string, identityId: string): string | null {
-  const generation = generationOf(identityId);
-  if (generation <= 1) return null;
-  return (REPLACEMENTS[(generation - 2) % REPLACEMENTS.length] ?? REPLACEMENTS[0]).arrival;
+export function arrivalFor(walletId: string, identityId: string, occupantId?: string | null): string | null {
+  if (generationOf(identityId) <= 1) return null;
+  return (replacementById(occupantId) ?? byGeneration(identityId)).arrival;
 }

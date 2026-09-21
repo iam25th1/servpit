@@ -20,6 +20,8 @@ export interface WreckRecord {
   walletId: string;
   identityId: string;
   name: string;
+  /** The face it wore. Absent on a record written before faces were kept. */
+  face?: string | null;
   trigger: WreckTrigger;
   /** Wei throughout. Chips are for the screen. */
   balanceAtDeathWei: string;

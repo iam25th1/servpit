@@ -38,6 +38,16 @@ export interface AgentDebt {
    */
   borrowedWei: bigint;
   loanCount: number;
+  /**
+   * Which of the replacement pool is sitting here, by its roster id.
+   *
+   * Null for one of the six who started, and absent on a record written
+   * before occupants were recorded, which is read by generation instead.
+   * Stored rather than derived because the choice depends on who is in the
+   * other seats: walking the pool by generation alone put the same person in
+   * two seats at once.
+   */
+  occupantId?: string | null;
 }
 
 interface StoredDebt {
@@ -49,9 +59,10 @@ interface StoredDebt {
   bornAtRound?: string | null;
   borrowedWei?: string;
   loanCount?: number;
+  occupantId?: string | null;
 }
 
-export const NO_DEBT_FOR = (identityId: string, bornAtRound: string | null = null): AgentDebt => ({
+export const NO_DEBT_FOR = (identityId: string, bornAtRound: string | null = null, occupantId: string | null = null): AgentDebt => ({
   identityId,
   principalWei: 0n,
   interestWei: 0n,
@@ -60,6 +71,7 @@ export const NO_DEBT_FOR = (identityId: string, bornAtRound: string | null = nul
   bornAtRound,
   borrowedWei: 0n,
   loanCount: 0,
+  occupantId,
 });
 
 export const totalOwed = (debt: AgentDebt): bigint => debt.principalWei + debt.interestWei;
@@ -98,6 +110,7 @@ export class DebtStore {
         bornAtRound: debt.bornAtRound ?? null,
         borrowedWei: debt.borrowedWei !== undefined && /^\d+$/.test(debt.borrowedWei) ? BigInt(debt.borrowedWei) : BigInt(debt.principalWei),
         loanCount: debt.loanCount ?? 0,
+        occupantId: debt.occupantId ?? null,
       });
     }
   }
@@ -177,9 +190,27 @@ export class DebtStore {
    * What was not recovered is gone. The new occupant starts clean, which is
    * the whole reason a debt is stamped with an identity rather than a wallet.
    */
-  clear(walletId: string, nextIdentityId: string, bornAtRound: string | null = null): void {
-    this.debts.set(walletId, NO_DEBT_FOR(nextIdentityId, bornAtRound));
+  clear(walletId: string, nextIdentityId: string, bornAtRound: string | null = null, occupantId: string | null = null): void {
+    this.sync.read();
+    this.debts.set(walletId, NO_DEBT_FOR(nextIdentityId, bornAtRound, occupantId));
     this.flush();
+  }
+
+  /** Which of the replacement pool is in this seat, if anyone. */
+  occupantOf(walletId: string): string | null {
+    this.sync.read();
+    return this.debts.get(walletId)?.occupantId ?? null;
+  }
+
+  /** Every occupant currently seated, so a new one can avoid them. */
+  seatedOccupants(exceptWalletId?: string): string[] {
+    this.sync.read();
+    const out: string[] = [];
+    for (const [walletId, debt] of this.debts) {
+      if (walletId === exceptWalletId) continue;
+      if (debt.occupantId) out.push(debt.occupantId);
+    }
+    return out;
   }
 
   /**
@@ -212,6 +243,7 @@ export class DebtStore {
         bornAtRound: d.bornAtRound,
         borrowedWei: d.borrowedWei.toString(),
         loanCount: d.loanCount,
+        occupantId: d.occupantId ?? null,
       };
     }
     this.sync.write({ version: 1, debts, updatedAt: new Date().toISOString() });

@@ -27,9 +27,12 @@ export async function GET(): Promise<NextResponse> {
     walletId: w.walletId,
     identityId: w.identityId,
     name: w.name,
-    // The face the panel drew for it while it was alive. Null means one of
-    // the six who started, which the client draws from its own roster.
-    face: faceFor(w.walletId, w.identityId),
+    // The face the panel drew for it while it was alive, from the record
+    // itself. Derived now it would be whoever took the seat afterwards. Null
+    // means one of the six who started, which the client draws from its own
+    // roster; a record written before faces were kept falls back to the
+    // generation, which is what it was drawn with at the time.
+    face: w.face ?? faceFor(w.walletId, w.identityId),
     // The whole record decides this, not the trigger alone: most agents that
     // over-reach are recorded as broke and denied, because they lose the
     // balance before the debt passes the ceiling.

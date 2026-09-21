@@ -148,7 +148,7 @@ export async function POST(request: Request): Promise<Response> {
               name: w.name,
               // The face it wore, from the identity that owned the seat, so
               // the screen shows who died rather than who is in the chair now.
-              face: faceFor(w.walletId, w.identityId),
+              face: w.face ?? faceFor(w.walletId, w.identityId),
               trigger: w.trigger,
               overReached: overReached(w),
               debtAtDeathWei: w.debtAtDeathWei,
@@ -163,7 +163,7 @@ export async function POST(request: Request): Promise<Response> {
               walletId: r.walletId,
               name: r.name,
               face: r.face,
-              arrival: arrivalFor(r.walletId, r.identityId) ?? "",
+              arrival: arrivalFor(r.walletId, r.identityId, r.occupantId) ?? "",
               fundedWei: r.fundedWei.toString(),
               link: r.outcome?.link ?? null,
             })),
