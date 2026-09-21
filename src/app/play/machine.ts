@@ -15,7 +15,7 @@
 // sequence, and the server returning the settled round. They can land in
 // either order, so both are tracked and the handoff happens when both are in.
 
-import { GAME_MODES, type GameMode, type StakeTierId } from "@/config/modes";
+import { GAME_MODES, type GameMode } from "@/config/modes";
 
 export type Screen = "boot" | "title" | "modeSelect" | "lobby" | "slot" | "spinning" | "arena" | "result";
 
@@ -30,7 +30,6 @@ export interface FlowState {
   screen: Screen;
   player: Player | null;
   mode: GameMode | null;
-  stake: StakeTierId | null;
   plan: unknown | null;
   /**
    * Decisions that have arrived so far, in the order they landed.
@@ -52,7 +51,7 @@ export interface FlowState {
 export type FlowEvent =
   | { type: "assetsReady" }
   | { type: "connected"; player: Player }
-  | { type: "modeChosen"; modeId: string; stake: StakeTierId }
+  | { type: "modeChosen"; modeId: string }
   | { type: "agentDecided"; decision: unknown }
   | { type: "entryConfirmed"; entry: unknown }
   | { type: "planLoaded"; plan: unknown }
@@ -64,7 +63,7 @@ export type FlowEvent =
   | { type: "failed"; message: string };
 
 export function initialState(): FlowState {
-  return { screen: "boot", player: null, mode: null, stake: null, plan: null, decided: [], entries: [], run: null, leverLive: false, reelsSettled: false, error: null };
+  return { screen: "boot", player: null, mode: null, plan: null, decided: [], entries: [], run: null, leverLive: false, reelsSettled: false, error: null };
 }
 
 /** Both halves of the handoff are in, so the arena can take over. */
@@ -90,9 +89,7 @@ export function reduce(state: FlowState, event: FlowEvent): FlowState {
       const mode = GAME_MODES.find((m) => m.id === event.modeId);
       if (!mode) return { ...state, error: `Unknown mode ${event.modeId}` };
       if (mode.locked) return { ...state, error: `${mode.name} is not open yet` };
-      const stake = mode.stakes?.find((s) => s.id === event.stake);
-      if (!stake) return { ...state, error: `Unknown stake tier for ${mode.name}` };
-      return { ...state, screen: "lobby", mode, stake: stake.id, plan: null, decided: [], entries: [], run: null, reelsSettled: false, leverLive: false, error: null };
+      return { ...state, screen: "lobby", mode, plan: null, decided: [], entries: [], run: null, reelsSettled: false, leverLive: false, error: null };
     }
 
     case "agentDecided":

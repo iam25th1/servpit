@@ -68,37 +68,48 @@ export function assertBankShareIsPayable(hasBankWallet: boolean, env: NodeJS.Pro
 export const CREDIT_TERMS = {
   /** Smallest loan worth writing: one seat. */
   minLoanStakes: 1n,
-  /** Most principal one agent may owe: five seats. */
-  maxPrincipalStakes: 5n,
+  /**
+   * Most principal one agent may owe: three seats.
+   *
+   * At or under the ceiling, always. A bank that will lend an agent past the
+   * ceiling is writing a loan that wrecks on arrival, and the simulator shows
+   * exactly that shape when the two are set the other way round.
+   */
+  maxPrincipalStakes: 3n,
   /** A single loan may take a quarter of the treasury. */
   maxTreasuryShareBps: 2_500,
   /**
    * Simple interest per round on outstanding principal.
    *
    * A round is a minute of play, not a month, so this reads high and is not.
-   * What it sets is how long an agent that stops repaying survives: at five
-   * stakes of principal it adds half a stake a round, and the ceiling is one
-   * stake above the principal cap, so it has two rounds to win its way back.
-   * At the 5 per cent this started at, the ceiling never fired at all in two
-   * thousand rounds: an agent always ran out of balance first and was wrecked
-   * for being broke instead.
+   * What it sets is how long an agent that stops repaying survives: at three
+   * stakes of principal it adds six tenths of a stake a round, and the
+   * ceiling is one stake above the principal cap, so it has about two rounds
+   * to win its way back.
+   *
+   * Twenty per cent rather than the ten it was, because ten left the debt
+   * ceiling firing on a third of wrecks and the rest on being broke. At
+   * twenty it is four fifths, and the expected value of a debt free agent
+   * improves from minus 0.072 chips a round to minus 0.018.
    */
-  interestBps: 1_000,
+  interestBps: 2_000,
   /**
-   * Total debt above six seats wrecks the agent.
+   * Total debt above four seats wrecks the agent.
    *
    * One stake above the principal cap, deliberately. Set it far above and the
    * condition is dead config: the simulator measured zero ceiling wrecks in
    * two thousand rounds at eight stakes.
    */
-  debtCeilingStakes: 6n,
+  debtCeilingStakes: 4n,
   /**
    * Replacement agents are born clean.
    *
-   * Born in debt halves what the operator spends replacing wrecked agents,
-   * 208 chips against 520 over two thousand rounds, but the debt has to be
-   * funded by a bank, and there is no bank wallet in this build. Revisit it
-   * with one.
+   * Born in debt is the only setting that moves the wreck rate into the two
+   * to four per hundred band, and it only does so by making every
+   * replacement doomed: at forty per cent on three stakes of birth debt
+   * against a four stake ceiling, a replacement is over the ceiling after one
+   * round and the bank seizes what it holds. That is a death sentence with a
+   * loan agreement attached, not an economy.
    */
   replacementDebtStakes: 0n,
 } as const;

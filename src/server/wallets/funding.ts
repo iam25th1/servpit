@@ -30,10 +30,28 @@ export interface FundingPlan {
   shortfallWei: bigint;
 }
 
-export function planFunding(funderId: string, balances: readonly FundingBalance[], targetWei: bigint, funderGasReserveWei: bigint): FundingPlan {
+/**
+ * Per wallet targets, for wallets that are not agents.
+ *
+ * The bank holds a treasury rather than a playing balance, so topping it up
+ * to what an agent needs would be the wrong number in both directions.
+ */
+export type TargetsById = Readonly<Record<string, bigint>>;
+
+export function planFunding(
+  funderId: string,
+  balances: readonly FundingBalance[],
+  targetWei: bigint,
+  funderGasReserveWei: bigint,
+  targetsById: TargetsById = {},
+): FundingPlan {
   assertWei(targetWei, "targetWei");
   assertWei(funderGasReserveWei, "funderGasReserveWei");
   if (targetWei === 0n) throw new RangeError("targetWei must be greater than zero");
+  for (const [id, wei] of Object.entries(targetsById)) {
+    assertWei(wei, `target for ${id}`);
+    if (wei === 0n) throw new RangeError(`target for ${id} must be greater than zero`);
+  }
 
   const funder = balances.find((b) => b.id === funderId);
   if (!funder) throw new RangeError(`funder ${funderId} is not among the wallets`);
@@ -42,11 +60,12 @@ export function planFunding(funderId: string, balances: readonly FundingBalance[
   const skipped: FundingBalance[] = [];
   for (const wallet of balances) {
     if (wallet.id === funderId) continue;
-    if (wallet.balanceWei >= targetWei) {
+    const target = targetsById[wallet.id] ?? targetWei;
+    if (wallet.balanceWei >= target) {
       skipped.push(wallet);
       continue;
     }
-    transfers.push({ id: wallet.id, address: wallet.address, balanceWei: wallet.balanceWei, amountWei: targetWei - wallet.balanceWei });
+    transfers.push({ id: wallet.id, address: wallet.address, balanceWei: wallet.balanceWei, amountWei: target - wallet.balanceWei });
   }
 
   const totalWei = transfers.reduce((sum, t) => sum + t.amountWei, 0n);

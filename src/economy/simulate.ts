@@ -69,6 +69,18 @@ export interface SimReport {
   agentNet: bigint;
   /** agentNet per agent per round, in chips. */
   evPerAgentPerRound: number;
+  /**
+   * What a round does to an agent's equity, split by whether it owed anything
+   * when the round started.
+   *
+   * The aggregate above hides the thing that matters: an agent carrying debt
+   * is supposed to be losing ground, and an agent that owes nothing is
+   * supposed to be playing a roughly fair game. One number cannot say both.
+   */
+  evPerCleanRound: number;
+  evPerIndebtedRound: number;
+  cleanAgentRounds: number;
+  indebtedAgentRounds: number;
   rolloverEnd: bigint;
   rake: bigint;
   flags: string[];
@@ -124,6 +136,10 @@ export function simulate(config: SimConfig): SimReport {
   const treasurySeries: bigint[] = [];
   let treasuryMin = treasury;
   let treasuryMax = treasury;
+  let cleanAgentRounds = 0;
+  let indebtedAgentRounds = 0;
+  let cleanDelta = 0n;
+  let indebtedDelta = 0n;
 
   // Everything that exists at the start. Nothing may appear or vanish except
   // through the operator putting money in, so this is checked every round.
@@ -131,6 +147,8 @@ export function simulate(config: SimConfig): SimReport {
 
   for (let r = 0; r < config.rounds; r++) {
     const roundId = `${config.seed}-${r}`;
+    // Equity at the top of the round, and who was carrying debt into it.
+    const opened = new Map(seats.map((seat) => [seat.profile.id, { equity: equity(seat), indebted: totalDebt(seat.agent.debt) > 0n }]));
 
     // Interest first: a round costs the agent before it pays anything.
     for (const seat of seats) seat.agent = accrueInterest(config.economy, seat.agent);
@@ -202,6 +220,20 @@ export function simulate(config: SimConfig): SimReport {
       seat.recentOutcomes = [...seat.recentOutcomes, { roundId, entered, netWei: net }].slice(-10);
     }
 
+    // Measured before the wreck block, so this is the agent's own result for
+    // the round rather than the bank writing off what it could not recover.
+    for (const seat of seats) {
+      const open = opened.get(seat.profile.id)!;
+      const delta = equity(seat) - open.equity;
+      if (open.indebted) {
+        indebtedAgentRounds += 1;
+        indebtedDelta += delta;
+      } else {
+        cleanAgentRounds += 1;
+        cleanDelta += delta;
+      }
+    }
+
     // Wrecks, seizures and replacements, after the round has paid out. An
     // agent that won its way back under the ceiling is not wrecked.
     for (const seat of seats) {
@@ -217,25 +249,24 @@ export function simulate(config: SimConfig): SimReport {
       everWrecked.add(seat.profile.id);
       if (allWreckedByRound === null && everWrecked.size === seats.length) allWreckedByRound = r;
 
-      // A replacement born in debt is funded by the bank: it owes exactly what
-      // it was handed. The bank puts up what it can and the operator covers
-      // the shortfall, which is the difference the setting is there to show.
-      // A replacement born clean costs the operator a whole fresh bankroll
-      // every wreck.
-      //
-      // It is always funded to what it owes. Handing an agent a debt without
-      // the money to play it off would wreck it again the next round, which
-      // is an artefact of the funding and not of the credit rules.
       // Whatever the seizure did not take is the departing agent's, and it
       // leaves with it. It is still value the agents realised, so it is
       // counted rather than quietly dropped.
       retired += closed.agent.balanceWei;
 
-      const funding = config.economy.replacementDebtWei > 0n ? config.economy.replacementDebtWei : config.startingBalance;
+      // A replacement always takes the seat with a full bankroll. What the
+      // setting changes is who paid for it: the bank lends up to the
+      // replacement debt and the operator covers the rest, and the agent owes
+      // the bank's part.
+      //
+      // Capital and debt are separate levers and tying them together measured
+      // the wrong thing. Funding a replacement to only what it owed meant
+      // turning the setting on also cut its bankroll, so a sweep across it
+      // could not tell a credit effect from a capitalisation effect.
       const fromBank = min(config.economy.replacementDebtWei, treasury);
       treasury -= fromBank;
-      operatorInjected += funding - fromBank;
-      seat.agent = replacementAgent(config.economy, seat.profile.id, funding);
+      operatorInjected += config.startingBalance - fromBank;
+      seat.agent = replacementAgent({ ...config.economy, replacementDebtWei: fromBank }, seat.profile.id, config.startingBalance);
       seat.recentOutcomes = [];
       seat.generation += 1;
     }
@@ -295,6 +326,10 @@ export function simulate(config: SimConfig): SimReport {
     outstandingDebt: seats.reduce((sum, seat) => sum + totalDebt(seat.agent.debt), 0n),
     agentNet,
     evPerAgentPerRound: Number(agentNet) / (seats.length * config.rounds),
+    evPerCleanRound: cleanAgentRounds === 0 ? 0 : Number(cleanDelta) / cleanAgentRounds,
+    evPerIndebtedRound: indebtedAgentRounds === 0 ? 0 : Number(indebtedDelta) / indebtedAgentRounds,
+    cleanAgentRounds,
+    indebtedAgentRounds,
     rolloverEnd: rollover,
     rake,
     flags,

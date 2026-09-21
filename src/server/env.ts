@@ -3,7 +3,7 @@
 // here is importable from client code (a test enforces it).
 
 import { parseEther } from "viem";
-import { KEY_VARS, WALLET_IDS, keyVarFor } from "@/config/wallets";
+import { ALL_KEY_VARS, ALL_WALLET_IDS, WALLET_IDS, keyVarFor } from "@/config/wallets";
 import { DEFAULT_RPC_URLS } from "@/config/rpc";
 import { registerSecret } from "./log";
 
@@ -83,12 +83,14 @@ function gasReserveFrom(env: NodeJS.ProcessEnv): bigint {
 export function readEnv(env: NodeJS.ProcessEnv = process.env): ServerEnv {
   // Every key is registered with the logger before anything else can read it,
   // so even an accidental log of the whole environment is masked.
-  for (const name of KEY_VARS) registerSecret(env[name]);
+  for (const name of ALL_KEY_VARS) registerSecret(env[name]);
   for (const v of [env.SERV_API_KEY, env.OPERATOR_TOKEN]) registerSecret(v);
 
+  // Every key that is present, including the optional ones. Only WALLET_IDS
+  // are required below, so an install with no bank key runs unchanged.
   const keys: Record<string, Hex> = {};
   const malformed: string[] = [];
-  for (const id of WALLET_IDS) {
+  for (const id of ALL_WALLET_IDS) {
     const raw = env[keyVarFor(id)];
     if (raw === undefined || raw === "") continue;
     if (!PRIVATE_KEY.test(raw)) {

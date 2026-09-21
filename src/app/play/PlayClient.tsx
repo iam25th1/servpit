@@ -6,7 +6,7 @@
 // anything. Both canvases stay mounted; only their visibility changes.
 
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
-import { GAME_MODES, type StakeTierId } from "@/config/modes";
+import { GAME_MODES } from "@/config/modes";
 import { DEFAULT_ROUND } from "@/config/round";
 import { DEFAULT_SLOT } from "@/config/slot";
 import { createRng } from "@/engine/rng";
@@ -318,10 +318,10 @@ export function PlayClient() {
     dispatch({ type: "connected", player: { id: `player-${token()}`, label: "Guest session" } });
   };
 
-  const chooseMode = async (modeId: string, stake: StakeTierId): Promise<void> => {
+  const chooseMode = async (modeId: string): Promise<void> => {
     unlockAudio();
     engineRef.current?.audio.select();
-    dispatch({ type: "modeChosen", modeId, stake });
+    dispatch({ type: "modeChosen", modeId });
     const mode = GAME_MODES.find((m) => m.id === modeId);
     if (!mode || mode.locked) {
       engineRef.current?.audio.locked();
@@ -355,8 +355,8 @@ export function PlayClient() {
   };
 
   const retry = (): void => {
-    if (!state.mode || !state.stake) return;
-    void chooseMode(state.mode.id, state.stake);
+    if (!state.mode) return;
+    void chooseMode(state.mode.id);
   };
 
   const plan = state.plan as PlanResponse | null;
@@ -531,7 +531,7 @@ export function PlayClient() {
             entries={state.entries as EntryShape[]}
             slotCanvasRef={slotCanvasRef}
             arenaCanvasRef={arenaCanvasRef}
-            onChooseMode={(modeId, stake) => void chooseMode(modeId, stake)}
+            onChooseMode={(modeId) => void chooseMode(modeId)}
             onRetry={retry}
             onPull={() => void pullLever()}
             onPlayAgain={playAgain}

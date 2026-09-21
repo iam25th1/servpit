@@ -32,10 +32,10 @@ describe("credit terms", () => {
     const small = economyConfig(10n);
     const large = economyConfig(1_000n);
     expect(small.minLoanWei).toBe(10n);
-    expect(small.maxPrincipalWei).toBe(50n);
-    expect(small.debtCeilingWei).toBe(60n);
-    expect(large.maxPrincipalWei).toBe(5_000n);
-    expect(large.debtCeilingWei).toBe(6_000n);
+    expect(small.maxPrincipalWei).toBe(30n);
+    expect(small.debtCeilingWei).toBe(40n);
+    expect(large.maxPrincipalWei).toBe(3_000n);
+    expect(large.debtCeilingWei).toBe(4_000n);
     expect(large.stakeWei).toBe(1_000n);
   });
 
@@ -46,6 +46,13 @@ describe("credit terms", () => {
     const c = economyConfig(10n);
     expect(c.debtCeilingWei).toBeGreaterThan(c.maxPrincipalWei);
     expect(c.debtCeilingWei - c.maxPrincipalWei).toBeLessThanOrEqual(2n * c.stakeWei);
+  });
+
+  it("never lets the bank lend an agent past the ceiling", () => {
+    // A loan that puts an agent over the ceiling wrecks it on arrival, which
+    // is a death sentence with a loan agreement attached rather than credit.
+    const c = economyConfig(10n);
+    expect(c.maxPrincipalWei).toBeLessThanOrEqual(c.debtCeilingWei);
   });
 
   it("leaves a replacement agent clean by default", () => {

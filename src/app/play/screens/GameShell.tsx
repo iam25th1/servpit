@@ -8,7 +8,7 @@
 import { animate, stagger, utils } from "animejs";
 import { createMotionPath } from "animejs/svg";
 import { useEffect, useRef, useState, type RefObject } from "react";
-import { GAME_MODES, type StakeTierId } from "@/config/modes";
+import { GAME_MODES } from "@/config/modes";
 import { Button } from "@/ui/Button";
 import { Dialog } from "@/ui/Dialog";
 import { Meter } from "@/ui/Meter";
@@ -97,7 +97,7 @@ export interface GameShellProps {
   decided: DecidedShape[];
   slotCanvasRef: RefObject<HTMLCanvasElement | null>;
   arenaCanvasRef: RefObject<HTMLCanvasElement | null>;
-  onChooseMode: (modeId: string, stake: StakeTierId) => void;
+  onChooseMode: (modeId: string) => void;
   /** Runs the failed step again. Shown next to any error the player can act on. */
   onRetry: () => void;
   onPull: () => void;
@@ -159,7 +159,7 @@ export function GameShell(props: GameShellProps) {
     </main>
   );
 
-  function ModeSelect({ onChoose, error }: { onChoose: (modeId: string, stake: StakeTierId) => void; error: string | null }) {
+  function ModeSelect({ onChoose, error }: { onChoose: (modeId: string) => void; error: string | null }) {
     const gridRef = useRef<HTMLDivElement>(null);
     useEffect(() => {
       const cards = gridRef.current ? [...gridRef.current.querySelectorAll<HTMLElement>("[data-card]")] : [];
@@ -206,10 +206,10 @@ export function GameShell(props: GameShellProps) {
                     <span className={styles.roadmap}>{mode.roadmap}</span>
                   </div>
                 ) : (
-                  <div className={styles.stakes}>
-                    {mode.stakes?.map((stake) => (
-                      <StakeTab key={stake.id} label={`${stake.label} ${stake.minorUnits}`} onSelect={() => onChoose(mode.id, stake.id)} />
-                    ))}
+                  <div className={styles.enter}>
+                    {/* A different word from the title screen's button, so the
+                        two are not the same label doing two different jobs. */}
+                    <EnterTab label="Take a seat" onSelect={() => onChoose(mode.id)} />
                   </div>
                 )}
               </NinePatch>
@@ -221,12 +221,12 @@ export function GameShell(props: GameShellProps) {
     );
   }
 
-  function StakeTab({ label, onSelect }: { label: string; onSelect: () => void }) {
+  function EnterTab({ label, onSelect }: { label: string; onSelect: () => void }) {
     const [sprite, setSprite] = useState<"tab" | "tabHover" | "tabSelected">("tab");
     return (
       <button
         type="button"
-        className={styles.stakeTab}
+        className={styles.enterTab}
         style={ninePatchStyle(ui(sprite), 2)}
         onPointerEnter={() => setSprite("tabHover")}
         onPointerLeave={() => setSprite("tab")}
