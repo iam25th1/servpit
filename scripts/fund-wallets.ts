@@ -1,8 +1,12 @@
 // Fans ETH out from the funded wallet to the other six.
 //
-//   npm run fund-wallets                      tops each up to 0.002 ETH
+//   npm run fund-wallets                      tops each up to the target
 //   npm run fund-wallets -- --target 0.005    a different target
 //   npm run fund-wallets -- --dry-run         plan only, nothing sent
+//
+// The target defaults to SERVPIT_FUND_TARGET_ETH, or 0.0001 ETH. It was a
+// hardcoded 0.002, which needs 0.012 ETH to fan out to six wallets. A Base
+// Sepolia faucet gives 0.001, so the run could never afford itself.
 //
 // Idempotent by construction: each wallet is topped up to the target, so a
 // wallet already there is skipped and a rerun sends nothing. The check is the
@@ -10,13 +14,26 @@
 
 import { parseArgs } from "node:util";
 import { parseEther } from "viem";
+import { loadLocalEnv } from "./lib/loadEnv";
+import { requireDeclaredBackend } from "./lib/requireBackend";
 import { FUNDER_WALLET_ID } from "../src/config/wallets";
 import { getServerContext } from "../src/server/context";
+import { readEnv } from "../src/server/env";
 import { formatEth, basescanTx } from "../src/server/money";
 import { planFunding, type FundingBalance } from "../src/server/wallets/funding";
 
+// Before anything reads the environment, including the module that registers
+// the keys with the logger.
+const envFile = loadLocalEnv();
+
+/** 0.0001 ETH per wallet: six of them plus a gas reserve fit inside 0.001. */
+const DEFAULT_TARGET_ETH = "0.0001";
+
 const { values } = parseArgs({
-  options: { target: { type: "string", default: "0.002" }, "dry-run": { type: "boolean", default: false } },
+  options: {
+    target: { type: "string", default: process.env.SERVPIT_FUND_TARGET_ETH?.trim() || DEFAULT_TARGET_ETH },
+    "dry-run": { type: "boolean", default: false },
+  },
 });
 
 function parseTarget(raw: string): bigint {
@@ -27,6 +44,10 @@ function parseTarget(raw: string): bigint {
 }
 
 async function main(): Promise<void> {
+  // Before a chain is built, so a guessed backend cannot get as far as
+  // printing a plan that looks real.
+  requireDeclaredBackend(readEnv(), envFile);
+
   const targetWei = parseTarget(values.target);
   const ctx = await getServerContext();
 

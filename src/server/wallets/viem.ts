@@ -20,8 +20,12 @@ import { ADDRESS, WALLET_ID, type Call, type Chain, type TxReceipt, type Wallet 
 
 type Hex = `0x${string}`;
 
-/** 0.0002 ETH, comfortably more than a handful of Base Sepolia transfers. */
-export const DEFAULT_GAS_RESERVE_WEI = 200_000_000_000_000n;
+/**
+ * 0.00002 ETH. Kept as the fallback for a config that does not name one; the
+ * value and the reasoning live in src/server/env.ts, which reads
+ * SERVPIT_GAS_RESERVE_ETH.
+ */
+export const DEFAULT_GAS_RESERVE_WEI = 20_000_000_000_000n;
 
 /** The slice of ViemWalletProvider this module uses, so tests can stub it. */
 export interface WalletProviderLike {
@@ -36,6 +40,8 @@ export interface ViemChainConfig {
   keys: Record<string, Hex>;
   /** Defaults to the chain's public endpoint, which is rate limited. */
   rpcUrl?: string;
+  /** Held back for gas. Defaults to DEFAULT_GAS_RESERVE_WEI. */
+  gasReserveWei?: bigint;
 }
 
 export type ProviderFactory = (walletId: string, privateKey: Hex, rpcUrl?: string) => WalletProviderLike;
@@ -53,18 +59,22 @@ export class ViemChain implements Chain {
   /** A real chain, so transaction hashes are worth linking. */
   readonly settles = true;
   /**
-   * Held back for gas. A plain transfer on Base Sepolia is around 21,000 gas
-   * and fees are in the low gwei, so this is generous by orders of magnitude
-   * and still far below a sensible funding amount. An agent that cannot cover
-   * its stake plus this is excluded rather than left to revert mid round.
+   * Held back for gas, and the floor an agent must clear on top of its stake
+   * to be let into a round. An agent that cannot cover both is excluded
+   * rather than left to revert mid round.
+   *
+   * It has to stay well below the per wallet funding target or it excludes
+   * every agent it is meant to protect. That is what the previous 0.0002 ETH
+   * did once wallets were funded to 0.0001.
    */
-  readonly gasReserveWei = DEFAULT_GAS_RESERVE_WEI;
+  readonly gasReserveWei: bigint;
   private readonly providers = new Map<string, WalletProviderLike>();
 
   constructor(
     private readonly config: ViemChainConfig,
     private readonly factory: ProviderFactory = defaultFactory,
   ) {
+    this.gasReserveWei = config.gasReserveWei ?? DEFAULT_GAS_RESERVE_WEI;
     // AgentKit's analytics call on provider construction is an unawaited,
     // uncaught promise. Without this, an unreachable analytics host takes the
     // process down. See analyticsGuard.ts.

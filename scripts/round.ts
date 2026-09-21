@@ -3,16 +3,26 @@
 //
 //   npm run round -- --seed demo --entrants 24
 //
-// With CDP and SERV credentials in the environment this settles on
-// base-sepolia and prints the transaction hashes. Without them it runs the
-// same flow against the in memory chain and the heuristic decisions.
+// WALLET_BACKEND decides which chain this touches and must be set. With
+// WALLET_BACKEND=viem and the keys in .env.local this settles on
+// base-sepolia and prints the transaction hashes; with fake it runs the same
+// flow against the in memory chain. It used to guess, which meant a run
+// with no keys loaded printed fake hashes and exited zero.
 
 import { parseArgs } from "node:util";
 import { getServerContext } from "../src/server/context";
+import { readEnv } from "../src/server/env";
+import { loadLocalEnv } from "./lib/loadEnv";
+import { requireDeclaredBackend } from "./lib/requireBackend";
 import { basescanTx } from "../src/server/money";
 import { planRound, runRound } from "../src/server/round/flow";
 
+// Before anything reads the environment.
+const envFile = loadLocalEnv();
+
 async function main(): Promise<void> {
+  requireDeclaredBackend(readEnv(), envFile);
+
   const { values } = parseArgs({ options: { seed: { type: "string", default: "demo" }, entrants: { type: "string", default: "24" } } });
   const entrants = Number.parseInt(values.entrants, 10);
   if (!Number.isSafeInteger(entrants) || entrants < 16 || entrants > 32) throw new RangeError("--entrants must be an integer between 16 and 32");
