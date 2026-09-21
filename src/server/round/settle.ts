@@ -240,7 +240,6 @@ export async function runRound(ctx: FlowContext, plan: RoundPlan, progress: RunP
       const writtenOffWei = split.debt.principalWei + split.debt.interestWei;
 
       const history = ctx.store.historyFor(walletId, owed.bornAtRound, toChips(plan.stakeWei));
-      const loanRecords = ctx.ledger.loansFor(walletId).filter((l) => l.status === "complete");
       const record: WreckRecord = {
         roundId: plan.roundId,
         walletId,
@@ -254,8 +253,11 @@ export async function runRound(ctx: FlowContext, plan: RoundPlan, progress: RunP
         seizedWei: seizedWei.toString(),
         writtenOffWei: writtenOffWei.toString(),
         peakBalanceWei: history.peakBalanceWei.toString(),
-        borrowedWei: loanRecords.reduce((sum, l) => sum + l.amountWei, 0n).toString(),
-        loanCount: loanRecords.length,
+        // From the debt itself, which counts per identity. Reading the
+        // ledger's loan records would credit this agent with the borrowings
+        // of whoever held the seat before it.
+        borrowedWei: owed.borrowedWei.toString(),
+        loanCount: owed.loanCount,
         recentStakeMultiples: history.recentStakeMultiples,
         roundsSurvived: history.roundsSurvived,
         wins: history.wins,

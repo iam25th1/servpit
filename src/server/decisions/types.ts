@@ -52,6 +52,8 @@ export interface AgentDecision {
   address: string;
   /** The roster face for a replacement. Null for the originals. */
   face?: string | null;
+  /** What this agent owes the lender, in wei. Absent when the bank is off. */
+  debtWei?: bigint;
   balanceWei: bigint;
   decision: Decision;
   source: DecisionSource;

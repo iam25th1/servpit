@@ -12,7 +12,7 @@
 // Integer minor units throughout. Chips are a display and prompt unit and
 // never appear in this file.
 
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { assertWei } from "../money";
 
@@ -27,6 +27,18 @@ export interface AgentDebt {
   lastAccruedRound: string | null;
   /** The round this identity took the seat. Null for the originals. */
   bornAtRound: string | null;
+  /**
+   * Everything the bank has advanced to this identity, and over how many
+   * advances.
+   *
+   * Kept here rather than counted off the ledger's loan records, because
+   * those are keyed by wallet and a wallet outlives its occupants. Counting
+   * them would credit a replacement with the borrowings of the agent it
+   * replaced, and a wreck record that says "borrowed 10" beside a principal
+   * of 30 is a record that does not reconcile with itself.
+   */
+  borrowedWei: bigint;
+  loanCount: number;
 }
 
 interface StoredDebt {
@@ -36,6 +48,8 @@ interface StoredDebt {
   rateBps: number;
   lastAccruedRound: string | null;
   bornAtRound?: string | null;
+  borrowedWei?: string;
+  loanCount?: number;
 }
 
 interface FileShape {
@@ -44,16 +58,50 @@ interface FileShape {
   updatedAt: string;
 }
 
-export const NO_DEBT_FOR = (identityId: string, bornAtRound: string | null = null): AgentDebt => ({ identityId, principalWei: 0n, interestWei: 0n, rateBps: 0, lastAccruedRound: null, bornAtRound });
+export const NO_DEBT_FOR = (identityId: string, bornAtRound: string | null = null): AgentDebt => ({
+  identityId,
+  principalWei: 0n,
+  interestWei: 0n,
+  rateBps: 0,
+  lastAccruedRound: null,
+  bornAtRound,
+  borrowedWei: 0n,
+  loanCount: 0,
+});
 
 export const totalOwed = (debt: AgentDebt): bigint => debt.principalWei + debt.interestWei;
 
 export class DebtStore {
   private readonly debts = new Map<string, AgentDebt>();
+  /** The file as last read: modification time and size. Empty when absent. */
+  private stamp = "";
 
   constructor(private readonly file: string) {
-    if (!existsSync(file)) return;
-    const parsed = JSON.parse(readFileSync(file, "utf8")) as Partial<FileShape>;
+    this.reload();
+  }
+
+  /**
+   * Rereads the file when it has changed since the last look.
+   *
+   * One process holds two of these. The plan route builds the server context
+   * and the run route builds the settle context, each with its own store over
+   * the same file, because the settle path may not import anything that can
+   * reach a model. Read once at construction, the plan route's copy was a
+   * snapshot of the moment the process started: it kept offering loans that
+   * had been repaid, kept naming occupants who had been carried out, and the
+   * lender's panel showed a book that no longer existed.
+   *
+   * Every mutation below flushes immediately, so there is never unwritten
+   * state here to lose by rereading.
+   */
+  private reload(): void {
+    const stat = statSync(this.file, { throwIfNoEntry: false });
+    const now = stat ? `${stat.mtimeMs}:${stat.size}` : "";
+    if (now === this.stamp) return;
+    this.stamp = now;
+    this.debts.clear();
+    if (!stat) return;
+    const parsed = JSON.parse(readFileSync(this.file, "utf8")) as Partial<FileShape>;
     for (const [walletId, stored] of Object.entries(parsed.debts ?? {})) {
       if (!stored || !/^\d+$/.test(stored.principalWei) || !/^\d+$/.test(stored.interestWei)) continue;
       this.debts.set(walletId, {
@@ -63,12 +111,15 @@ export class DebtStore {
         rateBps: stored.rateBps,
         lastAccruedRound: stored.lastAccruedRound,
         bornAtRound: stored.bornAtRound ?? null,
+        borrowedWei: stored.borrowedWei !== undefined && /^\d+$/.test(stored.borrowedWei) ? BigInt(stored.borrowedWei) : BigInt(stored.principalWei),
+        loanCount: stored.loanCount ?? 0,
       });
     }
   }
 
   /** What this wallet's current occupant owes. Never undefined. */
   get(walletId: string, identityId: string): AgentDebt {
+    this.reload();
     const held = this.debts.get(walletId);
     // A debt stamped with a different identity belongs to somebody who is no
     // longer in this seat, so it is not this agent's to carry.
@@ -87,7 +138,13 @@ export class DebtStore {
     assertWei(principalWei, "principalWei");
     if (!Number.isInteger(rateBps) || rateBps < 0 || rateBps > 10_000) throw new RangeError(`rateBps must be basis points, got ${rateBps}`);
     const current = this.get(walletId, identityId);
-    const next: AgentDebt = { ...current, principalWei: current.principalWei + principalWei, rateBps };
+    const next: AgentDebt = {
+      ...current,
+      principalWei: current.principalWei + principalWei,
+      borrowedWei: current.borrowedWei + principalWei,
+      loanCount: current.loanCount + 1,
+      rateBps,
+    };
     this.debts.set(walletId, next);
     this.flush();
     return { ...next };
@@ -148,11 +205,13 @@ export class DebtStore {
    * debt on file is still owed by whoever is sitting there.
    */
   currentIdentity(walletId: string): string {
+    this.reload();
     return this.debts.get(walletId)?.identityId ?? `${walletId}-1`;
   }
 
   /** Every debt on file, for reconciliation and for the operator. */
   all(): Array<AgentDebt & { walletId: string }> {
+    this.reload();
     return [...this.debts.entries()].map(([walletId, debt]) => ({ walletId, ...debt }));
   }
 
@@ -160,11 +219,14 @@ export class DebtStore {
     mkdirSync(dirname(this.file), { recursive: true });
     const debts: Record<string, StoredDebt> = {};
     for (const [walletId, d] of this.debts) {
-      debts[walletId] = { identityId: d.identityId, principalWei: d.principalWei.toString(), interestWei: d.interestWei.toString(), rateBps: d.rateBps, lastAccruedRound: d.lastAccruedRound, bornAtRound: d.bornAtRound };
+      debts[walletId] = { identityId: d.identityId, principalWei: d.principalWei.toString(), interestWei: d.interestWei.toString(), rateBps: d.rateBps, lastAccruedRound: d.lastAccruedRound, bornAtRound: d.bornAtRound, borrowedWei: d.borrowedWei.toString(), loanCount: d.loanCount };
     }
     const body: FileShape = { version: 1, debts, updatedAt: new Date().toISOString() };
     const tmp = `${this.file}.tmp`;
     writeFileSync(tmp, JSON.stringify(body, null, 2) + "\n");
     renameSync(tmp, this.file);
+    // This store is now the file, so the next read has nothing to pick up.
+    const stat = statSync(this.file, { throwIfNoEntry: false });
+    this.stamp = stat ? `${stat.mtimeMs}:${stat.size}` : "";
   }
 }

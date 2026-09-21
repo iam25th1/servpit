@@ -500,6 +500,25 @@
   gap: var(--space-tight);
 }
 
+/* Two columns, which is what a round with a lender needs and a round without
+   one never asks for. */
+.transfersBanked .transferList {
+  /* Multi column does not apply to a flex container, so the list becomes a
+     block for the two column case and the rows keep their own grid. */
+  display: block;
+  column-count: 2;
+  column-gap: var(--space-wide);
+}
+
+.transfersBanked .transferRow {
+  break-inside: avoid;
+  /* Half the width, so the label gets the space back from the two fixed
+     columns rather than losing the lender's name to an ellipsis. */
+  grid-template-columns: minmax(0, 1fr) 5ch 17ch;
+  gap: var(--space-tight);
+  font-size: var(--text-micro);
+}
+
 .transferList {
   list-style: none;
   margin: 0;
@@ -597,4 +616,505 @@ a.transferHash {
 .narrow .playfield,
 .narrow .result {
   grid-template-columns: minmax(0, 1fr);
+}
+
+/* What the winner owed, taken off the top.
+
+   Three lines rather than one net figure: a win that mostly went to the
+   lender is a different story from a win that did not, and a single number
+   tells neither. */
+.garnish {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: var(--space-snug) 0 0;
+  padding: var(--space-snug);
+  background: var(--pit-deep);
+  color: var(--bone);
+  --on-surface-dim: var(--bone-dim);
+}
+
+.garnishLine {
+  font-size: var(--text-small);
+  margin: 0;
+}
+
+.garnishLine strong {
+  color: var(--bad);
+  font-family: var(--font-ui);
+}
+
+.garnishSplit {
+  font-size: var(--text-micro);
+  color: var(--on-surface-dim, var(--bone-dim));
+  margin: 0;
+}
+
+.garnishKept {
+  font-size: var(--text-small);
+  margin: 0;
+}
+
+.garnishKept strong {
+  color: var(--amber);
+  font-family: var(--font-ui);
+}
+
+/* Marrow's panel.
+
+   The lender sits under the cabinet, in the space the lever does not use,
+   rather than stacked above the lineup where it would push the sixth agent
+   off a stage that cannot grow. It has no seat in the round, so it has no row
+   in the lineup either.
+
+   Flat surfaces and the same token palette as every other panel: no gradient,
+   no coloured bar down the side, no purple. */
+/* A balance and a debt, side by side and never the same colour. An agent
+   playing on borrowed chips is the thing worth seeing, and two figures in one
+   tone read as one figure. */
+.purse {
+  display: inline-flex;
+  gap: var(--space-snug);
+  font-size: var(--text-micro);
+  margin-left: auto;
+}
+
+.holds {
+  color: var(--on-surface-dim, var(--bone-dim));
+}
+
+/* On a cleared band, not straight on the panel. The bg sprite's interior is
+   a warm olive and the bad token measured 2.8:1 against it, so the debt gets
+   the same treatment the winner's nameplate gets: its own dark field. */
+.owes {
+  color: var(--bad);
+  font-family: var(--font-ui);
+  background: var(--pit-deep);
+  padding: 0 var(--space-tight);
+}
+
+.bank {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-tight);
+  flex: none;
+  width: 100%;
+  box-sizing: border-box;
+  /* Bounded, because the stage does not scroll. The beats list is capped in
+     the component as well, and this is the belt to that pair of braces: a
+     long round can never push the cabinet off the top. */
+  max-height: 122px;
+  overflow: hidden;
+}
+
+.bankHead {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-snug);
+}
+
+.bankName {
+  font-family: var(--font-ui);
+  font-size: var(--text-lead);
+  letter-spacing: 0.05em;
+  margin: 0;
+}
+
+.bankBook {
+  font-size: var(--text-micro);
+  color: var(--on-surface-dim, var(--bone-dim));
+  margin: 0;
+}
+
+.bankFace {
+  image-rendering: pixelated;
+  flex: none;
+  align-self: center;
+}
+
+.bankTreasury {
+  font-size: var(--text-micro);
+  color: var(--on-surface-dim, var(--bone-dim));
+  margin: 0;
+}
+
+.bankTreasury strong {
+  color: var(--amber);
+  font-family: var(--font-ui);
+}
+
+/* Who owes what. A table without table chrome: three columns that line up,
+   because the numbers are the point. */
+.bookList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bookRow {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: var(--space-snug);
+  font-size: var(--text-micro);
+  align-items: baseline;
+}
+
+.bookName {
+  font-family: var(--font-ui);
+}
+
+.bookOwed {
+  color: var(--bad);
+  font-family: var(--font-ui);
+}
+
+.bookRate {
+  color: var(--on-surface-dim, var(--bone-dim));
+}
+
+/* The exchange during the buy in phase, where there is room for all of it.
+   Bounded so a long round cannot push the entries off the panel. */
+.beatList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-tight);
+  margin: 0 0 var(--space-snug);
+  padding: 0;
+  list-style: none;
+  max-height: 268px;
+  overflow: hidden;
+  flex: none;
+}
+
+.rulings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-tight);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ruling {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+/* An ask is the agent talking and sits indented under nothing; a ruling is
+   Marrow answering and carries the amber the rest of the pit uses for a
+   commitment. A refusal is the bad token, which is the only place red
+   appears in this panel. */
+.rulingLine {
+  font-size: var(--text-micro);
+}
+
+.ruling[data-beat="ask"] .rulingLine {
+  color: var(--on-surface-dim, var(--bone-dim));
+}
+
+.ruling[data-beat="lend"] .rulingLine {
+  color: var(--amber);
+  font-family: var(--font-ui);
+}
+
+.ruling[data-beat="refuse"] .rulingLine {
+  color: var(--bad);
+  font-family: var(--font-ui);
+  background: var(--pit-deep);
+  padding: 0 var(--space-tight);
+  align-self: flex-start;
+}
+
+.rulingReason {
+  font-size: var(--text-micro);
+  color: var(--on-surface-dim, var(--bone-dim));
+}
+
+/* The way into the graveyard, under the mode cards. A row of its own so the
+   card grid keeps its shape and the door is not mistaken for a seventh mode. */
+.menuFooter {
+  display: flex;
+  align-items: center;
+  gap: var(--space-base);
+  flex: none;
+}
+
+.menuFooterNote {
+  font-size: var(--text-micro);
+  color: var(--on-surface-dim, var(--bone-dim));
+  margin: 0;
+}
+
+/* A seat being emptied.
+
+   Vestibular safety: everything in here is element local. The slabs scale and
+   fade in place, the faces lose their colour through a variable the filter
+   reads, a rule draws across each name, and the newcomer slides ten pixels.
+   Nothing moves the stage, the page or any full width container, and there is
+   no shake, no rotation and no blur anywhere in it. */
+.wreck {
+  width: min(1100px, 100%);
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-base);
+}
+
+.wreckHead {
+  font-family: var(--font-ui);
+  font-size: var(--text-lead);
+  letter-spacing: 0.06em;
+  color: var(--bone);
+  margin: 0;
+}
+
+.tombs {
+  display: flex;
+  justify-content: center;
+  /* Each slab is only as tall as what is on it. Stretched, the ones without a
+     newcomer were half empty and the wall read as broken rather than as four
+     separate endings. */
+  align-items: flex-start;
+  gap: var(--space-base);
+  width: 100%;
+}
+
+.tomb {
+  flex: 1 1 0;
+  max-width: 320px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-tight);
+  text-align: center;
+}
+
+/* The colour leaving a face, driven by anime.js through the variable rather
+   than by swapping a class, so the drain is a timed part of the sequence and
+   not a state change that happens at once. */
+.tombFace {
+  --drained: 0;
+  image-rendering: pixelated;
+  filter: grayscale(var(--drained)) brightness(calc(1 - 0.35 * var(--drained)));
+}
+
+.tombNameRow {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.tombName {
+  font-family: var(--font-ui);
+  font-size: var(--text-body);
+  letter-spacing: 0.05em;
+  color: var(--bone);
+  margin: 0;
+}
+
+/* The rule that goes through the name. Drawn rather than set, which is why it
+   is an element and not a text-decoration. */
+.cut {
+  position: absolute;
+  left: -4px;
+  right: -4px;
+  height: 2px;
+  background: var(--bad);
+  transform: scaleX(0);
+  transform-origin: left center;
+}
+
+.tombCause {
+  font-family: var(--font-ui);
+  font-size: var(--text-small);
+  color: var(--bad);
+  background: var(--pit-deep);
+  padding: var(--space-tight) var(--space-snug);
+  margin: 0;
+}
+
+.tombLife,
+.tombToll {
+  font-size: var(--text-micro);
+  color: var(--on-surface-dim, var(--bone-dim));
+  margin: 0;
+}
+
+/* Whoever takes the chair. Set apart by a rule above it, because it is a
+   different person and the panel should not read as one continuous obituary. */
+.heir {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-snug);
+  text-align: left;
+  margin-top: var(--space-tight);
+  padding-top: var(--space-snug);
+  border-top: 2px solid var(--bone-dim);
+  width: 100%;
+}
+
+.heirFace {
+  image-rendering: pixelated;
+  flex: none;
+}
+
+.heirWords {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.heirArrival {
+  font-size: var(--text-micro);
+  color: var(--amber);
+  margin: 0;
+}
+
+.heirStaked {
+  font-size: var(--text-micro);
+  color: var(--on-surface-dim, var(--bone-dim));
+  margin: 0;
+}
+
+.wreckFooter {
+  display: flex;
+  justify-content: center;
+}
+
+/* The graveyard.
+
+   Eight slabs to a page, because the stage is fixed and does not scroll. The
+   wall itself never grows: the count says how far in it you are. */
+.graveyard {
+  width: min(1100px, 100%);
+  margin: 0 auto;
+  gap: var(--space-base);
+}
+
+.graveHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-base);
+  flex: none;
+}
+
+.graveTitle {
+  font-family: var(--font-ui);
+  font-size: var(--text-lead);
+  letter-spacing: 0.06em;
+  color: var(--bone);
+  margin: 0;
+}
+
+.graveCount {
+  font-size: var(--text-micro);
+  color: var(--on-surface-dim, var(--bone-dim));
+}
+
+.graveNav {
+  display: flex;
+  align-items: center;
+  gap: var(--space-snug);
+  margin-left: auto;
+}
+
+.wall {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  grid-auto-rows: 1fr;
+  gap: var(--space-base);
+}
+
+.grave {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-tight);
+  min-height: 0;
+  text-align: center;
+}
+
+.graveFace {
+  image-rendering: pixelated;
+  filter: grayscale(1) brightness(0.8);
+}
+
+.graveName {
+  font-family: var(--font-ui);
+  font-size: var(--text-small);
+  letter-spacing: 0.04em;
+  color: var(--bone);
+  margin: 0;
+}
+
+.graveCause {
+  font-size: var(--text-micro);
+  color: var(--bad);
+  background: var(--pit-deep);
+  padding: 0 var(--space-tight);
+  margin: 0;
+}
+
+/* Four figures, labelled, in one block. A table without table chrome, the
+   same shape the loan book uses. */
+.graveStats {
+  display: grid;
+  grid-template-columns: repeat(2, auto);
+  gap: 2px var(--space-snug);
+  margin: 0;
+  font-size: var(--text-micro);
+  color: var(--on-surface-dim, var(--bone-dim));
+}
+
+.graveStat {
+  display: flex;
+  gap: 4px;
+  align-items: baseline;
+}
+
+.graveStat dt {
+  margin: 0;
+}
+
+.graveStat dd {
+  margin: 0;
+  color: var(--bone);
+  font-family: var(--font-ui);
+}
+
+.graveDebt {
+  background: var(--pit-deep);
+  padding: 0 var(--space-tight);
+  --on-surface-dim: var(--bone-dim);
+}
+
+.graveDebt dd {
+  color: var(--bad);
+}
+
+.graveEmpty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--text-small);
+  color: var(--on-surface-dim, var(--bone-dim));
+  margin: 0;
+}
+
+.graveNote {
+  font-size: var(--text-micro);
+  color: var(--on-surface-dim, var(--bone-dim));
+  margin: 0;
+  flex: none;
 }

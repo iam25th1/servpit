@@ -16,6 +16,15 @@ import { NAMED_AGENTS, type AgentProfile } from "./agents";
 /** A profile plus the face the panel draws for it. */
 export interface Replacement extends AgentProfile {
   readonly face: string;
+  /**
+   * What it says as it sits down, in its own voice.
+   *
+   * Written rather than assembled: the wreck screen shows it directly after
+   * the agent it replaced has been counted out, and a line stitched together
+   * from a descriptor reads like a database row at the one moment that
+   * should not.
+   */
+  readonly arrival: string;
 }
 
 export const REPLACEMENTS: readonly Replacement[] = Object.freeze([
@@ -26,6 +35,7 @@ export const REPLACEMENTS: readonly Replacement[] = Object.freeze([
     descriptor: "watched the last one go and intends to leave with something",
     voice: "Quiet and wary. Speaks as if the room is listening.",
     face: "NinjaDark",
+    arrival: "I watched that happen. I do not intend to be next.",
     minBankrollMultiple: 5,
     baseEnterChance: 40,
     afterWinShift: 5,
@@ -38,6 +48,7 @@ export const REPLACEMENTS: readonly Replacement[] = Object.freeze([
     descriptor: "arrived to make back somebody else's losses and knows how that sounds",
     voice: "Fast and needling. Enjoys being the one who pushed.",
     face: "NinjaFire",
+    arrival: "Somebody has to win that back. It may as well be me.",
     minBankrollMultiple: 1,
     baseEnterChance: 85,
     afterWinShift: 5,
@@ -50,6 +61,7 @@ export const REPLACEMENTS: readonly Replacement[] = Object.freeze([
     descriptor: "counts every round the same way and does not hurry",
     voice: "Flat and precise. States the number and stops.",
     face: "KnightGold",
+    arrival: "The seat is free. I will take it, and I will count.",
     minBankrollMultiple: 3,
     baseEnterChance: 65,
     afterWinShift: 0,
@@ -62,6 +74,7 @@ export const REPLACEMENTS: readonly Replacement[] = Object.freeze([
     descriptor: "believes a run is a run and rides it while it lasts",
     voice: "Warm and superstitious. Talks about how it is going.",
     face: "NinjaWater",
+    arrival: "The chair is still warm. That is usually a good sign.",
     minBankrollMultiple: 2,
     baseEnterChance: 60,
     afterWinShift: 30,
@@ -74,6 +87,7 @@ export const REPLACEMENTS: readonly Replacement[] = Object.freeze([
     descriptor: "takes the other side of whatever the room has decided",
     voice: "Dry and contrary. Sounds amused by everyone else.",
     face: "GladiatorBlue",
+    arrival: "You all saw what that seat does. That is why I want it.",
     minBankrollMultiple: 2,
     baseEnterChance: 55,
     afterWinShift: -25,
@@ -86,6 +100,7 @@ export const REPLACEMENTS: readonly Replacement[] = Object.freeze([
     descriptor: "waits for a pot worth the trouble and ignores the rest",
     voice: "Patient and clipped. Only speaks when the pot is big.",
     face: "Eskimo",
+    arrival: "I can wait. The pot will come to me.",
     minBankrollMultiple: 2,
     baseEnterChance: 50,
     afterWinShift: 10,
@@ -129,4 +144,11 @@ export function faceFor(walletId: string, identityId: string): string | null {
   const generation = generationOf(identityId);
   if (generation <= 1) return null;
   return (REPLACEMENTS[(generation - 2) % REPLACEMENTS.length] ?? REPLACEMENTS[0]).face;
+}
+
+/** What whoever is in this seat said when they took it. Null for an original. */
+export function arrivalFor(walletId: string, identityId: string): string | null {
+  const generation = generationOf(identityId);
+  if (generation <= 1) return null;
+  return (REPLACEMENTS[(generation - 2) % REPLACEMENTS.length] ?? REPLACEMENTS[0]).arrival;
 }

@@ -935,6 +935,15 @@
       }
     }
   ],
+  "portraits": [
+    {
+      "id": "Marrow",
+      "sourceFolder": "Actor/Boss/GiantRacoonGold",
+      "facesetPath": "/assets/Marrow/Faceset.png",
+      "width": 38,
+      "height": 38
+    }
+  ],
   "fx": [
     {
       "id": "Cut",

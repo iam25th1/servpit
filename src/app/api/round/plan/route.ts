@@ -17,6 +17,7 @@ import { internalDetail, publicError } from "@/server/publicError";
 import type { AgentDecision } from "@/server/decisions/types";
 import { basescanAddress } from "@/server/money";
 import { planRound, type RoundPlan } from "@/server/round/flow";
+import { TAPPED_OUT } from "@/server/round/plan";
 import { parseRoundRequest } from "./params";
 
 export const runtime = "nodejs";
@@ -34,6 +35,9 @@ function decisionShape(d: AgentDecision, link: Linker) {
     face: d.face ?? null,
     link: link(d.address),
     balanceWei: d.balanceWei.toString(),
+    // Both only with the bank on, which is what debtWei being present says.
+    // With it off the lineup has no purse at all, exactly as before.
+    ...(d.debtWei === undefined ? {} : { balance: toChips(d.balanceWei), debt: toChips(d.debtWei) }),
     enter: d.decision.enter,
     stake: d.decision.stake,
     reason: d.decision.reason,
@@ -57,8 +61,15 @@ function planShape(plan: RoundPlan, network: string, kind: string, costMicroCent
     bots: plan.bots.length,
     servCalls: plan.servCalls,
     guardRefusals: plan.guardRefusals,
-    loans: plan.loans.map((l) => ({ agentId: l.agentId, name: l.name, amount: toChips(l.principalWei), rateBps: l.rateBps, reason: l.reason, source: l.source })),
-    refusals: plan.refusals,
+    loans: plan.loans.map((l) => ({ agentId: l.agentId, name: l.name, asked: toChips(l.askedWei), tappedOut: l.tappedOut, amount: toChips(l.principalWei), rateBps: l.rateBps, reason: l.reason, source: l.source })),
+    refusals: plan.refusals.map((r) => ({ agentId: r.agentId, name: r.name, asked: toChips(r.askedWei), tappedOut: r.tappedOut, reason: r.reason })),
+    tappedOut: plan.decisions.filter((d) => d.decision.reason === TAPPED_OUT).map((d) => d.agentId),
+    bank: plan.bank
+      ? {
+          treasury: toChips(plan.bank.treasuryWei),
+          book: plan.bank.book.map((b) => ({ agentId: b.agentId, name: b.name, owed: toChips(b.principalWei + b.interestWei), principal: toChips(b.principalWei), rateBps: b.rateBps })),
+        }
+      : null,
     costMicroCents,
     costSummary,
     decisions: plan.decisions.map((d) => decisionShape(d, link)),

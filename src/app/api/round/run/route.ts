@@ -8,9 +8,11 @@ import { log } from "@/server/log";
 import { internalDetail, publicError } from "@/server/publicError";
 import { basescanAddress } from "@/server/money";
 import { weiPerChip } from "@/config/stake";
+import { arrivalFor, faceFor } from "@/config/replacements";
 import { entrantNames } from "@/server/round/entrantNames";
 import { roundIdFor } from "@/server/round/types";
 import { runRound } from "@/server/round/settle";
+import { overReached } from "@/server/round/wrecks";
 import { parseRoundRequest } from "../plan/params";
 
 export const runtime = "nodejs";
@@ -112,7 +114,59 @@ export async function POST(request: Request): Promise<Response> {
               ...run.entries.map((e) => ({ kind: e.kind, agentId: e.agentId, amountWei: e.amountWei.toString(), txHash: e.txHash ?? null, link: e.link, applied: e.applied })),
               ...(run.payout ? [{ kind: run.payout.kind, agentId: run.payout.agentId, amountWei: run.payout.amountWei.toString(), txHash: run.payout.txHash ?? null, link: run.payout.link, applied: run.payout.applied }] : []),
               ...(run.retained ? [{ kind: "retained", agentId: run.retained.winnerEntrantId, amountWei: run.retained.amountWei.toString(), txHash: null, link: null, applied: false }] : []),
+              // The garnishment is chips that moved, so it belongs in the
+              // list that claims to hold every transfer this round, not only
+              // in the winner's panel where it is explained.
+              ...(run.repayment
+                ? [
+                    {
+                      kind: run.repayment.outcome.kind,
+                      agentId: run.repayment.agentId,
+                      amountWei: run.repayment.outcome.amountWei.toString(),
+                      txHash: run.repayment.outcome.txHash ?? null,
+                      link: run.repayment.outcome.link,
+                      applied: run.repayment.outcome.applied,
+                    },
+                  ]
+                : []),
             ],
+            // What the bank did this round. Empty with the flag off, so the
+            // client renders nothing it did not render before.
+            interest: run.interest.map((i) => ({ agentId: i.agentId, chargedWei: i.chargedWei.toString(), rateBps: i.rateBps })),
+            repayment: run.repayment
+              ? {
+                  agentId: run.repayment.agentId,
+                  name: byId.get(run.repayment.agentId) ?? run.repayment.agentId,
+                  interestWei: run.repayment.interestWei.toString(),
+                  principalWei: run.repayment.principalWei.toString(),
+                  paidWei: run.repayment.outcome.amountWei.toString(),
+                  link: run.repayment.outcome.link,
+                }
+              : null,
+            wrecks: run.wrecks.map((w) => ({
+              walletId: w.walletId,
+              name: w.name,
+              // The face it wore, from the identity that owned the seat, so
+              // the screen shows who died rather than who is in the chair now.
+              face: faceFor(w.walletId, w.identityId),
+              trigger: w.trigger,
+              overReached: overReached(w),
+              debtAtDeathWei: w.debtAtDeathWei,
+              seizedWei: w.seizedWei,
+              writtenOffWei: w.writtenOffWei,
+              peakBalanceWei: w.peakBalanceWei,
+              borrowedWei: w.borrowedWei,
+              roundsSurvived: w.roundsSurvived,
+              wins: w.wins,
+            })),
+            replacements: run.replacements.map((r) => ({
+              walletId: r.walletId,
+              name: r.name,
+              face: r.face,
+              arrival: arrivalFor(r.walletId, r.identityId) ?? "",
+              fundedWei: r.fundedWei.toString(),
+              link: r.outcome?.link ?? null,
+            })),
             agents: stored?.agents ?? [],
             replay: {
               characters: run.round.characters,

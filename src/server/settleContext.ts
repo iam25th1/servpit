@@ -11,6 +11,7 @@
 import { join } from "node:path";
 import { BankrollCache } from "./bankroll";
 import { readEnv } from "./env";
+import { weiPerChip } from "@/config/stake";
 import { TransferLedger } from "./ledger";
 import { log } from "./log";
 import { PlanStore } from "./round/planStore";
@@ -36,14 +37,28 @@ export interface SettleContext {
   flow: FlowContext;
 }
 
-/** Fake chain wallets start with a testnet sized float so local rounds can run. */
+/**
+ * Fake chain wallets start with a testnet sized float so local rounds can run.
+ *
+ * SERVPIT_FAKE_BALANCE_CHIPS lowers it, which is the only way to see an agent
+ * short of a seat without touching a real wallet. It does nothing on the viem
+ * backend, where balances come from the chain.
+ */
 const FAKE_INITIAL_WEI = 1_000_000_000_000_000n;
+
+function fakeOpeningWei(env: NodeJS.ProcessEnv): bigint {
+  const raw = env.SERVPIT_FAKE_BALANCE_CHIPS?.trim();
+  if (raw === undefined || raw.length === 0) return FAKE_INITIAL_WEI;
+  const chips = Number(raw);
+  if (!Number.isInteger(chips) || chips < 0) throw new RangeError(`SERVPIT_FAKE_BALANCE_CHIPS must be a whole number of chips, got ${raw}`);
+  return BigInt(chips) * weiPerChip(env);
+}
 
 let pending: Promise<SettleContext> | undefined;
 
 async function build(): Promise<SettleContext> {
   const env = readEnv();
-  const chain: Chain = env.viem ? new ViemChain(env.viem) : new FakeChain({ initialBalanceWei: FAKE_INITIAL_WEI });
+  const chain: Chain = env.viem ? new ViemChain(env.viem) : new FakeChain({ initialBalanceWei: fakeOpeningWei(process.env) });
   log.info("wallet backend", { backend: chain.kind, network: chain.network });
   const registry = new WalletRegistry(join(env.dataDir, `wallets-${chain.network}.json`));
   // Only when the bank is on and there is a key for it. A round that never

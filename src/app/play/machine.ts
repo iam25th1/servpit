@@ -4,8 +4,14 @@
 // without a browser.
 //
 //   boot -> title -> modeSelect -> lobby -> slot -> spinning -> arena -> result
-//                        ^                                                 |
-//                        +-------------------- playAgain ------------------+
+//                       ^  |                                       |         |
+//                       |  +-> graveyard                           +-> wreck +
+//                       +-------------------- playAgain ---------------------+
+//
+// wreck only stands between the arena and the result when somebody was
+// actually finished, and the arena says so when it hands over. The machine
+// never reads the run payload, so what it is told is a flag rather than a
+// list. graveyard is a side room off the menu and leads nowhere else.
 //
 // boot is real: it holds until the asset manifest and every sprite have
 // decoded. title is the attract screen and the only way past it is the
@@ -17,7 +23,7 @@
 
 import { GAME_MODES, type GameMode } from "@/config/modes";
 
-export type Screen = "boot" | "title" | "modeSelect" | "lobby" | "slot" | "spinning" | "arena" | "result";
+export type Screen = "boot" | "title" | "modeSelect" | "graveyard" | "lobby" | "slot" | "spinning" | "arena" | "wreck" | "result";
 
 export interface Player {
   id: string;
@@ -58,7 +64,10 @@ export type FlowEvent =
   | { type: "leverPulled" }
   | { type: "reelsSettled" }
   | { type: "roundReady"; run: unknown }
-  | { type: "playbackFinished" }
+  | { type: "playbackFinished"; wrecked?: boolean }
+  | { type: "wreckSeen" }
+  | { type: "showGraveyard" }
+  | { type: "closeGraveyard" }
   | { type: "playAgain" }
   | { type: "failed"; message: string };
 
@@ -124,7 +133,23 @@ export function reduce(state: FlowState, event: FlowEvent): FlowState {
 
     case "playbackFinished":
       if (state.screen !== "arena") return state;
+      // A seat was emptied, so that lands before the bankrolls do. The
+      // result is still behind it and nothing about the run is discarded.
+      return { ...state, screen: event.wrecked === true ? "wreck" : "result" };
+
+    case "wreckSeen":
+      if (state.screen !== "wreck") return state;
       return { ...state, screen: "result" };
+
+    case "showGraveyard":
+      // Only from the menu. Mid round it would be a way out of a round that
+      // is already settling on chain.
+      if (state.screen !== "modeSelect") return state;
+      return { ...state, screen: "graveyard", error: null };
+
+    case "closeGraveyard":
+      if (state.screen !== "graveyard") return state;
+      return { ...state, screen: "modeSelect", error: null };
 
     case "playAgain":
       if (state.screen !== "result") return state;
@@ -138,7 +163,7 @@ export function reduce(state: FlowState, event: FlowEvent): FlowState {
       // phase that failed has none, and a lever that looks live and does
       // nothing is worse than one that is plainly dead: pullLever returns at
       // its first guard, so every pull was silently ignored.
-      if (state.screen === "boot" || state.screen === "title" || state.screen === "modeSelect") return { ...state, error: event.message };
+      if (state.screen === "boot" || state.screen === "title" || state.screen === "modeSelect" || state.screen === "graveyard") return { ...state, error: event.message };
       return { ...state, screen: "slot", leverLive: state.plan !== null, reelsSettled: false, error: event.message };
 
     default:
