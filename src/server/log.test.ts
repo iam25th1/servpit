@@ -68,3 +68,39 @@ describe("the chain identifier carve out cannot leak a private key", () => {
     expect(redact(`raw ${key}`)).toBe("raw [redacted:hex64]");
   });
 });
+
+describe("credentials embedded in an rpc url", () => {
+  it("keeps the host and drops the key in the path", () => {
+    // A keyed endpoint carries its credential in the path, and viem quotes
+    // the whole url in every transport error, so an error that reaches a log
+    // carries the key with it.
+    const line = redact({ reason: "The request took too long to respond. URL: https://base-sepolia.example.com/v2/SUPERSECRETKEY" });
+    expect(line.reason).not.toContain("SUPERSECRETKEY");
+    expect(line.reason).toContain("base-sepolia.example.com");
+    expect(line.reason).toContain("[redacted:url]");
+  });
+
+  it("drops a key in the query and a password in the userinfo", () => {
+    const query = redact({ url: "https://rpc.example.com/?apikey=SUPERSECRETKEY" });
+    expect(query.url).not.toContain("SUPERSECRETKEY");
+    const userinfo = redact({ url: "https://user:SUPERSECRETKEY@rpc.example.com/" });
+    expect(userinfo.url).not.toContain("SUPERSECRETKEY");
+  });
+
+  it("leaves a bare host alone, because there is nothing in it to leak", () => {
+    expect(redact({ url: "https://sepolia.base.org" }).url).toBe("https://sepolia.base.org");
+  });
+
+  it("leaves a basescan link addressable, because it is the evidence", () => {
+    // The hash inside it is still masked by the hex64 rule, which predates
+    // this and applies to any field not named as a chain identifier. What
+    // matters here is that the url is not collapsed to nothing.
+    const link = "https://sepolia.basescan.org/tx/0x488c633d19833c59de41c3eedb74fb19551f23c2ed56fd6031917c2de7b86a9b";
+    expect(redact({ link }).link).toContain("https://sepolia.basescan.org/tx/");
+    expect(redact({ txHash: link }).txHash).toBe(link);
+  });
+
+  it("masks a url that is not parseable rather than passing it through", () => {
+    expect(redact({ url: "https://[bad" }).url).toBe("[redacted:url]");
+  });
+});

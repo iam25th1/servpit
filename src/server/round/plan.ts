@@ -75,13 +75,16 @@ export async function planRound(ctx: FlowContext, seed: string, onDecided?: (dec
     snapshots.push({ profile, address: wallet.address, balanceWei, stakeWei, recentOutcomes: ctx.store.outcomesFor(profile.id) });
   }
 
+  // Reported straight away, and before the round can stop. An agent whose
+  // wallet is unreachable has nothing to think about, and leaving it on
+  // "thinking" is what the player stared at for the whole of the failure this
+  // fixes. Even when every one of them failed, the panel should say so rather
+  // than showing six agents still deciding next to an error.
+  for (const decision of unreachable) onDecided?.(decision);
+
   if (snapshots.length === 0) {
     throw new ChainUnreachableError("no agent balance could be read from the chain");
   }
-  // Reported straight away. An agent whose wallet is unreachable has nothing
-  // to think about, and leaving it on "thinking" is what the player saw for
-  // the whole of the failure this fixes.
-  for (const decision of unreachable) onDecided?.(decision);
 
   const context: RoundContext = { roundId, participants: ctx.entrants, poolWei: stakeWei * BigInt(ctx.entrants), stakeWei };
   const run = await decideForAgents({ client: ctx.serv, meter: ctx.meter }, snapshots, context, onDecided);

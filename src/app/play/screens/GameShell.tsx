@@ -98,6 +98,8 @@ export interface GameShellProps {
   slotCanvasRef: RefObject<HTMLCanvasElement | null>;
   arenaCanvasRef: RefObject<HTMLCanvasElement | null>;
   onChooseMode: (modeId: string, stake: StakeTierId) => void;
+  /** Runs the failed step again. Shown next to any error the player can act on. */
+  onRetry: () => void;
   onPull: () => void;
   onPlayAgain: () => void;
   onToggleMute: () => void;
@@ -146,9 +148,9 @@ export function GameShell(props: GameShellProps) {
           {state.screen === "arena" ? (
             <ArenaHud run={run} arena={props.arena} />
           ) : state.screen === "spinning" ? (
-            <BuyIns plan={plan} entries={entries} error={state.error} />
+            <BuyIns plan={plan} entries={entries} error={state.error} onRetry={props.onRetry} />
           ) : (
-            <Lineup plan={plan} decided={decided} error={state.error} />
+            <Lineup plan={plan} decided={decided} error={state.error} onRetry={props.onRetry} />
           )}
       </div>
 
@@ -236,7 +238,18 @@ export function GameShell(props: GameShellProps) {
     );
   }
 
-  function Lineup({ plan, decided, error }: { plan: PlanShape | null; decided: DecidedShape[]; error: string | null }) {
+  function Failure({ error, onRetry }: { error: string; onRetry: () => void }) {
+    return (
+      <div className={styles.failure} role="alert">
+        <p className={styles.error}>{error}</p>
+        <Button onClick={onRetry} scale={2}>
+          Try again
+        </Button>
+      </div>
+    );
+  }
+
+  function Lineup({ plan, decided, error, onRetry }: { plan: PlanShape | null; decided: DecidedShape[]; error: string | null; onRetry: () => void }) {
     const listRef = useRef<HTMLUListElement>(null);
     // The plan's decisions win once it lands, so a late stream line cannot
     // leave a row showing something the round did not use.
@@ -287,7 +300,7 @@ export function GameShell(props: GameShellProps) {
             </li>
           ))}
         </ul>
-        {error && <p className={styles.error}>{error}</p>}
+        {error && <Failure error={error} onRetry={onRetry} />}
       </NinePatch>
     );
   }
@@ -303,7 +316,7 @@ export function GameShell(props: GameShellProps) {
    *
    * Real confirmations drive this. Nothing here is on a timer.
    */
-  function BuyIns({ plan, entries, error }: { plan: PlanShape | null; entries: EntryShape[]; error: string | null }) {
+  function BuyIns({ plan, entries, error, onRetry }: { plan: PlanShape | null; entries: EntryShape[]; error: string | null; onRetry: () => void }) {
     const expected = plan ? plan.decisions.filter((d) => d.enter) : [];
     const paid = new Map(entries.map((e) => [e.agentId, e]));
     return (
@@ -346,7 +359,7 @@ export function GameShell(props: GameShellProps) {
             );
           })}
         </ul>
-        {error && <p className={styles.error}>{error}</p>}
+        {error && <Failure error={error} onRetry={onRetry} />}
       </NinePatch>
     );
   }

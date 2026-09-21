@@ -59,6 +59,8 @@ const decode = (value: unknown): unknown => {
 };
 
 export class PlanNotQuoted extends Error {
+  /** Stable discriminant, so a route can classify this without instanceof. */
+  readonly code = "round_expired" as const;
   constructor(readonly planId: string) {
     super(`no quoted plan for ${planId}. A round can only settle against a plan that was shown, never one worked out again at settle time.`);
     this.name = "PlanNotQuoted";

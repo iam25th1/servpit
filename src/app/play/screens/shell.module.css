@@ -568,6 +568,16 @@ a.transferHash {
   margin: 0;
 }
 
+/* The message and the way out of it, together. A failure the player cannot
+   act on is a dead end, and the last one left them staring at a lever that
+   looked live and did nothing. */
+.failure {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-half);
+}
+
 .dim {
   color: var(--on-surface-dim, var(--bone-dim));
 }

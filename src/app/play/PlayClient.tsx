@@ -36,7 +36,7 @@ import { UiKitProvider } from "@/ui/UiKit";
 import { createResponsiveScope, playTransition } from "@/ui/transitions";
 import { Stage } from "@/ui/Stage";
 import { readNdjson } from "./ndjson";
-import { requestWithTimeout } from "./request";
+import { requestWithTimeout, RequestTimeoutError } from "./request";
 import { pickPlayerDraw, type RunReel } from "./reelPick";
 import { runRequestFor } from "./roundRequest";
 import { arenaStanding, type ArenaStanding } from "./screens/arenaHud";
@@ -117,6 +117,29 @@ const MAX_SCALE = 3;
 /** Short unique token. Not a clock: this screen may not read time outside the loop. */
 const token = (): string => crypto.randomUUID().replace(/-/g, "").slice(0, 10);
 
+
+/** Shown when nothing more specific is known. Never a library's words. */
+const GENERIC_FAILURE = "Something went wrong. Try again in a moment.";
+
+/**
+ * A message the server already wrote for the player, carried through the
+ * catch that turns a failed step into the error state.
+ */
+class ShownFailure extends Error {}
+
+/**
+ * What the player is shown for a failure.
+ *
+ * Only a message this application wrote gets through. Anything else, a fetch
+ * rejection or a library error, becomes the generic sentence: viem quotes the
+ * full endpoint url in its transport errors, and a keyed endpoint carries its
+ * credential in that url, so the browser is the last place that text belongs.
+ */
+function playerMessage(e: unknown): string {
+  if (e instanceof ShownFailure) return e.message;
+  if (e instanceof RequestTimeoutError) return "That took too long. Try again in a moment.";
+  return GENERIC_FAILURE;
+}
 
 export function PlayClient() {
   const [state, dispatch] = useReducer(reduce, undefined, initialState);
@@ -315,18 +338,25 @@ export function PlayClient() {
       let streamError: string | null = null;
       try {
         await readNdjson(response, (value) => {
-          const line = value as { type?: string; decision?: unknown; plan?: unknown; error?: string };
+          const line = value as { type?: string; decision?: unknown; plan?: unknown; message?: string; error?: string };
           if (line.type === "decision") dispatch({ type: "agentDecided", decision: line.decision });
           else if (line.type === "plan") dispatch({ type: "planLoaded", plan: line.plan });
-          else if (line.type === "error") streamError = line.error ?? "the round could not be planned";
+          // The server sends a sentence written for the player. Anything else
+          // on this line is not shown.
+          else if (line.type === "error") streamError = line.message ?? line.error ?? GENERIC_FAILURE;
         });
       } finally {
         done();
       }
-      if (streamError !== null) throw new Error(streamError);
+      if (streamError !== null) throw new ShownFailure(streamError);
     } catch (e) {
-      dispatch({ type: "failed", message: e instanceof Error ? e.message : String(e) });
+      dispatch({ type: "failed", message: playerMessage(e) });
     }
+  };
+
+  const retry = (): void => {
+    if (!state.mode || !state.stake) return;
+    void chooseMode(state.mode.id, state.stake);
   };
 
   const plan = state.plan as PlanResponse | null;
@@ -353,15 +383,15 @@ export function PlayClient() {
       let runError: string | null = null;
       try {
         await readNdjson(response, (value) => {
-          const line = value as { type?: string; entry?: unknown; result?: RunResponse; error?: string };
+          const line = value as { type?: string; entry?: unknown; result?: RunResponse; message?: string; error?: string };
           if (line.type === "entry") dispatch({ type: "entryConfirmed", entry: line.entry });
           else if (line.type === "result") received = line.result;
-          else if (line.type === "error") runError = line.error ?? "the round could not be settled";
+          else if (line.type === "error") runError = line.message ?? line.error ?? GENERIC_FAILURE;
         });
       } finally {
         done();
       }
-      if (runError !== null) throw new Error(runError);
+      if (runError !== null) throw new ShownFailure(runError);
       if (!received) throw new Error("the round ended without a result");
       const settled: RunResponse = received;
       const draw = pickPlayerDraw(settled.reels);
@@ -393,7 +423,7 @@ export function PlayClient() {
     } catch (e) {
       engine.audio.stopSpin();
       engine.lever.releaseToIdle();
-      dispatch({ type: "failed", message: e instanceof Error ? e.message : String(e) });
+      dispatch({ type: "failed", message: playerMessage(e) });
     }
   };
 
@@ -502,6 +532,7 @@ export function PlayClient() {
             slotCanvasRef={slotCanvasRef}
             arenaCanvasRef={arenaCanvasRef}
             onChooseMode={(modeId, stake) => void chooseMode(modeId, stake)}
+            onRetry={retry}
             onPull={() => void pullLever()}
             onPlayAgain={playAgain}
             onToggleMute={toggleMute}
