@@ -85,6 +85,23 @@ const LONG_NUMBER = /\d{5,}/;
 /** A reason longer than this is not one short sentence. */
 export const MAX_REASON_WORDS = 20;
 
+/**
+ * The house punctuation, applied to every line a model writes for a player.
+ *
+ * A long dash is banned everywhere in this repo, and a model reaches for one
+ * constantly: the first live decisions Marrow ever made came back as "nothing
+ * paid back yet' + a long dash + 'you are not ready for more rope". Refusing
+ * the answer over punctuation would throw away a good decision and hand the
+ * round to the fallback lender, so the dash becomes a comma and the words are
+ * left alone. Built from character codes because this file may not contain
+ * the characters it replaces.
+ */
+const LONG_DASHES = new RegExp(`\\s*[${String.fromCharCode(0x2013, 0x2014)}]\\s*`, "g");
+
+export function plainPunctuation(reason: string): string {
+  return reason.replace(LONG_DASHES, ", ");
+}
+
 /** Why a reason is not usable, or null when it reads like a person. */
 export function reasonFault(reason: string): string | null {
   const lower = reason.toLowerCase();
@@ -208,7 +225,7 @@ export function validateDecision(content: string, snapshot: AgentSnapshot): Vali
 
   if (!enter) {
     if (stake !== 0) return { ok: false, reason: "stake must be 0 when not entering" };
-    return { ok: true, decision: { enter, stake, reason: reason.trim().slice(0, MAX_REASON) } };
+    return { ok: true, decision: { enter, stake, reason: plainPunctuation(reason.trim()).slice(0, MAX_REASON) } };
   }
 
   if (ceilingChips === roundChips) {
@@ -216,7 +233,7 @@ export function validateDecision(content: string, snapshot: AgentSnapshot): Vali
     if (stake !== roundChips) return { ok: false, reason: `stake ${stake} is not this round's ${roundChips} chips` };
     if (stake > balanceChips) return { ok: false, reason: `stake ${stake} is more than the ${balanceChips} chips this wallet holds` };
     if (snapshot.balanceWei < snapshot.stakeWei) return { ok: false, reason: `this wallet cannot cover the ${roundChips} chips a seat costs` };
-    return { ok: true, decision: { enter, stake, reason: reason.trim().slice(0, MAX_REASON) } };
+    return { ok: true, decision: { enter, stake, reason: plainPunctuation(reason.trim()).slice(0, MAX_REASON) } };
   }
 
   // The bank is on, so a stake above the balance is a borrowing request and
@@ -226,7 +243,7 @@ export function validateDecision(content: string, snapshot: AgentSnapshot): Vali
   if (stake < roundChips) return { ok: false, reason: `stake ${stake} is below the ${roundChips} chips a seat costs` };
   if (stake > ceilingChips) return { ok: false, reason: `stake ${stake} is above the ${ceilingChips} chip ceiling` };
 
-  return { ok: true, decision: { enter, stake, reason: reason.trim().slice(0, MAX_REASON) } };
+  return { ok: true, decision: { enter, stake, reason: plainPunctuation(reason.trim()).slice(0, MAX_REASON) } };
 }
 
 import { heuristicDecision } from "./heuristic";

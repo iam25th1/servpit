@@ -218,8 +218,19 @@ export async function planRound(
     // never states a loan amount and is never asked for one.
     let lentWei = 0n;
     if (decision.decision.enter && stakeMultiple > 1 && ctx.wallets.bank) {
-      const ownWei = snapshot.balanceWei > ctx.chain.gasReserveWei ? snapshot.balanceWei - ctx.chain.gasReserveWei : 0n;
-      const shortfallWei = chosenWei > ownWei ? chosenWei - ownWei : 0n;
+      // What it cannot cover itself: the stake plus the gas it has to keep
+      // back, against what it actually holds.
+      //
+      // This used to subtract the reserve from the balance and clamp that at
+      // zero, which is the same number while an agent holds more than the
+      // reserve and too small a number once it does not. An agent with less
+      // than the reserve asked for exactly the stake, was lent exactly the
+      // stake, and was then turned away for gas: on Base Sepolia, where the
+      // reserve is two seats, four of the six agents spent the evening in
+      // that state, and a wrecked seat could never be refilled by a loan
+      // however willing the lender was.
+      const neededWei = chosenWei + ctx.chain.gasReserveWei;
+      const shortfallWei = neededWei > snapshot.balanceWei ? neededWei - snapshot.balanceWei : 0n;
       if (shortfallWei > 0n) {
         const bounds: LoanBounds = {
           treasuryChips: toChips(treasuryWei),
@@ -236,7 +247,10 @@ export async function planRound(
             debtChips: toChips(snapshot.debtWei ?? 0n),
             roundsPlayed: snapshot.recentOutcomes.length,
             wins: snapshot.recentOutcomes.filter((o) => o.entered && o.netWei > 0n).length,
-            repaidChips: 0,
+            // What this occupant has actually handed back. It was a zero
+            // here, so the lender judged an agent that had repaid everything
+            // exactly as it judged one that had never paid back a chip.
+            repaidChips: toChips(ctx.debts.get(snapshot.profile.id, ctx.debts.currentIdentity(snapshot.profile.id)).repaidWei),
           },
           stakeChips: toChips(chosenWei),
           shortfallChips: toChips(shortfallWei),
@@ -295,6 +309,19 @@ export async function planRound(
           ? `has ${held} chips but not enough left over for fees, so it is short on gas`
           : `has ${held} chips, and a seat costs ${seat}, so it is short on stake`;
       log.warn("entry blocked by on chain balance", { agentId: decision.agentId, reason });
+      // A loan approved for a seat this agent is not going to take is a loan
+      // that should never leave the bank. It happens when the approval was
+      // capped, by the ceiling or by what the treasury can spare, so the
+      // agent ends up short anyway: the chips would go out, the debt would be
+      // recorded, and the round they were borrowed for would happen without
+      // the borrower. The bank keeps them.
+      if (lentWei > 0n) {
+        const index = loans.findIndex((l) => l.agentId === decision.agentId);
+        if (index >= 0) loans.splice(index, 1);
+        borrowed.delete(decision.agentId);
+        treasuryWei += lentWei;
+        log.warn("loan withdrawn, the borrower is not entering", { agentId: decision.agentId, principalWei: lentWei.toString(), reason });
+      }
       decisions.push({ ...decision, decision: { enter: false, stake: 0, reason: `excluded: ${reason}` }, rejection: decision.rejection ? `${decision.rejection}; ${reason}` : reason });
       continue;
     }

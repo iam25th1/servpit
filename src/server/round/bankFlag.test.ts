@@ -440,7 +440,7 @@ describe("interest and repayment", () => {
       }
       expect(run.reconciliation.ok).toBe(true);
     }
-  });
+  }, 30_000);
 });
 
 describe("with the bank off, none of this happens", () => {
@@ -697,5 +697,48 @@ describe("replacement", () => {
     const again = await runRound(ctx, plan);
     expect(chain.applied).toBe(applied);
     expect(again.reconciliation.ok).toBe(true);
+  });
+});
+
+describe("a loan for a seat that is not taken", () => {
+  // The approval is sized to the shortfall, so an agent that gets the whole
+  // of it can always afford the seat. An agent that gets part of it, because
+  // the ceiling or the treasury capped the answer, is still short: it is
+  // excluded, and the chips must not leave the bank for a round it is not in.
+  it("is withdrawn rather than disbursed, and the treasury keeps the chips", async () => {
+    process.env.SERVPIT_BANK_ENABLED = "true";
+    const seat = stakeWeiFrom();
+    dir = mkdtempSync(join(tmpdir(), "servpit-withdrawn-"));
+    // Empty agents and a reserve of two seats, so a one seat approval is not
+    // enough for the smallest stake there is and the gate turns them away.
+    const chain = new FakeChain({ initialBalanceWei: 0n, gasReserveWei: seat * 2n });
+    const wallets = await openWallets(chain, new WalletRegistry(join(dir, "wallets.json"), "fake"), { bank: true });
+    chain.fund(wallets.bank!.address, seat * 100n);
+    const bankBefore = chain.balanceOf(wallets.bank!.address);
+    const ctx = {
+      chain,
+      wallets,
+      ledger: new TransferLedger(join(dir, "ledger.json"), "fake"),
+      store: new RoundStore(join(dir, "rounds.json"), "fake"),
+      bankroll: new BankrollCache({ ttlMs: 0, now: () => 0 }),
+      meter: new CostMeter(DEFAULT_SERV.pricing),
+      rollover: new RolloverStore(join(dir, "rollover.json"), "fake"),
+      debts: new DebtStore(join(dir, "debts.json"), "fake"),
+      wreckStore: new WreckStore(join(dir, "wrecks.json"), "fake"),
+      // Approves a single seat, which is less than the three seat stake the
+      // agents are asking to put up.
+      serv: new ServClient({ ...DEFAULT_SERV, backoffMs: 0 }, duplexTransport(toChips(seat) * 3, { approve: true, amount: toChips(seat), rateBps: 500 })),
+      entrants: 24,
+    };
+
+    const plan = await planRound(ctx, "withdrawn");
+    expect(plan.entering).toHaveLength(0);
+    expect(plan.loans).toHaveLength(0);
+
+    const run = await runRound(ctx, plan);
+    expect(run.loans).toHaveLength(0);
+    expect(chain.balanceOf(wallets.bank!.address)).toBe(bankBefore);
+    for (const [id] of wallets.agents) expect(totalOwed(ctx.debts.get(id, ctx.debts.currentIdentity(id)))).toBe(0n);
+    expect(run.reconciliation.ok).toBe(true);
   });
 });

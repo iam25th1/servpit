@@ -242,7 +242,15 @@ async function settleRound(ctx: FlowContext, plan: RoundPlan, progress: RunProgr
       // take more than is owed: seizing beyond the debt would be taking money
       // nobody is owed.
       const owedWei = totalOwed(owed);
-      const seizedWei = balanceWei < owedWei ? balanceWei : owedWei;
+      // What the wallet can actually send, which is not what it holds. On a
+      // real chain the sender pays the gas out of the same balance, so a
+      // seizure of everything cannot pay for itself: the first one ever
+      // attempted on Base Sepolia came back "the total cost of executing this
+      // transaction exceeds the balance of the account", the settle threw,
+      // and the round could never finish. What is left behind is written off
+      // with the rest.
+      const sendableWei = balanceWei > ctx.chain.gasReserveWei ? balanceWei - ctx.chain.gasReserveWei : 0n;
+      const seizedWei = sendableWei < owedWei ? sendableWei : owedWei;
       let seizure: TransferOutcome | null = null;
       if (seizedWei > 0n) {
         const wallet = ctx.wallets.agents.get(walletId)!;
@@ -306,7 +314,10 @@ async function settleRound(ctx: FlowContext, plan: RoundPlan, progress: RunProgr
       if (operator) {
         const seatWei = plan.stakeWei * BigInt(CHIPS_PER_FUNDED_WALLET) / BigInt(toChips(plan.stakeWei) || 1);
         const operatorWei = await ctx.bankroll.get(operator);
-        const fundingWei = operatorWei >= seatWei ? seatWei : operatorWei;
+        // Same rule as the seizure: the operator pays its own gas, so it can
+        // only send what it holds above the reserve.
+        const sendableWei = operatorWei > ctx.chain.gasReserveWei ? operatorWei - ctx.chain.gasReserveWei : 0n;
+        const fundingWei = sendableWei >= seatWei ? seatWei : sendableWei;
         if (fundingWei > 0n) {
           const seat = ctx.wallets.agents.get(walletId)!;
           arrival.outcome = await refillSeat(transferCtx, plan.roundId, walletId, operator, seat, fundingWei);

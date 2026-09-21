@@ -210,3 +210,34 @@ describe("two readers of the same file", () => {
     expect(readFileSync(file, "utf8")).toBe(before);
   });
 });
+
+describe("what an identity has paid back", () => {
+  // The lender is told this when it decides. It was a zero in the prompt, so
+  // an agent that had repaid every chip looked like one that never had.
+  it("counts principal and interest as they are repaid", () => {
+    const { s } = store();
+    s.addLoan("atlas", "atlas-1", 100n, 2_000);
+    s.accrue("atlas", "atlas-1", "r-1");
+    expect(s.get("atlas", "atlas-1").repaidWei).toBe(0n);
+    s.settle("atlas", "atlas-1", 60n, 20n);
+    expect(s.get("atlas", "atlas-1").repaidWei).toBe(80n);
+    s.settle("atlas", "atlas-1", 40n, 0n);
+    expect(s.get("atlas", "atlas-1").repaidWei).toBe(120n);
+  });
+
+  it("starts the next occupant of a seat at nothing", () => {
+    const { s } = store();
+    s.addLoan("atlas", "atlas-1", 100n, 500);
+    s.settle("atlas", "atlas-1", 100n, 0n);
+    expect(s.get("atlas", "atlas-1").repaidWei).toBe(100n);
+    s.clear("atlas", "atlas-2", "r-2", "onyx");
+    expect(s.get("atlas", "atlas-2").repaidWei).toBe(0n);
+  });
+
+  it("survives a reload, because the next round reads it from the file", () => {
+    const { s, file } = store();
+    s.addLoan("atlas", "atlas-1", 100n, 500);
+    s.settle("atlas", "atlas-1", 100n, 0n);
+    expect(new DebtStore(file).get("atlas", "atlas-1").repaidWei).toBe(100n);
+  });
+});

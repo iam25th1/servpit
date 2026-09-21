@@ -133,5 +133,8 @@ describe("gas exhausted agents", () => {
     const { ViemChain } = await import("./viem");
     const viem = new ViemChain({ keys: {} });
     expect(viem.gasReserveWei).toBeGreaterThan(0n);
-  });
+    // Its own budget: this line pulls in viem and AgentKit, and on a busy
+    // machine that import alone has taken longer than the default five
+    // seconds. It failed once during a run of real rounds on Base Sepolia.
+  }, 30_000);
 });
