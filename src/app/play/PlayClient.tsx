@@ -40,6 +40,7 @@ import { requestWithTimeout, RequestTimeoutError } from "./request";
 import { pickPlayerDraw, type RunReel } from "./reelPick";
 import { runRequestFor } from "./roundRequest";
 import { arenaStanding, type ArenaStanding } from "./screens/arenaHud";
+import type { BankShape, LoanShape, RefusalShape } from "./screens/BankPanel";
 import styles from "./play.module.css";
 
 interface PlanDecision {
@@ -62,6 +63,11 @@ interface PlanResponse {
   decisions: PlanDecision[];
   bots: number;
   entrants: number;
+  /** The lender's state, or null when the bank is off. Shapes live in BankPanel. */
+  bank?: BankShape | null;
+  loans?: LoanShape[];
+  refusals?: RefusalShape[];
+  tappedOut?: string[];
 }
 
 interface RunAgent {

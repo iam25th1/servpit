@@ -14,6 +14,14 @@ interface UiKitValue {
   emote(meaning: string): UiDef;
   modeIcon(modeId: string): UiDef;
   facesetPath(characterId: string): string;
+  /**
+   * A face with no fighter behind it. Marrow is the only one.
+   *
+   * Separate from facesetPath because the lender is deliberately not in the
+   * roster: putting it there would give it a tier, a win rate and a place on
+   * the reels, and it never enters the pit.
+   */
+  portraitPath(portraitId: string): string | null;
 }
 
 const UiKitContext = createContext<UiKitValue | null>(null);
@@ -30,6 +38,7 @@ export function UiKitProvider({ manifest, children }: { manifest: Manifest; chil
     ui,
     emote: (meaning) => ui(manifest.emotes[meaning] ?? `emote-${meaning}`),
     modeIcon: (modeId) => ui(manifest.modeIcons[modeId] ?? manifest.modeIcons.locked),
+    portraitPath: (portraitId) => manifest.portraits?.find((p) => p.id === portraitId)?.facesetPath ?? null,
     facesetPath: (characterId) => {
       const entry = manifest.entries.find((e) => e.id === characterId);
       if (!entry) throw new Error(`no manifest entry for character ${characterId}`);

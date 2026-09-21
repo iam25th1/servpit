@@ -598,3 +598,100 @@ a.transferHash {
 .narrow .result {
   grid-template-columns: minmax(0, 1fr);
 }
+
+/* Marrow's panel.
+
+   The lender sits under the cabinet, in the space the lever does not use,
+   rather than stacked above the lineup where it would push the sixth agent
+   off a stage that cannot grow. It has no seat in the round, so it has no row
+   in the lineup either.
+
+   Flat surfaces and the same token palette as every other panel: no gradient,
+   no coloured bar down the side, no purple. */
+.bank {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-tight);
+  flex: none;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 0;
+}
+
+.bankHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-snug);
+}
+
+.bankFace {
+  image-rendering: pixelated;
+  flex: none;
+}
+
+.bankTreasury {
+  font-size: var(--text-micro);
+  color: var(--on-surface-dim, var(--bone-dim));
+  margin: 0;
+}
+
+.bankTreasury strong {
+  color: var(--amber);
+  font-family: var(--font-ui);
+}
+
+/* Who owes what. A table without table chrome: three columns that line up,
+   because the numbers are the point. */
+.bookList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bookRow {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: var(--space-snug);
+  font-size: var(--text-micro);
+  align-items: baseline;
+}
+
+.bookName {
+  font-family: var(--font-ui);
+}
+
+.bookOwed {
+  color: var(--bad);
+  font-family: var(--font-ui);
+}
+
+.bookRate {
+  color: var(--on-surface-dim, var(--bone-dim));
+}
+
+.rulings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-tight);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ruling {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.rulingLine {
+  font-size: var(--text-micro);
+}
+
+.rulingReason {
+  font-size: var(--text-micro);
+  color: var(--on-surface-dim, var(--bone-dim));
+}

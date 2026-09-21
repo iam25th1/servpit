@@ -11,6 +11,7 @@ import { weiPerChip } from "@/config/stake";
 import { entrantNames } from "@/server/round/entrantNames";
 import { roundIdFor } from "@/server/round/types";
 import { runRound } from "@/server/round/settle";
+import { overReached } from "@/server/round/wrecks";
 import { parseRoundRequest } from "../plan/params";
 
 export const runtime = "nodejs";
@@ -113,6 +114,33 @@ export async function POST(request: Request): Promise<Response> {
               ...(run.payout ? [{ kind: run.payout.kind, agentId: run.payout.agentId, amountWei: run.payout.amountWei.toString(), txHash: run.payout.txHash ?? null, link: run.payout.link, applied: run.payout.applied }] : []),
               ...(run.retained ? [{ kind: "retained", agentId: run.retained.winnerEntrantId, amountWei: run.retained.amountWei.toString(), txHash: null, link: null, applied: false }] : []),
             ],
+            // What the bank did this round. Empty with the flag off, so the
+            // client renders nothing it did not render before.
+            interest: run.interest.map((i) => ({ agentId: i.agentId, chargedWei: i.chargedWei.toString(), rateBps: i.rateBps })),
+            repayment: run.repayment
+              ? {
+                  agentId: run.repayment.agentId,
+                  name: byId.get(run.repayment.agentId) ?? run.repayment.agentId,
+                  interestWei: run.repayment.interestWei.toString(),
+                  principalWei: run.repayment.principalWei.toString(),
+                  paidWei: run.repayment.outcome.amountWei.toString(),
+                  link: run.repayment.outcome.link,
+                }
+              : null,
+            wrecks: run.wrecks.map((w) => ({
+              walletId: w.walletId,
+              name: w.name,
+              trigger: w.trigger,
+              overReached: overReached(w),
+              debtAtDeathWei: w.debtAtDeathWei,
+              seizedWei: w.seizedWei,
+              writtenOffWei: w.writtenOffWei,
+              peakBalanceWei: w.peakBalanceWei,
+              borrowedWei: w.borrowedWei,
+              roundsSurvived: w.roundsSurvived,
+              wins: w.wins,
+            })),
+            replacements: run.replacements.map((r) => ({ walletId: r.walletId, name: r.name, face: r.face, fundedWei: r.fundedWei.toString(), link: r.outcome?.link ?? null })),
             agents: stored?.agents ?? [],
             replay: {
               characters: run.round.characters,

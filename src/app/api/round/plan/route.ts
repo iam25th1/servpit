@@ -17,6 +17,7 @@ import { internalDetail, publicError } from "@/server/publicError";
 import type { AgentDecision } from "@/server/decisions/types";
 import { basescanAddress } from "@/server/money";
 import { planRound, type RoundPlan } from "@/server/round/flow";
+import { TAPPED_OUT } from "@/server/round/plan";
 import { parseRoundRequest } from "./params";
 
 export const runtime = "nodejs";
@@ -59,6 +60,13 @@ function planShape(plan: RoundPlan, network: string, kind: string, costMicroCent
     guardRefusals: plan.guardRefusals,
     loans: plan.loans.map((l) => ({ agentId: l.agentId, name: l.name, amount: toChips(l.principalWei), rateBps: l.rateBps, reason: l.reason, source: l.source })),
     refusals: plan.refusals,
+    tappedOut: plan.decisions.filter((d) => d.decision.reason === TAPPED_OUT).map((d) => d.agentId),
+    bank: plan.bank
+      ? {
+          treasury: toChips(plan.bank.treasuryWei),
+          book: plan.bank.book.map((b) => ({ agentId: b.agentId, name: b.name, owed: toChips(b.principalWei + b.interestWei), principal: toChips(b.principalWei), rateBps: b.rateBps })),
+        }
+      : null,
     costMicroCents,
     costSummary,
     decisions: plan.decisions.map((d) => decisionShape(d, link)),

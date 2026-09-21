@@ -26,6 +26,14 @@ export interface SpriteSheetDef {
   frameRects?: Record<FacingName, FrameRect[]>;
 }
 
+export interface ManifestPortrait {
+  id: string;
+  sourceFolder: string;
+  facesetPath: string;
+  width: number;
+  height: number;
+}
+
 export interface ManifestEntry {
   id: string;
   tier: Tier;
@@ -71,6 +79,8 @@ export interface Manifest {
   faceset: { width: number; height: number };
   facingOrder: FacingName[];
   entries: ManifestEntry[];
+  /** Faces with no fighter behind them. Marrow is the only one. */
+  portraits?: ManifestPortrait[];
   fx: FxDef[];
   audio: AudioDef[];
   ui: UiDef[];
@@ -221,6 +231,23 @@ function size(v: unknown, path: string): { width: number; height: number } {
   return { width: posInt(v.width, `${path}.width`), height: posInt(v.height, `${path}.height`) };
 }
 
+/**
+ * A face with no fighter behind it.
+ *
+ * Validated like everything else, because a portrait that is silently dropped
+ * is a blank square on screen rather than a failure anybody notices.
+ */
+function portrait(value: unknown): ManifestPortrait {
+  if (!isObject(value)) fail("portraits", "each portrait must be an object");
+  return {
+    id: str(value.id, "portraits.id"),
+    sourceFolder: str(value.sourceFolder, "portraits.sourceFolder"),
+    facesetPath: assetPath(value.facesetPath, "portraits.facesetPath"),
+    width: posInt(value.width, "portraits.width"),
+    height: posInt(value.height, "portraits.height"),
+  };
+}
+
 export function parseManifest(json: unknown): Manifest {
   if (!isObject(json)) fail("", "manifest must be an object");
   const facingOrder = json.facingOrder;
@@ -232,6 +259,11 @@ export function parseManifest(json: unknown): Manifest {
   if (!Array.isArray(json.audio)) fail("audio", "must be an array");
   if (!Array.isArray(json.ui)) fail("ui", "must be an array");
   if (!Array.isArray(json.warnings) || json.warnings.some((w) => typeof w !== "string")) fail("warnings", "must be an array of strings");
+
+  // Optional, so a manifest written before portraits existed still parses.
+  if (json.portraits !== undefined && !Array.isArray(json.portraits)) fail("portraits", "must be an array when present");
+  const portraits = Array.isArray(json.portraits) ? json.portraits.map(portrait) : [];
+  if (new Set(portraits.map((p) => p.id)).size !== portraits.length) fail("portraits", "ids must be unique");
 
   const entries = json.entries.map(entry);
   if (new Set(entries.map((e) => e.id)).size !== entries.length) fail("entries", "ids must be unique");
@@ -257,6 +289,7 @@ export function parseManifest(json: unknown): Manifest {
     faceset: size(json.faceset, "faceset"),
     facingOrder: [...FACING_NAMES],
     entries,
+    portraits,
     fx: fxList,
     audio: audioList,
     ui: uiList,

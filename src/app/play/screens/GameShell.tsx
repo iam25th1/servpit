@@ -9,6 +9,7 @@ import { animate, stagger, utils } from "animejs";
 import { createMotionPath } from "animejs/svg";
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { GAME_MODES } from "@/config/modes";
+import { BankPanel, type BankShape, type LoanShape, type RefusalShape } from "./BankPanel";
 import { Button } from "@/ui/Button";
 import { Dialog } from "@/ui/Dialog";
 import { Meter } from "@/ui/Meter";
@@ -54,6 +55,12 @@ interface PlanShape {
   decisions: PlanDecision[];
   bots: number;
   entrants: number;
+  /** Null when the bank is off, which is what says there is no lender. */
+  bank?: BankShape | null;
+  loans?: LoanShape[];
+  refusals?: RefusalShape[];
+  /** Agents that could not cover a seat and had to ask. */
+  tappedOut?: string[];
   costSummary: string;
   servCalls: number;
 }
@@ -141,6 +148,12 @@ export function GameShell(props: GameShellProps) {
                   {state.screen === "lobby" ? "Agents deciding" : state.leverLive ? "Pull the lever" : "Agents buying in"}
                 </Button>
                 <p className={styles.leverNote}>{props.leverNote}</p>
+                {/* Marrow sits under the cabinet, in the space the lever does
+                    not use, rather than stacked above the lineup where it
+                    would push the sixth agent off a stage that cannot grow.
+                    With the bank off the plan carries no lender and nothing
+                    renders here at all. */}
+                {plan?.bank && <BankPanel bank={plan.bank} loans={plan.loans ?? []} refusals={plan.refusals ?? []} />}
               </>
             )}
           </div>

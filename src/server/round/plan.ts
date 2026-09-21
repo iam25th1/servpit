@@ -269,12 +269,31 @@ export async function planRound(
   const bots = Array.from({ length: botCount }, (_, i) => `bot-${String(i).padStart(2, "0")}`);
   const entrants: Entrant[] = [...entering.map((e) => ({ id: e.entrantId })), ...bots.map((id) => ({ id }))];
 
+  // The lender's books as this round starts, for the panel. Read rather than
+  // recomputed: the treasury is the figure every loan was bounded against,
+  // and the debts are the ones interest will be charged on.
+  const bank = bankOn
+    ? {
+        treasuryWei,
+        book: snapshots
+          .map((s) => ({ snapshot: s, debt: ctx.debts.get(s.profile.id, ctx.debts.currentIdentity(s.profile.id)) }))
+          .filter(({ debt }) => debt.principalWei + debt.interestWei > 0n)
+          .map(({ snapshot, debt }) => ({
+            agentId: snapshot.profile.id,
+            name: snapshot.profile.name,
+            principalWei: debt.principalWei,
+            interestWei: debt.interestWei,
+            rateBps: debt.rateBps,
+          })),
+      }
+    : null;
+
   // Roster order, not the order they happened to resolve in. The entrant list
   // above is built from entering, which never contains an unreachable agent.
   const order = new Map(NAMED_AGENTS.map((p, i) => [p.id, i]));
   decisions.sort((a, b) => (order.get(a.agentId) ?? 0) - (order.get(b.agentId) ?? 0));
 
-  return { roundId, seed, stakeWei, decisions, snapshots, entering, bots, entrants, servCalls: run.servCalls + loans.length + refusals.length, guardRefusals: run.guardRefusals, rejections: run.rejections, loans, refusals, deniedCredit };
+  return { roundId, seed, stakeWei, decisions, snapshots, entering, bots, entrants, servCalls: run.servCalls + loans.length + refusals.length, guardRefusals: run.guardRefusals, rejections: run.rejections, loans, refusals, deniedCredit, bank };
 }
 
 /** Told as each entry confirms on chain, so a caller can show it landing. */

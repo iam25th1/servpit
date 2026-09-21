@@ -27,6 +27,18 @@ export interface AgentDebt {
   lastAccruedRound: string | null;
   /** The round this identity took the seat. Null for the originals. */
   bornAtRound: string | null;
+  /**
+   * Everything the bank has advanced to this identity, and over how many
+   * advances.
+   *
+   * Kept here rather than counted off the ledger's loan records, because
+   * those are keyed by wallet and a wallet outlives its occupants. Counting
+   * them would credit a replacement with the borrowings of the agent it
+   * replaced, and a wreck record that says "borrowed 10" beside a principal
+   * of 30 is a record that does not reconcile with itself.
+   */
+  borrowedWei: bigint;
+  loanCount: number;
 }
 
 interface StoredDebt {
@@ -36,6 +48,8 @@ interface StoredDebt {
   rateBps: number;
   lastAccruedRound: string | null;
   bornAtRound?: string | null;
+  borrowedWei?: string;
+  loanCount?: number;
 }
 
 interface FileShape {
@@ -44,7 +58,16 @@ interface FileShape {
   updatedAt: string;
 }
 
-export const NO_DEBT_FOR = (identityId: string, bornAtRound: string | null = null): AgentDebt => ({ identityId, principalWei: 0n, interestWei: 0n, rateBps: 0, lastAccruedRound: null, bornAtRound });
+export const NO_DEBT_FOR = (identityId: string, bornAtRound: string | null = null): AgentDebt => ({
+  identityId,
+  principalWei: 0n,
+  interestWei: 0n,
+  rateBps: 0,
+  lastAccruedRound: null,
+  bornAtRound,
+  borrowedWei: 0n,
+  loanCount: 0,
+});
 
 export const totalOwed = (debt: AgentDebt): bigint => debt.principalWei + debt.interestWei;
 
@@ -63,6 +86,8 @@ export class DebtStore {
         rateBps: stored.rateBps,
         lastAccruedRound: stored.lastAccruedRound,
         bornAtRound: stored.bornAtRound ?? null,
+        borrowedWei: stored.borrowedWei !== undefined && /^\d+$/.test(stored.borrowedWei) ? BigInt(stored.borrowedWei) : BigInt(stored.principalWei),
+        loanCount: stored.loanCount ?? 0,
       });
     }
   }
@@ -87,7 +112,13 @@ export class DebtStore {
     assertWei(principalWei, "principalWei");
     if (!Number.isInteger(rateBps) || rateBps < 0 || rateBps > 10_000) throw new RangeError(`rateBps must be basis points, got ${rateBps}`);
     const current = this.get(walletId, identityId);
-    const next: AgentDebt = { ...current, principalWei: current.principalWei + principalWei, rateBps };
+    const next: AgentDebt = {
+      ...current,
+      principalWei: current.principalWei + principalWei,
+      borrowedWei: current.borrowedWei + principalWei,
+      loanCount: current.loanCount + 1,
+      rateBps,
+    };
     this.debts.set(walletId, next);
     this.flush();
     return { ...next };
@@ -160,7 +191,7 @@ export class DebtStore {
     mkdirSync(dirname(this.file), { recursive: true });
     const debts: Record<string, StoredDebt> = {};
     for (const [walletId, d] of this.debts) {
-      debts[walletId] = { identityId: d.identityId, principalWei: d.principalWei.toString(), interestWei: d.interestWei.toString(), rateBps: d.rateBps, lastAccruedRound: d.lastAccruedRound, bornAtRound: d.bornAtRound };
+      debts[walletId] = { identityId: d.identityId, principalWei: d.principalWei.toString(), interestWei: d.interestWei.toString(), rateBps: d.rateBps, lastAccruedRound: d.lastAccruedRound, bornAtRound: d.bornAtRound, borrowedWei: d.borrowedWei.toString(), loanCount: d.loanCount };
     }
     const body: FileShape = { version: 1, debts, updatedAt: new Date().toISOString() };
     const tmp = `${this.file}.tmp`;

@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -124,5 +124,51 @@ describe("it survives a restart", () => {
     // And it still will not charge twice for the round it already charged.
     expect(reopened.accrue("atlas", "atlas-1", "r-7").chargedWei).toBe(0n);
     expect(JSON.parse(readFileSync(file, "utf8")).debts.atlas.principalWei).toBe("200");
+  });
+});
+
+describe("a wreck record has to reconcile with itself", () => {
+  it("counts what this identity borrowed, never what the seat ever borrowed", () => {
+    // A wallet outlives its occupants. Counting the ledger's loan records
+    // would credit a replacement with the borrowings of the agent it
+    // replaced, and a record that says borrowed 10 beside a principal of 30
+    // is a record that contradicts itself.
+    const { s } = store();
+    s.addLoan("atlas", "atlas-1", 200n, 1_000);
+    s.addLoan("atlas", "atlas-1", 100n, 1_000);
+    const first = s.get("atlas", "atlas-1");
+    expect(first.borrowedWei).toBe(300n);
+    expect(first.loanCount).toBe(2);
+
+    s.clear("atlas", "atlas-2", "r-9");
+    const second = s.get("atlas", "atlas-2");
+    expect(second.borrowedWei).toBe(0n);
+    expect(second.loanCount).toBe(0);
+  });
+
+  it("never shows principal above what was borrowed", () => {
+    const { s } = store();
+    s.addLoan("atlas", "atlas-1", 200n, 1_000);
+    s.accrue("atlas", "atlas-1", "r-1");
+    s.settle("atlas", "atlas-1", 50n, 20n);
+    const d = s.get("atlas", "atlas-1");
+    // Repayment reduces principal and leaves the borrowing history alone,
+    // which is what makes the two comparable at all.
+    expect(d.principalWei).toBe(150n);
+    expect(d.borrowedWei).toBe(200n);
+    expect(d.principalWei).toBeLessThanOrEqual(d.borrowedWei);
+  });
+
+  it("reads an older file that predates the borrowing counters", () => {
+    const { s, file } = store();
+    s.addLoan("atlas", "atlas-1", 200n, 1_000);
+    const raw = JSON.parse(readFileSync(file, "utf8"));
+    delete raw.debts.atlas.borrowedWei;
+    delete raw.debts.atlas.loanCount;
+    writeFileSync(file, JSON.stringify(raw));
+    // Principal is the best available answer for what was borrowed, and it
+    // is never above it.
+    const reopened = new DebtStore(file);
+    expect(reopened.get("atlas", "atlas-1").borrowedWei).toBe(200n);
   });
 });

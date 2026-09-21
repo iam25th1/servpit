@@ -98,6 +98,15 @@ export interface RoundPlan {
   /** Requests the bank turned down, for the panel and the log. */
   refusals: Array<{ agentId: string; name: string; reason: string }>;
   /**
+   * The lender's state as the round was planned. Null when the bank is off,
+   * which is what tells the client there is no lender to draw.
+   */
+  bank: {
+    treasuryWei: bigint;
+    /** Everyone who owes something, as the round starts. */
+    book: Array<{ agentId: string; name: string; principalWei: bigint; interestWei: bigint; rateBps: number }>;
+  } | null;
+  /**
    * Agents that could not cover a seat and were refused the difference.
    *
    * Recorded in the plan because the refusal is a decision, and decisions are

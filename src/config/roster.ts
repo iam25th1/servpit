@@ -45,3 +45,19 @@ export const ROSTER: readonly RosterEntry[] = Object.freeze([
 
 /** Animations copied for character (non monster) entries, in manifest order. */
 export const CHARACTER_ANIMATIONS = ["Idle", "Walk", "Attack", "Dead"] as const;
+
+/**
+ * A face with no fighter behind it.
+ *
+ * Marrow never enters the pit, so it is not in the ROSTER: putting it there
+ * would give the lender a tier, a win rate and a place on the reels. All it
+ * needs is a portrait, so only Faceset.png is extracted for these.
+ */
+export interface PortraitEntry {
+  readonly id: string;
+  /** Folder inside the Ninja Adventure pack, relative to the pack root. */
+  readonly sourceFolder: string;
+}
+
+/** Marrow, the lender. A gold raccoon the size of a boss, which is the idea. */
+export const PORTRAITS: readonly PortraitEntry[] = Object.freeze([{ id: "Marrow", sourceFolder: "Actor/Boss/GiantRacoonGold" }]);

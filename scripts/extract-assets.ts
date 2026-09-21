@@ -21,7 +21,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { CHARACTER_ANIMATIONS, ROSTER, type RosterEntry, type Tier } from "../src/config/roster";
+import { CHARACTER_ANIMATIONS, PORTRAITS, ROSTER, type PortraitEntry, type RosterEntry, type Tier } from "../src/config/roster";
 import {
   AUDIO_SOURCES,
   UI_EMOTES,
@@ -88,6 +88,14 @@ interface FxEntry {
   rows: number;
 }
 
+interface ManifestPortrait {
+  id: string;
+  sourceFolder: string;
+  facesetPath: string;
+  width: number;
+  height: number;
+}
+
 interface ManifestEntry {
   id: string;
   tier: Tier;
@@ -104,6 +112,7 @@ interface Manifest {
   /** Meaning of facing values 0 to 3 in the event log and in facingColumns. */
   facingOrder: string[];
   entries: ManifestEntry[];
+  portraits: ManifestPortrait[];
   fx: FxEntry[];
   audio: AudioEntry[];
   ui: UiEntry[];
@@ -162,6 +171,22 @@ function sheetFor(file: string, publicPath: string, warnings: string[], label: s
   // A single column sheet (Dead.png) serves every facing from column 0.
   const columns = facingColumns !== null && cols === 1 ? [0, 0, 0, 0] : facingColumns;
   return { sheet: { path: publicPath, frameWidth, frameHeight, cols, rows, facingColumns: columns }, size };
+}
+
+/**
+ * A faceset and nothing else.
+ *
+ * Marrow has no sprites because it never fights. Copying its idle and attack
+ * sheets would put art in the bundle that nothing can ever draw.
+ */
+function buildPortrait(entry: PortraitEntry, staging: string, packRoot: string): ManifestPortrait {
+  const facesetSrc = join(staging, packRoot, entry.sourceFolder, "Faceset.png");
+  if (!existsSync(facesetSrc)) throw new Error(`${entry.id}: Faceset.png missing in pack at ${entry.sourceFolder}`);
+  const destDir = join(outDir, entry.id);
+  mkdirSync(destDir, { recursive: true });
+  copyFileSync(facesetSrc, join(destDir, "Faceset.png"));
+  const size = sizeOf(facesetSrc);
+  return { id: entry.id, sourceFolder: entry.sourceFolder, facesetPath: `/assets/${entry.id}/Faceset.png`, width: size.width, height: size.height };
 }
 
 function buildEntry(entry: RosterEntry, staging: string, packRoot: string, warnings: string[]): ManifestEntry {
@@ -323,6 +348,8 @@ function main(): void {
   try {
     const patterns = [
       ...ROSTER.map((e) => `${packRoot}/${e.sourceFolder}/*`),
+      // Portraits need one file each, so only that file is unzipped.
+      ...PORTRAITS.map((e) => `${packRoot}/${e.sourceFolder}/Faceset.png`),
       ...FX_SHEETS.map((fx) => `${packRoot}/${fx.source}`),
       ...AUDIO_SOURCES.map((sound) => `${packRoot}/${sound.source}`),
       ...UI_SOURCES.map((ui) => `${packRoot}/${ui.source}`),
@@ -336,6 +363,7 @@ function main(): void {
 
     const warnings: string[] = [];
     const entries = ROSTER.map((e) => buildEntry(e, staging, packRoot, warnings));
+    const portraits = PORTRAITS.map((e) => buildPortrait(e, staging, packRoot));
     const fx = buildFx(staging, packRoot);
     const audio = buildAudio(staging, packRoot);
     const ui = buildUi(staging, packRoot, warnings);
@@ -346,6 +374,7 @@ function main(): void {
       faceset: { width: EXPECTED.faceset, height: EXPECTED.faceset },
       facingOrder: ["down", "up", "left", "right"],
       entries,
+      portraits,
       fx,
       audio,
       ui,
@@ -356,6 +385,7 @@ function main(): void {
     writeFileSync(join(outDir, "manifest.json"), JSON.stringify(manifest, null, 2) + "\n");
 
     console.log(`entries:   ${entries.length}`);
+    console.log(`portraits: ${portraits.length}`);
     console.log(`fx:        ${fx.length}`);
     console.log(`audio:     ${audio.length}`);
     console.log(`ui:        ${ui.length}`);
