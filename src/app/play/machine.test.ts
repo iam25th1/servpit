@@ -201,3 +201,53 @@ describe("decisions arriving one at a time", () => {
     expect(next.decided).toEqual([]);
   });
 });
+
+describe("a wreck stops the flow before the result", () => {
+  const afterArena = (wrecked: boolean): FlowState => {
+    const arena = reduce(reduce(pulled(), { type: "reelsSettled" }), { type: "roundReady", run });
+    return reduce(arena, { type: "playbackFinished", wrecked });
+  };
+
+  it("goes straight to the result when nobody was finished", () => {
+    expect(afterArena(false).screen).toBe("result");
+  });
+
+  it("holds on the wreck when somebody was, and keeps the run behind it", () => {
+    const s = afterArena(true);
+    expect(s.screen).toBe("wreck");
+    expect(s.run).not.toBeNull();
+  });
+
+  it("carries on to the result when the player is done looking", () => {
+    const s = reduce(afterArena(true), { type: "wreckSeen" });
+    expect(s.screen).toBe("result");
+    expect(s.run).not.toBeNull();
+  });
+
+  it("ignores a wreck acknowledgement from anywhere else", () => {
+    const s = afterArena(false);
+    expect(reduce(s, { type: "wreckSeen" })).toBe(s);
+  });
+
+  it("still plays again from the result after a wreck", () => {
+    expect(reduce(reduce(afterArena(true), { type: "wreckSeen" }), { type: "playAgain" }).screen).toBe("modeSelect");
+  });
+});
+
+describe("the graveyard, off the menu", () => {
+  it("opens from the menu and comes back to it", () => {
+    const open = reduce(connected(), { type: "showGraveyard" });
+    expect(open.screen).toBe("graveyard");
+    expect(reduce(open, { type: "closeGraveyard" }).screen).toBe("modeSelect");
+  });
+
+  it("cannot be opened from the middle of a round", () => {
+    const s = pulled();
+    expect(reduce(s, { type: "showGraveyard" })).toBe(s);
+  });
+
+  it("keeps the player and forgets nothing on the way through", () => {
+    const open = reduce(connected(), { type: "showGraveyard" });
+    expect(open.player?.label).toBe("0xabc");
+  });
+});

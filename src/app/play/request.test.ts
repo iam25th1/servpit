@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { postJsonWithTimeout, requestWithTimeout, RequestTimeoutError, REQUEST_TIMEOUT_MS } from "./request";
+import { getWithTimeout, postJsonWithTimeout, requestWithTimeout, RequestTimeoutError, REQUEST_TIMEOUT_MS } from "./request";
 
 /** A fetch that never answers, and never rejects on its own. */
 const neverAnswers: typeof fetch = (_input, init) =>
@@ -37,6 +37,17 @@ describe("requestWithTimeout", () => {
     expect(init.method).toBe("POST");
     expect(init.body).toBe('{"a":1}');
     expect((init.headers as Record<string, string>)["content-type"]).toBe("application/json");
+  });
+
+  it("reads with GET and sends no body, for a route that only answers", async () => {
+    const seen: RequestInit[] = [];
+    const fetchImpl = (async (_url: string, init: RequestInit) => {
+      seen.push(init);
+      return new Response("{}", { status: 200 });
+    }) as unknown as typeof fetch;
+    await getWithTimeout("/api/graveyard", { fetchImpl });
+    expect(seen[0].method).toBe("GET");
+    expect(seen[0].body).toBeUndefined();
   });
 
   it("passes a caller's own abort through, distinct from the deadline", async () => {

@@ -35,8 +35,9 @@ function decisionShape(d: AgentDecision, link: Linker) {
     face: d.face ?? null,
     link: link(d.address),
     balanceWei: d.balanceWei.toString(),
-    balance: toChips(d.balanceWei),
-    debt: d.debtWei === undefined ? 0 : toChips(d.debtWei),
+    // Both only with the bank on, which is what debtWei being present says.
+    // With it off the lineup has no purse at all, exactly as before.
+    ...(d.debtWei === undefined ? {} : { balance: toChips(d.balanceWei), debt: toChips(d.debtWei) }),
     enter: d.decision.enter,
     stake: d.decision.stake,
     reason: d.decision.reason,

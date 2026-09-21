@@ -73,3 +73,25 @@ export async function postJsonWithTimeout<T>(path: string, body: unknown, option
     done();
   }
 }
+
+/**
+ * A read with a deadline, for a route that takes no body.
+ *
+ * Same deadline as every other call the flow makes: a screen that is waiting
+ * on the graveyard must be capable of failing, not only of waiting.
+ */
+export async function getWithTimeout<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const timeoutMs = options.timeoutMs ?? REQUEST_TIMEOUT_MS;
+  const doFetch = options.fetchImpl ?? fetch;
+  const deadline = AbortSignal.timeout(timeoutMs);
+  const signal = options.signal ? AbortSignal.any([deadline, options.signal]) : deadline;
+  try {
+    const response = await doFetch(path, { method: "GET", signal });
+    const parsed = await response.json();
+    if (!response.ok) throw new Error(typeof parsed?.error === "string" ? parsed.error : `HTTP ${response.status}`);
+    return parsed as T;
+  } catch (e) {
+    if (deadline.aborted) throw new RequestTimeoutError(path, timeoutMs);
+    throw e;
+  }
+}

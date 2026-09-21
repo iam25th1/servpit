@@ -8,6 +8,7 @@ import { log } from "@/server/log";
 import { internalDetail, publicError } from "@/server/publicError";
 import { basescanAddress } from "@/server/money";
 import { weiPerChip } from "@/config/stake";
+import { arrivalFor, faceFor } from "@/config/replacements";
 import { entrantNames } from "@/server/round/entrantNames";
 import { roundIdFor } from "@/server/round/types";
 import { runRound } from "@/server/round/settle";
@@ -145,6 +146,9 @@ export async function POST(request: Request): Promise<Response> {
             wrecks: run.wrecks.map((w) => ({
               walletId: w.walletId,
               name: w.name,
+              // The face it wore, from the identity that owned the seat, so
+              // the screen shows who died rather than who is in the chair now.
+              face: faceFor(w.walletId, w.identityId),
               trigger: w.trigger,
               overReached: overReached(w),
               debtAtDeathWei: w.debtAtDeathWei,
@@ -155,7 +159,14 @@ export async function POST(request: Request): Promise<Response> {
               roundsSurvived: w.roundsSurvived,
               wins: w.wins,
             })),
-            replacements: run.replacements.map((r) => ({ walletId: r.walletId, name: r.name, face: r.face, fundedWei: r.fundedWei.toString(), link: r.outcome?.link ?? null })),
+            replacements: run.replacements.map((r) => ({
+              walletId: r.walletId,
+              name: r.name,
+              face: r.face,
+              arrival: arrivalFor(r.walletId, r.identityId) ?? "",
+              fundedWei: r.fundedWei.toString(),
+              link: r.outcome?.link ?? null,
+            })),
             agents: stored?.agents ?? [],
             replay: {
               characters: run.round.characters,

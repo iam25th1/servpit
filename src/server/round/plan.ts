@@ -78,6 +78,11 @@ export async function planRound(
   // balance that was never verified.
   const snapshots: AgentSnapshot[] = [];
   const unreachable: AgentDecision[] = [];
+  // Who is in each seat and what it owes, decided once and stamped onto every
+  // decision at the end. The decisions the player sees are built in two other
+  // places, the model layer and the tapped out list, and neither of them can
+  // see a debt store.
+  const seats = new Map<string, { face: string | null; debtWei?: bigint }>();
   for (const seat of NAMED_AGENTS) {
     const wallet = ctx.wallets.agents.get(seat.id);
     if (!wallet) continue;
@@ -97,6 +102,7 @@ export async function planRound(
       // knows what was advanced, and what an agent owes is more than that.
       debtWei: bankEnabled() ? totalOwed(ctx.debts.get(seat.id, ctx.debts.currentIdentity(seat.id))) : undefined,
     };
+    seats.set(seat.id, { face: base.face, debtWei: base.debtWei });
     const sitOut = (reason: string): void => {
       log.warn("balance unreadable, agent sits this round out", { agentId: seat.id, address: wallet.address, reason: redact(reason) });
       unreachable.push({ ...base, balanceWei: 0n, decision: { enter: false, stake: 0, reason: UNREACHABLE_REASON }, source: "heuristic", rejection: UNREACHABLE_REASON });
@@ -159,8 +165,11 @@ export async function planRound(
     source: "heuristic",
     rejection: "cannot cover a seat, so it asked the bank rather than deciding",
   }));
-  for (const d of tappedDecisions) onDecided?.(d);
-  run.decisions = [...run.decisions, ...tappedDecisions];
+  // Stamped here rather than at each source, so there is one place that
+  // decides what a decision carries about its seat.
+  const seated = (d: AgentDecision): AgentDecision => ({ ...d, ...(seats.get(d.agentId) ?? { face: null }) });
+  for (const d of tappedDecisions) onDecided?.(seated(d));
+  run.decisions = [...run.decisions, ...tappedDecisions].map(seated);
 
   // Final gate before money moves: the chain, not the model, decides who can
   // enter. Gas is no longer sponsored, so the bar is the stake plus whatever

@@ -12,7 +12,7 @@
 // Integer minor units throughout. Chips are a display and prompt unit and
 // never appear in this file.
 
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { assertWei } from "../money";
 
@@ -73,10 +73,35 @@ export const totalOwed = (debt: AgentDebt): bigint => debt.principalWei + debt.i
 
 export class DebtStore {
   private readonly debts = new Map<string, AgentDebt>();
+  /** The file as last read: modification time and size. Empty when absent. */
+  private stamp = "";
 
   constructor(private readonly file: string) {
-    if (!existsSync(file)) return;
-    const parsed = JSON.parse(readFileSync(file, "utf8")) as Partial<FileShape>;
+    this.reload();
+  }
+
+  /**
+   * Rereads the file when it has changed since the last look.
+   *
+   * One process holds two of these. The plan route builds the server context
+   * and the run route builds the settle context, each with its own store over
+   * the same file, because the settle path may not import anything that can
+   * reach a model. Read once at construction, the plan route's copy was a
+   * snapshot of the moment the process started: it kept offering loans that
+   * had been repaid, kept naming occupants who had been carried out, and the
+   * lender's panel showed a book that no longer existed.
+   *
+   * Every mutation below flushes immediately, so there is never unwritten
+   * state here to lose by rereading.
+   */
+  private reload(): void {
+    const stat = statSync(this.file, { throwIfNoEntry: false });
+    const now = stat ? `${stat.mtimeMs}:${stat.size}` : "";
+    if (now === this.stamp) return;
+    this.stamp = now;
+    this.debts.clear();
+    if (!stat) return;
+    const parsed = JSON.parse(readFileSync(this.file, "utf8")) as Partial<FileShape>;
     for (const [walletId, stored] of Object.entries(parsed.debts ?? {})) {
       if (!stored || !/^\d+$/.test(stored.principalWei) || !/^\d+$/.test(stored.interestWei)) continue;
       this.debts.set(walletId, {
@@ -94,6 +119,7 @@ export class DebtStore {
 
   /** What this wallet's current occupant owes. Never undefined. */
   get(walletId: string, identityId: string): AgentDebt {
+    this.reload();
     const held = this.debts.get(walletId);
     // A debt stamped with a different identity belongs to somebody who is no
     // longer in this seat, so it is not this agent's to carry.
@@ -179,11 +205,13 @@ export class DebtStore {
    * debt on file is still owed by whoever is sitting there.
    */
   currentIdentity(walletId: string): string {
+    this.reload();
     return this.debts.get(walletId)?.identityId ?? `${walletId}-1`;
   }
 
   /** Every debt on file, for reconciliation and for the operator. */
   all(): Array<AgentDebt & { walletId: string }> {
+    this.reload();
     return [...this.debts.entries()].map(([walletId, debt]) => ({ walletId, ...debt }));
   }
 
@@ -197,5 +225,8 @@ export class DebtStore {
     const tmp = `${this.file}.tmp`;
     writeFileSync(tmp, JSON.stringify(body, null, 2) + "\n");
     renameSync(tmp, this.file);
+    // This store is now the file, so the next read has nothing to pick up.
+    const stat = statSync(this.file, { throwIfNoEntry: false });
+    this.stamp = stat ? `${stat.mtimeMs}:${stat.size}` : "";
   }
 }

@@ -329,3 +329,49 @@ describe("an unreachable wallet costs one agent its round, not the whole round",
     expect(plan.entering.map((e) => e.agentId)).not.toContain("blaze");
   });
 });
+
+describe("every decision says who is sitting there and what it owes", () => {
+  // The debt only rides along with the bank on, because with it off there is
+  // no debt and the lineup must render exactly what it always rendered.
+  afterEach(() => {
+    delete process.env.SERVPIT_BANK_ENABLED;
+  });
+
+  // The face and the debt were on the object built at the top of the loop,
+  // which only the unreachable path ever used. Every decision the player
+  // actually sees comes back from the model layer or from the tapped out
+  // list, and both of those were dropping them: the lineup drew six original
+  // faces for six replacements and showed nobody owing anything.
+  it("carries the seat's face and debt on a decision that entered", async () => {
+    process.env.SERVPIT_BANK_ENABLED = "true";
+    const { ctx } = await harness({ transport: enterTransport() });
+    ctx.debts.clear("atlas", "atlas-2", "r-0");
+    ctx.debts.addLoan("atlas", "atlas-2", 3_000_000_000_000n, 500);
+    const plan = await planRound(ctx, "demo");
+    const atlas = plan.decisions.find((d) => d.agentId === "atlas")!;
+    expect(atlas.face).not.toBeNull();
+    expect(atlas.debtWei).toBe(3_000_000_000_000n);
+  });
+
+  it("carries them on a tapped out agent, which is the one most likely to owe", async () => {
+    process.env.SERVPIT_BANK_ENABLED = "true";
+    const { ctx } = await harness({ balanceWei: 8_000_000_000_000n, transport: enterTransport() });
+    ctx.debts.clear("blaze", "blaze-2", "r-0");
+    const plan = await planRound(ctx, "demo");
+    const blaze = plan.decisions.find((d) => d.agentId === "blaze")!;
+    expect(blaze.face).not.toBeNull();
+    expect(blaze.debtWei).toBe(0n);
+  });
+
+  it("leaves an original without a replacement face, which is what null means", async () => {
+    const { ctx } = await harness({ transport: enterTransport() });
+    const plan = await planRound(ctx, "demo");
+    expect(plan.decisions.every((d) => d.face === null)).toBe(true);
+  });
+
+  it("says nothing about debt with the bank off, so the lineup is what it was", async () => {
+    const { ctx } = await harness({ transport: enterTransport() });
+    const plan = await planRound(ctx, "demo");
+    expect(plan.decisions.every((d) => d.debtWei === undefined)).toBe(true);
+  });
+});

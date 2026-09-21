@@ -229,6 +229,48 @@ what a fully degraded round looks like.
 
 ---
 
+## The bank, behind a flag
+
+`SERVPIT_BANK_ENABLED` is off by default and the running game is the one that has been settling
+rounds since 12a. With it on, a seventh agent joins the pit without taking a seat in it.
+
+Marrow is the lender. It is asked one request at a time, it answers in JSON, and nothing it
+says about money is believed: every bound on what it approves is checked against figures the
+process read from the chain. It sits under the cabinet with its treasury, its book and its
+latest ruling.
+
+![The lineup with debt, and Marrow under the cabinet](docs/media/bank-lineup.png)
+
+Each agent shows what it holds and, separately, what it owes. One number netting the two would
+hide the thing worth seeing, which is an agent playing on borrowed chips.
+
+![The buy in panel, with the round's lending as beats](docs/media/bank-beats.png)
+
+A loan is an exchange rather than a log line: the ask, then the answer, then the reason in
+Marrow's own voice. They stagger in as a sequence because an ask and its answer only read as an
+exchange in that order.
+
+![The result screen, with the winner's debt taken off the top](docs/media/bank-result.png)
+
+A winner that owed is shown what it owed, what went back as interest and principal, and what it
+actually kept. The repayment is in the transfer list with everything else, and on Base Sepolia
+every row links to the block explorer.
+
+![A seat being emptied](docs/media/bank-wreck.png)
+
+A wreck stops the flow. The face drains, the name is ruled off, what it was and what Marrow
+recovered are said plainly, and whoever takes the chair introduces itself. Vestibular safety
+holds here as everywhere else: every part of that is element local, and nothing shakes, blurs,
+rotates or moves the stage.
+
+![The graveyard](docs/media/bank-graveyard.png)
+
+The graveyard is reachable from the menu and keeps everyone: face, name, rounds survived, wins,
+peak balance, what it owed at the end, and whether it over-reached or ran out of credit. Eight
+slabs to a page, because the stage is a fixed 1280 by 720 and does not scroll.
+
+---
+
 ## SERV Reasoning
 
 Three of the four SERV features are on. They are not decoration.
@@ -604,20 +646,26 @@ a house edge wearing a costume.
 
 **Rake defaults to zero.** The revenue mechanism exists in config and is switched off.
 
-**The economy is rules and a simulator, with no lending wired in.** Loan origination, per round
-interest, repayment from winnings, both wreck conditions, seizure and write-off exist as pure
-functions with tests, and `npm run sim:economy` plays them out over thousands of rounds. A bank
-wallet now exists and can be funded, but no round grants a loan yet.
-`SERVPIT_BANK_SHARE_ON_HOUSE_WIN` is 0 and the server refuses to start if it is set above zero
-with nowhere to send the share.
+**The whole economy is behind `SERVPIT_BANK_ENABLED`, which is off.** Loan origination, per
+round interest, repayment from winnings, both wreck conditions, seizure, write-off and
+replacement all settle on chain with the flag on, and every one of them is a real transfer with
+its own idempotency key. With the flag off none of it runs and the game is byte for byte the
+one that shipped in 12a. `SERVPIT_BANK_SHARE_ON_HOUSE_WIN` is 0 and the server refuses to start
+if it is set above zero with nowhere to send the share.
 
-**Variable stakes and leverage exist in the simulator only.** An agent can choose a stake
+**Variable stakes and leverage only exist behind the flag.** An agent can choose a stake
 between the base and `SERVPIT_MAX_STAKE_MULTIPLE` times it, borrow the difference when it feels
 confident rather than only when it is broke, and a winner takes the share of the prize its
 stake earned against the biggest stake in the field. The six agents have different appetites
-there: Blaze reaches every round and is wrecked most, Atlas never borrows and ends flat. The
-running game still pays one fixed stake per seat and an uncapped prize. None of that model has
-touched the settle path.
+there: Blaze reaches every round and is wrecked most, Atlas never borrows and ends flat. With
+the flag off the game still pays one fixed stake per seat and an uncapped prize.
+
+**The fake chain's rollover outlives its balances.** `WALLET_BACKEND=fake` holds every balance
+in memory and starts again at each launch, while the rollover from a house win is a file that
+does not. Restart the dev server after a round nobody real won and the next payout asks the pot
+for chips it no longer holds. It is an artifact of a chain that resets, not of the settle path,
+and deleting `data/rollover-fake.json` clears it. On a real chain the pot keeps what it was
+holding.
 
 **The operator pays for the seats, about 54 chips per 100 rounds.** That is roughly half a
 fresh bankroll, spent replacing agents that wrecked. The bank does not cover it and is not

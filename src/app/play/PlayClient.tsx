@@ -36,10 +36,12 @@ import { UiKitProvider } from "@/ui/UiKit";
 import { createResponsiveScope, playTransition } from "@/ui/transitions";
 import { Stage } from "@/ui/Stage";
 import { readNdjson } from "./ndjson";
-import { requestWithTimeout, RequestTimeoutError } from "./request";
+import { getWithTimeout, requestWithTimeout, RequestTimeoutError } from "./request";
 import { pickPlayerDraw, type RunReel } from "./reelPick";
 import { runRequestFor } from "./roundRequest";
 import { arenaStanding, type ArenaStanding } from "./screens/arenaHud";
+import type { GraveShape } from "./screens/graveyardRows";
+import type { ReplacementShape, WreckShape } from "./screens/wreckMoment";
 import type { BankShape, LoanShape, RefusalShape } from "./screens/BankPanel";
 import styles from "./play.module.css";
 
@@ -98,6 +100,9 @@ interface RunResponse {
   transfers: RunTransfer[];
   agents: RunAgent[];
   repayment?: { agentId: string; name: string; interestWei: string; principalWei: string; paidWei: string; link: string | null } | null;
+  /** Seats emptied this round, and who took them. Empty with the bank off. */
+  wrecks?: WreckShape[];
+  replacements?: ReplacementShape[];
   reels: RunReel[];
   replay: { characters: never[]; log: never[]; placements: string[] };
 }
@@ -148,7 +153,7 @@ function playerMessage(e: unknown): string {
   return GENERIC_FAILURE;
 }
 
-export function PlayClient() {
+export function PlayClient({ bankEnabled = false }: { bankEnabled?: boolean } = {}) {
   const [state, dispatch] = useReducer(reduce, undefined, initialState);
   const [manifest, setManifest] = useState<Manifest | null>(null);
   const [assetError, setAssetError] = useState<string | null>(null);
@@ -158,6 +163,8 @@ export function PlayClient() {
   // timeline's own actor state on each batch, so the count and the feed are
   // driven by the same clock the canvas draws from rather than a second one.
   const [arena, setArena] = useState<ArenaStanding>({ standing: 0, downed: [] });
+  /** The wall, once it has been read. Null while the request is in flight. */
+  const [graves, setGraves] = useState<GraveShape[] | null>(null);
 
   const slotCanvasRef = useRef<HTMLCanvasElement>(null);
   const arenaCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -283,7 +290,12 @@ export function PlayClient() {
             const actors = engine.timeline.actors();
             arenaTarget.beginFrame();
             arenaRenderer.draw(arenaTarget, { actors, timeMs: engine.timeline.timeMs, fx: engine.juice.actorFx(actors), drawEffects: (t) => engine.juice.drawEffects(t) });
-            if (engine.timeline.finished) dispatch({ type: "playbackFinished" });
+            if (engine.timeline.finished) {
+              // The machine never reads the run payload, so what it is told
+              // is whether anybody was finished, not who.
+              const finished = (stateRef.current.run as RunResponse | null)?.wrecks ?? [];
+              dispatch({ type: "playbackFinished", wrecked: finished.length > 0 });
+            }
           } else {
             slotTarget.beginFrame();
             slotRenderer.draw(slotTarget, {
@@ -357,6 +369,26 @@ export function PlayClient() {
       }
       if (streamError !== null) throw new ShownFailure(streamError);
     } catch (e) {
+      dispatch({ type: "failed", message: playerMessage(e) });
+    }
+  };
+
+  /**
+   * Reads the wall, and shows it whatever comes back.
+   *
+   * Asked for each time it is opened rather than cached, because a round
+   * settled since the last look is exactly what somebody opening it wants to
+   * see. A failure lands in the flow's own error state, so the screen says
+   * something rather than sitting on an empty wall.
+   */
+  const showGraveyard = async (): Promise<void> => {
+    setGraves(null);
+    dispatch({ type: "showGraveyard" });
+    try {
+      const body = await getWithTimeout<{ enabled: boolean; graves: GraveShape[] }>("/api/graveyard");
+      setGraves(body.graves ?? []);
+    } catch (e) {
+      setGraves([]);
       dispatch({ type: "failed", message: playerMessage(e) });
     }
   };
@@ -538,7 +570,12 @@ export function PlayClient() {
             entries={state.entries as EntryShape[]}
             slotCanvasRef={slotCanvasRef}
             arenaCanvasRef={arenaCanvasRef}
+            bankEnabled={bankEnabled}
+            graves={graves}
             onChooseMode={(modeId) => void chooseMode(modeId)}
+            onShowGraveyard={() => void showGraveyard()}
+            onCloseGraveyard={() => dispatch({ type: "closeGraveyard" })}
+            onWreckSeen={() => dispatch({ type: "wreckSeen" })}
             onRetry={retry}
             onPull={() => void pullLever()}
             onPlayAgain={playAgain}

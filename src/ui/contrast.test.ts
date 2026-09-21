@@ -67,6 +67,41 @@ const PAIRS = [
   { what: "boot current file on the wood panel", text: palette.inkDim, surface: lightSurfaces.panel },
   { what: "boot error on the wood panel", text: palette.ink, surface: lightSurfaces.panel },
 
+  // Marrow's strip and the loan beats, on the dark bg frame. Added with the
+  // bank screens: every one of these is new text on a surface this list
+  // already covers, and the list is the only thing that says so.
+  { what: "Marrow's name", text: palette.bone, surface: darkSurfaces.bg, large: true },
+  { what: "the treasury figure", text: palette.amber, surface: darkSurfaces.bg },
+  { what: "the loan book summary", text: palette.boneDim, surface: darkSurfaces.bg },
+  { what: "an agent asking for a loan", text: palette.boneDim, surface: darkSurfaces.bg },
+  { what: "Marrow agreeing", text: palette.amber, surface: darkSurfaces.bg },
+  { what: "Marrow refusing", text: palette.bad, surface: palette.pitDeep },
+  { what: "what an agent owes, in the lineup", text: palette.bad, surface: palette.pitDeep },
+  { what: "what an agent holds, in the lineup", text: palette.boneDim, surface: darkSurfaces.bg },
+
+  // The garnishment, which sits in a cleared band on the sage panel.
+  { what: "what the winner owed", text: palette.bone, surface: palette.pitDeep },
+  { what: "the figure it handed back", text: palette.bad, surface: palette.pitDeep },
+  { what: "the interest and principal split", text: palette.boneDim, surface: palette.pitDeep },
+  { what: "what the winner kept", text: palette.amber, surface: palette.pitDeep },
+
+  // The wreck and the graveyard, both on the dark bg frame.
+  { what: "the wreck heading", text: palette.bone, surface: palette.pit, large: true },
+  { what: "a dead agent's name", text: palette.bone, surface: darkSurfaces.bg },
+  { what: "the cause of death", text: palette.bad, surface: palette.pitDeep },
+  { what: "how long it lasted", text: palette.boneDim, surface: darkSurfaces.bg },
+  { what: "what Marrow took from it", text: palette.boneDim, surface: darkSurfaces.bg },
+  { what: "the newcomer's first line", text: palette.amber, surface: darkSurfaces.bg },
+  { what: "what the newcomer was staked", text: palette.boneDim, surface: darkSurfaces.bg },
+  { what: "a grave's stat label", text: palette.boneDim, surface: darkSurfaces.bg },
+  { what: "the label beside a grave's debt, in its cleared band", text: palette.boneDim, surface: palette.pitDeep },
+  { what: "a grave's stat figure", text: palette.bone, surface: darkSurfaces.bg },
+  { what: "a grave's debt figure", text: palette.bad, surface: palette.pitDeep },
+  { what: "the graveyard title", text: palette.bone, surface: palette.pit, large: true },
+  { what: "the graveyard count", text: palette.boneDim, surface: palette.pit },
+  { what: "the graveyard's empty wall", text: palette.boneDim, surface: palette.pit },
+  { what: "the note under the menu's graveyard door", text: palette.boneDim, surface: palette.pit },
+
   // On the page itself.
   { what: "offchain notice", text: palette.boneDim, surface: palette.pit },
   { what: "lever note", text: palette.boneDim, surface: palette.pit },
@@ -125,7 +160,7 @@ describe("every text style against the surface it lands on", () => {
   });
 
   it("covers every text style, so a new one cannot be added unchecked", () => {
-    expect(PAIRS.length).toBeGreaterThanOrEqual(38);
+    expect(PAIRS.length).toBeGreaterThanOrEqual(64);
   });
 });
 

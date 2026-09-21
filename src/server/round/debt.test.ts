@@ -172,3 +172,41 @@ describe("a wreck record has to reconcile with itself", () => {
     expect(reopened.get("atlas", "atlas-1").borrowedWei).toBe(200n);
   });
 });
+
+describe("two readers of the same file", () => {
+  // The plan route and the settle route each build their own context in one
+  // process, so two stores point at one file. The reader has to see what the
+  // writer wrote, or the panel shows a loan book that was settled minutes ago.
+  it("sees a loan another store recorded", () => {
+    const { s: writer, file } = store();
+    const reader = new DebtStore(file);
+    expect(totalOwed(reader.get("atlas", "atlas-1"))).toBe(0n);
+    writer.addLoan("atlas", "atlas-1", 500n, 500);
+    expect(totalOwed(reader.get("atlas", "atlas-1"))).toBe(500n);
+  });
+
+  it("sees a seat handed on, so it stops naming the dead occupant", () => {
+    const { s: writer, file } = store();
+    const reader = new DebtStore(file);
+    writer.addLoan("atlas", "atlas-1", 500n, 500);
+    expect(reader.currentIdentity("atlas")).toBe("atlas-1");
+    writer.clear("atlas", "atlas-2", "r-1");
+    expect(reader.currentIdentity("atlas")).toBe("atlas-2");
+    expect(totalOwed(reader.get("atlas", "atlas-2"))).toBe(0n);
+  });
+
+  it("shows the other store's debts in the list the operator reads", () => {
+    const { s: writer, file } = store();
+    const reader = new DebtStore(file);
+    writer.addLoan("blaze", "blaze-1", 300n, 500);
+    expect(reader.all().map((d) => d.walletId)).toEqual(["blaze"]);
+  });
+
+  it("does not reread a file that has not changed", () => {
+    const { s, file } = store();
+    s.addLoan("atlas", "atlas-1", 500n, 500);
+    const before = readFileSync(file, "utf8");
+    expect(totalOwed(s.get("atlas", "atlas-1"))).toBe(500n);
+    expect(readFileSync(file, "utf8")).toBe(before);
+  });
+});
