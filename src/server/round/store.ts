@@ -74,6 +74,34 @@ export class RoundStore {
     return out;
   }
 
+  /**
+   * What a wallet's occupant did, from the round it took the seat.
+   *
+   * Everything a wreck record needs that is not a balance or a debt: how hard
+   * it was pushing, how far it fell from its best, and how long it lasted.
+   * A null birth round means it has been there from the beginning.
+   */
+  historyFor(agentId: string, bornAtRound: string | null, baseStakeChips: number): { peakBalanceWei: bigint; recentStakeMultiples: number[]; roundsSurvived: number; wins: number } {
+    const from = bornAtRound === null ? 0 : Math.max(0, this.rounds.findIndex((r) => r.roundId === bornAtRound));
+    let peakBalanceWei = 0n;
+    const recentStakeMultiples: number[] = [];
+    let roundsSurvived = 0;
+    let wins = 0;
+    for (const round of this.rounds.slice(from)) {
+      const agent = round.agents.find((a) => a.agentId === agentId);
+      if (!agent) continue;
+      roundsSurvived += 1;
+      for (const wei of [BigInt(agent.balanceBeforeWei), BigInt(agent.balanceAfterWei)]) {
+        if (wei > peakBalanceWei) peakBalanceWei = wei;
+      }
+      // A multiple of the seat price, which is what says how hard it was
+      // pushing. The raw number of chips says nothing without the seat.
+      if (agent.entered && baseStakeChips > 0) recentStakeMultiples.push(agent.stake / baseStakeChips);
+      if (round.winner === `agent-${agentId}`) wins += 1;
+    }
+    return { peakBalanceWei, recentStakeMultiples: recentStakeMultiples.slice(-5), roundsSurvived, wins };
+  }
+
   save(round: StoredRound): void {
     const i = this.rounds.findIndex((r) => r.roundId === round.roundId);
     if (i >= 0) this.rounds[i] = round;

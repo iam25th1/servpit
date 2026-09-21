@@ -98,3 +98,34 @@ export async function disburseLoan(
   });
   return finish(ctx, record, bank, borrower, applied);
 }
+
+/**
+ * A winner to the bank, for what it owed.
+ *
+ * Interest before principal, which the rules module decides and this only
+ * carries out. It runs after the pot has paid the winner, because the chips
+ * have to arrive before they can be handed on, and before the agent is
+ * treated as keeping anything.
+ */
+export async function repayBank(ctx: TransferContext, roundId: string, agentId: string, borrower: Wallet, bank: Wallet, amountWei: bigint): Promise<TransferOutcome> {
+  const key = idempotencyKey(roundId, agentId, "repayment");
+  const applied = ctx.ledger.get(key)?.status !== "complete";
+  const record = await ctx.ledger.transferOnce({ key, roundId, agentId, kind: "repayment", from: borrower, to: bank.address, amountWei, network: ctx.network });
+  return finish(ctx, record, borrower, bank, applied);
+}
+
+/** A wrecked agent to the bank, for whatever it still holds. */
+export async function seizeToBank(ctx: TransferContext, roundId: string, agentId: string, wrecked: Wallet, bank: Wallet, amountWei: bigint): Promise<TransferOutcome> {
+  const key = idempotencyKey(roundId, agentId, "seizure");
+  const applied = ctx.ledger.get(key)?.status !== "complete";
+  const record = await ctx.ledger.transferOnce({ key, roundId, agentId, kind: "seizure", from: wrecked, to: bank.address, amountWei, network: ctx.network });
+  return finish(ctx, record, wrecked, bank, applied);
+}
+
+/** Operator capital into an emptied seat, so a replacement can play. */
+export async function refillSeat(ctx: TransferContext, roundId: string, agentId: string, operator: Wallet, seat: Wallet, amountWei: bigint): Promise<TransferOutcome> {
+  const key = idempotencyKey(roundId, agentId, "refill");
+  const applied = ctx.ledger.get(key)?.status !== "complete";
+  const record = await ctx.ledger.transferOnce({ key, roundId, agentId, kind: "refill", from: operator, to: seat.address, amountWei, network: ctx.network });
+  return finish(ctx, record, operator, seat, applied);
+}

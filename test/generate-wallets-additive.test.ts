@@ -48,7 +48,7 @@ const write = (body: string): string => {
 };
 
 describe("generate-wallets --add", () => {
-  it("adds exactly one line and leaves the seven existing keys byte identical", () => {
+  it("adds one line per missing wallet and leaves the seven existing keys byte identical", () => {
     const before = sevenKeyFile();
     const file = write(before);
     const output = run(file);
@@ -58,11 +58,15 @@ describe("generate-wallets --add", () => {
     // rewritten, reordered or reformatted.
     expect(after.startsWith(before)).toBe(true);
 
-    // Exactly one line, and it is the bank key. No banner, no dated comment.
+    // One line per wallet the file was missing, and nothing else. No banner,
+    // no dated comment, so a diff against a backup is one line per new
+    // wallet and trivially reviewable.
+    const missing = ALL_WALLET_IDS.filter((id) => !before.includes(`${keyVarFor(id)}=`));
     const added = after.slice(before.length).split("\n").filter((l) => l.length > 0);
-    expect(added).toHaveLength(1);
-    expect(added[0]).toMatch(new RegExp(`^${keyVarFor(BANK_WALLET_ID)}=0x[0-9a-f]{64}$`));
-    expect(after.split("\n").length).toBe(before.split("\n").length + 1);
+    expect(added).toHaveLength(missing.length);
+    expect(added.some((l) => new RegExp(`^${keyVarFor(BANK_WALLET_ID)}=0x[0-9a-f]{64}$`).test(l))).toBe(true);
+    for (const line of added) expect(line).toMatch(/^SERVPIT_KEY_[A-Z]+=0x[0-9a-f]{64}$/);
+    expect(after.split("\n").length).toBe(before.split("\n").length + missing.length);
 
     // Every original key line survives exactly as it was, at the same index.
     const afterLines = after.split("\n");

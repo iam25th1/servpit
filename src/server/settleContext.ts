@@ -15,12 +15,14 @@ import { TransferLedger } from "./ledger";
 import { log } from "./log";
 import { PlanStore } from "./round/planStore";
 import { RolloverStore } from "./round/rollover";
+import { DebtStore } from "./round/debt";
+import { WreckStore } from "./round/wrecks";
 import { RoundStore } from "./round/store";
 import type { FlowContext } from "./round/types";
 import { CostMeter } from "./serv/meter";
 import { FakeChain } from "./wallets/fake";
 import { openWallets, type Wallets } from "./wallets/open";
-import { BANK_WALLET_ID } from "@/config/wallets";
+import { BANK_WALLET_ID, OPERATOR_WALLET_ID } from "@/config/wallets";
 import { bankEnabled } from "@/config/economy";
 import { WalletRegistry } from "./wallets/registry";
 import type { Chain } from "./wallets/types";
@@ -46,18 +48,24 @@ async function build(): Promise<SettleContext> {
   const registry = new WalletRegistry(join(env.dataDir, `wallets-${chain.network}.json`));
   // Only when the bank is on and there is a key for it. A round that never
   // asks the bank for anything must not need a wallet it does not have.
-  const wallets = await openWallets(chain, registry, { bank: bankEnabled() && (chain.kind === "fake" || Boolean(env.viem?.keys[BANK_WALLET_ID])) });
+  const hasKey = (id: string): boolean => chain.kind === "fake" || Boolean(env.viem?.keys[id]);
+  const wallets = await openWallets(chain, registry, {
+    bank: bankEnabled() && hasKey(BANK_WALLET_ID),
+    operator: bankEnabled() && hasKey(OPERATOR_WALLET_ID),
+  });
   const bankroll = new BankrollCache({ ttlMs: 5_000, now: () => Date.now() });
   const ledger = new TransferLedger(join(env.dataDir, `ledger-${chain.network}.json`));
   const store = new RoundStore(join(env.dataDir, `rounds-${chain.network}.json`));
   const meter = new CostMeter(DEFAULT_SERV.pricing);
   const plans = new PlanStore(join(env.dataDir, `plans-${chain.network}.json`));
   const rollover = new RolloverStore(join(env.dataDir, `rollover-${chain.network}.json`));
+  const debts = new DebtStore(join(env.dataDir, `debts-${chain.network}.json`));
+  const wreckStore = new WreckStore(join(env.dataDir, `wrecks-${chain.network}.json`));
   // No bank wallet in this build, so a nonzero share has nowhere to go. This
   // is the path that settles, so it is the path that must refuse to start.
   assertBankShareIsPayable(false);
   // No serv: a settle has nothing to ask.
-  const flow: FlowContext = { chain, wallets, ledger, store, bankroll, meter, plans, rollover, entrants: 24 };
+  const flow: FlowContext = { chain, wallets, ledger, store, bankroll, meter, plans, rollover, debts, wreckStore, entrants: 24 };
   return { chain, wallets, flow };
 }
 

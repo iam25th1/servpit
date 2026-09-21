@@ -16,6 +16,8 @@ import { BankrollCache } from "@/server/bankroll";
 import { TransferLedger } from "@/server/ledger";
 import { PlanStore } from "@/server/round/planStore";
 import { RolloverStore } from "@/server/round/rollover";
+import { DebtStore } from "@/server/round/debt";
+import { WreckStore } from "@/server/round/wrecks";
 import { RoundStore } from "@/server/round/store";
 import { CostMeter } from "@/server/serv/meter";
 import { FakeChain } from "@/server/wallets/fake";
@@ -64,6 +66,8 @@ async function buildContext(options: { deadChain?: boolean } = {}) {
     meter: new CostMeter(DEFAULT_SERV.pricing),
     plans: new PlanStore(join(dir, "plans.json")),
     rollover: new RolloverStore(join(dir, "rollover.json")),
+    debts: new DebtStore(join(dir, "debts.json")),
+    wreckStore: new WreckStore(join(dir, "wrecks.json")),
     entrants: 24,
   };
   return { env: {}, chain: live, registry, wallets, bankroll: flow.bankroll, flow };

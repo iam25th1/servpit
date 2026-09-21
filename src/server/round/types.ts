@@ -11,6 +11,8 @@ import type { TransferLedger } from "../ledger";
 import type { PlanStore } from "./planStore";
 import type { PrizeSplit } from "./prize";
 import type { RolloverStore } from "./rollover";
+import type { DebtStore } from "./debt";
+import type { WreckRecord, WreckStore } from "./wrecks";
 import type { ReconcileResult } from "../reconcile";
 import type { CostMeter, ServClient } from "../serv/client";
 import type { TransferOutcome } from "../transfers";
@@ -31,6 +33,15 @@ export interface FlowContext {
    * that is money.
    */
   rollover: RolloverStore;
+  /**
+   * What each seat's current occupant owes the bank.
+   *
+   * Required, like the rollover store: a missing debt store would quietly
+   * forget what agents owe, and that is money.
+   */
+  debts: DebtStore;
+  /** Every agent the pit has finished, and what led there. */
+  wreckStore: WreckStore;
   chain: Chain;
   wallets: Wallets;
   ledger: TransferLedger;
@@ -86,6 +97,14 @@ export interface RoundPlan {
   loans: PlannedLoan[];
   /** Requests the bank turned down, for the panel and the log. */
   refusals: Array<{ agentId: string; name: string; reason: string }>;
+  /**
+   * Agents that could not cover a seat and were refused the difference.
+   *
+   * Recorded in the plan because the refusal is a decision, and decisions are
+   * made once and settled against. The settle path ends them; it does not ask
+   * anybody whether it should.
+   */
+  deniedCredit: string[];
 }
 
 export interface RoundRun {
@@ -94,6 +113,16 @@ export interface RoundRun {
   entries: TransferOutcome[];
   /** Loans the bank settled this round, before entries were collected. */
   loans: TransferOutcome[];
+  /** Interest charged this round, per agent, in wei. */
+  interest: Array<{ agentId: string; chargedWei: bigint; rateBps: number }>;
+  /** What a winner handed straight to the bank, before it kept anything. */
+  repayment: { agentId: string; interestWei: bigint; principalWei: bigint; outcome: TransferOutcome } | null;
+  /** Agents the round finished, with what led there. */
+  wrecks: WreckRecord[];
+  /** What the bank took off them. */
+  seizures: TransferOutcome[];
+  /** Who took each emptied seat, and what the operator put in it. */
+  replacements: Array<{ walletId: string; identityId: string; name: string; face: string | null; fundedWei: bigint; outcome: TransferOutcome | null }>;
   payout: TransferOutcome | null;
   /**
    * Set when a house bot won. Eighteen of the twenty four entrants have no

@@ -5,6 +5,7 @@
 // enforces by walking the import graph.
 
 import { NAMED_AGENTS } from "@/config/agents";
+import { faceFor, profileFor } from "@/config/replacements";
 import { bankEnabled, bankRateBounds, maxLoanStakes, maxStakeMultiple, CREDIT_TERMS } from "@/config/economy";
 import { clampStake } from "@/economy/prize";
 import { stakeWeiFrom, toChips } from "@/config/stake";
@@ -29,6 +30,15 @@ const SEED = /^[A-Za-z0-9_-]{1,64}$/;
  * technical detail goes to the log, where it belongs.
  */
 export const UNREACHABLE_REASON = "Couldn't reach its wallet, sitting this one out";
+
+/**
+ * What an agent says when it cannot cover a seat.
+ *
+ * Fixed, and never a model call. There is nothing to reason about: it either
+ * gets the difference from the bank or it is finished, and asking a model to
+ * narrate that costs a round trip to be told what we already know.
+ */
+export const TAPPED_OUT = "I'm tapped out. I need a loan.";
 
 export async function planRound(
   ctx: FlowContext,
@@ -67,12 +77,18 @@ export async function planRound(
   // balance that was never verified.
   const snapshots: AgentSnapshot[] = [];
   const unreachable: AgentDecision[] = [];
-  for (const profile of NAMED_AGENTS) {
-    const wallet = ctx.wallets.agents.get(profile.id);
+  for (const seat of NAMED_AGENTS) {
+    const wallet = ctx.wallets.agents.get(seat.id);
     if (!wallet) continue;
-    const base = { agentId: profile.id, name: profile.name, strategy: profile.strategy, address: wallet.address };
+    // Who is in this seat now. After a wreck the wallet is reused and the
+    // occupant is not, so the panel shows somebody new rather than the same
+    // six names cycling forever.
+    const profile = profileFor(seat.id, ctx.debts.currentIdentity(seat.id));
+    // Keyed by the seat, because that is what owns the wallet, the debt and
+    // every idempotency key. The name is whoever is sitting in it.
+    const base = { agentId: seat.id, name: profile.name, strategy: profile.strategy, address: wallet.address, face: faceFor(seat.id, ctx.debts.currentIdentity(seat.id)) };
     const sitOut = (reason: string): void => {
-      log.warn("balance unreadable, agent sits this round out", { agentId: profile.id, address: wallet.address, reason: redact(reason) });
+      log.warn("balance unreadable, agent sits this round out", { agentId: seat.id, address: wallet.address, reason: redact(reason) });
       unreachable.push({ ...base, balanceWei: 0n, decision: { enter: false, stake: 0, reason: UNREACHABLE_REASON }, source: "heuristic", rejection: UNREACHABLE_REASON });
     };
     if (unread.includes(wallet.address)) {
@@ -87,7 +103,7 @@ export async function planRound(
       continue;
     }
     snapshots.push({
-      profile,
+      profile: { ...profile, id: seat.id },
       address: wallet.address,
       balanceWei,
       stakeWei,
@@ -109,7 +125,32 @@ export async function planRound(
   }
 
   const context: RoundContext = { roundId, participants: ctx.entrants, poolWei: stakeWei * BigInt(ctx.entrants), stakeWei };
-  const run = await decideForAgents({ client: ctx.serv, meter: ctx.meter }, snapshots, context, onDecided);
+  // An agent that cannot cover a seat has nothing to decide. It is not asked,
+  // it says the same plain thing every time, and it goes straight to the bank
+  // for what it is short.
+  //
+  // This closes the gap the 12c simulation left open: a broke agent that
+  // never asks is never denied, and an agent that is never denied is never
+  // wrecked. Sitting out quietly is not an option the pit offers.
+  const bankOn = stakeMultiple > 1 && Boolean(ctx.wallets.bank);
+  const tapped = bankOn ? snapshots.filter((s) => s.balanceWei < stakeWei) : [];
+  const tappedIds = new Set(tapped.map((s) => s.profile.id));
+  const asked = snapshots.filter((s) => !tappedIds.has(s.profile.id));
+
+  const run = await decideForAgents({ client: ctx.serv, meter: ctx.meter }, asked, context, onDecided);
+
+  const tappedDecisions: AgentDecision[] = tapped.map((s) => ({
+    agentId: s.profile.id,
+    name: s.profile.name,
+    strategy: s.profile.strategy,
+    address: s.address,
+    balanceWei: s.balanceWei,
+    decision: { enter: true, stake: toChips(stakeWei), reason: TAPPED_OUT },
+    source: "heuristic",
+    rejection: "cannot cover a seat, so it asked the bank rather than deciding",
+  }));
+  for (const d of tappedDecisions) onDecided?.(d);
+  run.decisions = [...run.decisions, ...tappedDecisions];
 
   // Final gate before money moves: the chain, not the model, decides who can
   // enter. Gas is no longer sponsored, so the bar is the stake plus whatever
@@ -123,6 +164,9 @@ export async function planRound(
   const loans: PlannedLoan[] = [];
   const refusals: Array<{ agentId: string; name: string; reason: string }> = [];
   const borrowed = new Map<string, { principalWei: bigint; rateBps: number }>();
+  // Agents that could not cover a seat and were turned down. They are out,
+  // and the settle path is what ends them.
+  const deniedCredit: string[] = [];
 
   const decisions: AgentDecision[] = [...unreachable];
   const entering: EnteringAgent[] = [];
@@ -131,7 +175,7 @@ export async function planRound(
     // What this agent actually puts up. Clamped here as well as in the
     // validator, because the number that moves money is derived once, from
     // the round's own stake, and never taken on trust from an answer.
-    const chosenWei = stakeMultiple > 1 ? clampStake(stakeWei, stakeMultiple, toWei(decision.decision.stake)) : stakeWei;
+    const chosenWei = stakeMultiple > 1 && !tappedIds.has(decision.agentId) ? clampStake(stakeWei, stakeMultiple, toWei(decision.decision.stake)) : stakeWei;
 
     // The shortfall is arithmetic on figures read from the chain. The agent
     // never states a loan amount and is never asked for one.
@@ -165,6 +209,7 @@ export async function planRound(
         // asked to pretend otherwise.
         if (lendableChips(request, bounds) <= 0) {
           refusals.push({ agentId: snapshot.profile.id, name: snapshot.profile.name, reason: "nothing left to lend against that record" });
+          if (tappedIds.has(snapshot.profile.id)) deniedCredit.push(snapshot.profile.id);
         } else {
           const answer = await decideLoan({ client: ctx.serv, meter: ctx.meter }, request, bounds);
           onLoan?.(answer, snapshot.profile.name);
@@ -186,6 +231,7 @@ export async function planRound(
             });
           } else {
             refusals.push({ agentId: snapshot.profile.id, name: snapshot.profile.name, reason: answer.decision.reason });
+            if (tappedIds.has(snapshot.profile.id)) deniedCredit.push(snapshot.profile.id);
           }
         }
       }
@@ -228,7 +274,7 @@ export async function planRound(
   const order = new Map(NAMED_AGENTS.map((p, i) => [p.id, i]));
   decisions.sort((a, b) => (order.get(a.agentId) ?? 0) - (order.get(b.agentId) ?? 0));
 
-  return { roundId, seed, stakeWei, decisions, snapshots, entering, bots, entrants, servCalls: run.servCalls + loans.length + refusals.length, guardRefusals: run.guardRefusals, rejections: run.rejections, loans, refusals };
+  return { roundId, seed, stakeWei, decisions, snapshots, entering, bots, entrants, servCalls: run.servCalls + loans.length + refusals.length, guardRefusals: run.guardRefusals, rejections: run.rejections, loans, refusals, deniedCredit };
 }
 
 /** Told as each entry confirms on chain, so a caller can show it landing. */

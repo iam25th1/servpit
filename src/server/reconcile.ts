@@ -69,8 +69,28 @@ export interface ReconcileInput {
    */
   loans?: Movement[];
   appliedLoans?: Movement[];
+  /**
+   * Repayments handed to the bank, keyed by the agent that paid.
+   *
+   * Money leaving an agent that is not an entry. A winner hands its creditor
+   * what it owes out of what it just won, so the agent's balance falls by it
+   * and the bank's rises.
+   */
+  repayments?: Movement[];
+  appliedRepayments?: Movement[];
   /** The bank's wallet, when there is one. Checked like the pot. */
   bankAddress?: string;
+  /** The operator's wallet, which refills wrecked seats. */
+  operatorAddress?: string;
+  /**
+   * Capital the operator put into seats this round, keyed by the seat.
+   *
+   * An inflow to the agent like a loan is, and an outflow from the operator.
+   * Kept apart from loans because the bank's own delta is measured against
+   * what the bank sent, and the operator is not the bank.
+   */
+  operatorFunding?: Movement[];
+  appliedOperatorFunding?: Movement[];
 }
 
 export interface Check {
@@ -107,11 +127,18 @@ export function reconcile(input: ReconcileInput): ReconcileResult {
   const allLoans = input.loans ?? [];
   const appliedLoans = input.appliedLoans ?? allLoans;
   for (const l of allLoans) assertWei(l.amountWei, `loan to ${l.address}`);
+  const allFunding = input.operatorFunding ?? [];
+  const appliedFunding = input.appliedOperatorFunding ?? allFunding;
+  for (const f of allFunding) assertWei(f.amountWei, `operator funding for ${f.address}`);
+  const allRepayments = input.repayments ?? [];
+  const appliedRepayments = input.appliedRepayments ?? allRepayments;
+  for (const r of allRepayments) assertWei(r.amountWei, `repayment from ${r.address}`);
   const fees = input.feesWei ?? [];
   for (const f of fees) assertWei(f.amountWei, `fee for ${f.address}`);
-  const wallets = new Set<string>([...input.entries, ...input.payouts, ...allLoans].map((m) => m.address));
+  const wallets = new Set<string>([...input.entries, ...input.payouts, ...allLoans, ...allRepayments, ...allFunding].map((m) => m.address));
   wallets.delete(input.potAddress);
   if (input.bankAddress !== undefined) wallets.delete(input.bankAddress);
+  if (input.operatorAddress !== undefined) wallets.delete(input.operatorAddress);
   for (const address of [...wallets].sort()) {
     const delta = balance(input.after, address, "after") - balance(input.before, address, "before");
     const paidIn = sumWei(appliedEntries.filter((m) => m.address === address).map((m) => m.amountWei));
@@ -123,7 +150,13 @@ export function reconcile(input: ReconcileInput): ReconcileResult {
     // A loan arrives before the entry leaves, so it is an inflow to this
     // wallet on the same side of the ledger as a payout.
     const borrowed = sumWei(appliedLoans.filter((m) => m.address === address).map((m) => m.amountWei));
-    check(`wallet ${address} delta`, paidOut + borrowed - paidIn, delta + feePaid);
+    // Operator capital arrives the same way a loan does. It is not owed back,
+    // but that is a fact about the debt rather than about the balance.
+    const refilled = sumWei(appliedFunding.filter((m) => m.address === address).map((m) => m.amountWei));
+    // A repayment leaves the agent, like an entry does, and goes to the bank
+    // rather than the pot.
+    const repaid = sumWei(appliedRepayments.filter((m) => m.address === address).map((m) => m.amountWei));
+    check(`wallet ${address} delta`, paidOut + borrowed + refilled - paidIn - repaid, delta + feePaid);
   }
 
   const entriesTotal = sumWei(input.entries.map((m) => m.amountWei));
@@ -141,7 +174,16 @@ export function reconcile(input: ReconcileInput): ReconcileResult {
     // each disbursement, like any other sender.
     const bankDelta = balance(input.after, input.bankAddress, "after") - balance(input.before, input.bankAddress, "before");
     const bankFee = sumWei(fees.filter((m) => m.address === input.bankAddress).map((m) => m.amountWei));
-    check("bank delta", -sumWei(appliedLoans.map((m) => m.amountWei)), bankDelta + bankFee);
+    // The bank lends out and is paid back. Both sides, against the chain.
+    check("bank delta", sumWei(appliedRepayments.map((m) => m.amountWei)) - sumWei(appliedLoans.map((m) => m.amountWei)), bankDelta + bankFee);
+  }
+
+  if (input.operatorAddress !== undefined) {
+    // The operator only ever puts money in, and pays the gas to do it.
+    const applied = appliedFunding;
+    const operatorDelta = balance(input.after, input.operatorAddress, "after") - balance(input.before, input.operatorAddress, "before");
+    const operatorFee = sumWei(fees.filter((m) => m.address === input.operatorAddress).map((m) => m.amountWei));
+    check("operator delta", -sumWei(applied.map((m) => m.amountWei)), operatorDelta + operatorFee);
   }
 
   // Every wei the round took in is accounted for on the way out. Entries plus
