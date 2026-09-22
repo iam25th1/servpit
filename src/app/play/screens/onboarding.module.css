@@ -1,0 +1,55 @@
+/* How it works. One card over the stage, the same shape as the board's. */
+.over {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-loose);
+  background: rgba(0, 0, 0, 0.78);
+  z-index: 6;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-snug);
+  width: min(720px, 100%);
+  max-height: 100%;
+  overflow: hidden;
+  text-align: center;
+}
+
+/* Where the visitor is, so a tour has a visible end. */
+.step {
+  font-size: var(--text-micro);
+  color: var(--ink-dim);
+  margin: 0;
+}
+
+.title {
+  font-family: var(--font-ui);
+  font-size: var(--text-lead);
+  letter-spacing: 0.04em;
+  color: var(--ink);
+  margin: 0;
+}
+
+.line {
+  font-size: var(--text-small);
+  color: var(--ink);
+  margin: 0;
+  /* A readable measure on a 1280 stage, which is what stops a card of prose
+     reading as a wall. */
+  max-width: 52ch;
+  align-self: center;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-snug);
+  margin-top: var(--space-tight);
+  white-space: nowrap;
+}

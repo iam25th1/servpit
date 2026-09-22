@@ -14,6 +14,8 @@ import { Button } from "@/ui/Button";
 import { Dialog } from "@/ui/Dialog";
 import { Meter } from "@/ui/Meter";
 import { NinePatch } from "@/ui/NinePatch";
+import { Onboarding } from "./Onboarding";
+import type { OnboardingScreen } from "../onboarding";
 import { useUiKit } from "@/ui/UiKit";
 import { ninePatchStyle } from "@/ui/ninePatchGeometry";
 import { uiScale } from "@/ui/tokens";
@@ -240,6 +242,10 @@ export interface GameShellProps {
   onShowBoard: () => void;
   onCloseBoard: () => void;
   onBoardPage: (page: number) => void;
+  /** The screens to show, or null when nothing is being explained. */
+  onboarding: OnboardingScreen[] | null;
+  onShowHow: () => void;
+  onCloseHow: () => void;
   onPlayAgain: () => void;
   onToggleMute: () => void;
 }
@@ -273,6 +279,11 @@ export function GameShell(props: GameShellProps) {
               Back to the pit
             </Button>
           )}
+          {/* The way back into the explanation, on every screen, because a
+              visitor who arrives mid round is the one who needs it. */}
+          <Button onClick={props.onShowHow} scale={2}>
+            How it works
+          </Button>
           {state.player && <span>{state.player.label}</span>}
           <Button onClick={props.onToggleMute} scale={2} aria-pressed={!props.muted}>
             {props.muted ? "Sound off" : "Sound on"}
@@ -335,6 +346,7 @@ export function GameShell(props: GameShellProps) {
         />
       )}
       {props.board && <Board board={props.board} onClose={props.onCloseBoard} onPage={props.onBoardPage} />}
+      {props.onboarding && <Onboarding screens={props.onboarding} onClose={props.onCloseHow} />}
       {state.screen === "wreck" && run && <WreckScreen run={run} onContinue={props.onWreckSeen} />}
       {state.screen === "result" && run && <ResultScreen run={run} onPlayAgain={props.onPlayAgain} backing={props.backing} />}
       </div>
