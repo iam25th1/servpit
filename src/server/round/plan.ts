@@ -19,7 +19,7 @@ import { decideLoan, lendableChips, type BankDecision, type LoanBounds, type Loa
 import type { AgentDecision, AgentSnapshot, RoundContext } from "../decisions/types";
 import { ChainUnreachableError } from "../errors";
 import { log, redact } from "../log";
-import type { EnteringAgent, FlowContext, RoundPlan } from "./types";
+import type { BankSnapshot, EnteringAgent, FlowContext, RoundPlan } from "./types";
 import { roundIdFor } from "./types";
 
 /** Seeds are opaque to the engine, so the shape is checked here. */
@@ -62,7 +62,7 @@ export async function planRound(
   ctx: FlowContext,
   seed: string,
   onDecided?: (decision: AgentDecision) => void,
-  onLoan?: (decision: BankDecision, name: string) => void,
+  onLoan?: (decision: BankDecision, name: string, bank: BankSnapshot) => void,
 ): Promise<RoundPlan> {
   if (!SEED.test(seed)) throw new RangeError(`seed must match ${SEED}`);
   // A share of a funded wallet rather than a flat amount, so an agent can
@@ -204,6 +204,20 @@ export async function planRound(
   // what it lends is measured against this and never against anything a model
   // said about it.
   let treasuryWei = ctx.wallets.bank && stakeMultiple > 1 ? await ctx.bankroll.get(ctx.wallets.bank) : 0n;
+  // Who owes what, read rather than recomputed, as of whenever it is asked.
+  // Called with each answer and again when the plan is done, so the panel
+  // says the same thing during the banking phase as it does after it.
+  const bookNow = (): BankSnapshot["book"] =>
+    snapshots
+      .map((s) => ({ snapshot: s, debt: ctx.debts.get(s.profile.id, ctx.debts.currentIdentity(s.profile.id)) }))
+      .filter(({ debt }) => debt.principalWei + debt.interestWei > 0n)
+      .map(({ snapshot, debt }) => ({
+        agentId: snapshot.profile.id,
+        name: snapshot.profile.name,
+        principalWei: debt.principalWei,
+        interestWei: debt.interestWei,
+        rateBps: debt.rateBps,
+      }));
   const rates = bankRateBounds();
   const loans: PlannedLoan[] = [];
   const refusals: Array<{ agentId: string; name: string; reason: string; askedWei: bigint; tappedOut: boolean }> = [];
@@ -278,7 +292,10 @@ export async function planRound(
           if (tappedIds.has(snapshot.profile.id)) deniedCredit.push(snapshot.profile.id);
         } else {
           const answer = await decideLoan({ client: serv, meter: ctx.meter }, request, bounds);
-          onLoan?.(answer, snapshot.profile.name);
+          // With the answer, what the lender is holding as it gives it. The
+          // panel is drawn from this, and without it a viewer watching the
+          // banking phase sees the answers with nobody giving them.
+          onLoan?.(answer, snapshot.profile.name, { treasuryWei, book: bookNow() });
           if (answer.decision.approve && answer.decision.amountChips > 0) {
             lentWei = toWei(answer.decision.amountChips);
             treasuryWei -= lentWei;
@@ -353,21 +370,7 @@ export async function planRound(
   // The lender's books as this round starts, for the panel. Read rather than
   // recomputed: the treasury is the figure every loan was bounded against,
   // and the debts are the ones interest will be charged on.
-  const bank = bankOn
-    ? {
-        treasuryWei,
-        book: snapshots
-          .map((s) => ({ snapshot: s, debt: ctx.debts.get(s.profile.id, ctx.debts.currentIdentity(s.profile.id)) }))
-          .filter(({ debt }) => debt.principalWei + debt.interestWei > 0n)
-          .map(({ snapshot, debt }) => ({
-            agentId: snapshot.profile.id,
-            name: snapshot.profile.name,
-            principalWei: debt.principalWei,
-            interestWei: debt.interestWei,
-            rateBps: debt.rateBps,
-          })),
-      }
-    : null;
+  const bank = bankOn ? { treasuryWei, book: bookNow() } : null;
 
   // Roster order, not the order they happened to resolve in. The entrant list
   // above is built from entering, which never contains an unreachable agent.

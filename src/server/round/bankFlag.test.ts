@@ -200,6 +200,37 @@ describe("the bank's own decision", () => {
     }
   });
 
+  it("hands the lender's own state to the loan callback, so a viewer can see who is answering", async () => {
+    process.env.SERVPIT_BANK_ENABLED = "true";
+    const seat = stakeWeiFrom();
+    dir = mkdtempSync(join(tmpdir(), "servpit-bankflag-"));
+    const chain = new FakeChain({ initialBalanceWei: seat });
+    const wallets = await openWallets(chain, new WalletRegistry(join(dir, "wallets.json")), { bank: true });
+    chain.fund(wallets.bank!.address, seat * 100n);
+    const ctx = {
+      chain,
+      wallets,
+      ledger: new TransferLedger(join(dir, "ledger.json")),
+      store: new RoundStore(join(dir, "rounds.json")),
+      bankroll: new BankrollCache({ ttlMs: 0, now: () => 0 }),
+      meter: new CostMeter(DEFAULT_SERV.pricing),
+      rollover: new RolloverStore(join(dir, "rollover.json")),
+      debts: new DebtStore(join(dir, "debts.json")),
+      wreckStore: new WreckStore(join(dir, "wrecks.json")),
+      serv: new ServClient({ ...DEFAULT_SERV, backoffMs: 0 }, greedy(toChips(seat) * 3)),
+      entrants: 24,
+    };
+
+    const seen: Array<{ treasuryWei: bigint; book: unknown[] }> = [];
+    const plan = await planRound(ctx, "shortfall", undefined, (_answer, _name, bank) => seen.push(bank));
+    // Every answer carried the treasury it was bounded against, so the panel
+    // shown during the banking phase is the lender that is deciding.
+    expect(seen.length).toBe(plan.loans.length + plan.refusals.length);
+    for (const bank of seen) expect(bank.treasuryWei).toBeGreaterThan(0n);
+    // It falls as it lends, and ends where the plan says it ended.
+    expect(seen[seen.length - 1]!.treasuryWei).toBeGreaterThanOrEqual(plan.bank!.treasuryWei);
+  });
+
   it("never lends more than the bank actually holds", async () => {
     process.env.SERVPIT_BANK_ENABLED = "true";
     const seat = stakeWeiFrom();

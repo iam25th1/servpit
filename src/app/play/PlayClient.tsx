@@ -714,7 +714,9 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
                     paused: watch.paused,
                     nextRoundAt: watch.nextRoundAt,
                     now: wallNow,
-                    reasoning: reasoningLine(watch.round, watch.resting && !replayRound),
+                    // A replay is showing the last round, so the line reads
+                    // in the past tense exactly as the resting card does.
+                    reasoning: reasoningLine(watch.round, watch.resting || replayRound !== null),
                     replay: replayRound !== null,
                     canReplay: replayable !== null,
                     last: watch.round?.result ? (watch.round as unknown as { result: Record<string, unknown> }).result : null,

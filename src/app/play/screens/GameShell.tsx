@@ -573,7 +573,10 @@ export function GameShell(props: GameShellProps) {
         </div>
         <div className={styles.hudRow}>
           <span>Pot</span>
-          <span className={styles.hudValue}>{run ? run.potWei : "-"}</span>
+          {/* Chips, like every other figure on screen. It printed raw wei,
+              which is a fifteen digit number nobody can read at a glance,
+              and a replay puts this panel in front of a visitor. */}
+          <span className={styles.hudValue}>{run ? `${chipsOf(BigInt(run.potWei), run.weiPerChip)} chips` : "-"}</span>
         </div>
         {/* The feed grows as the pit empties. It used to render the final
             placement list in full the moment the replay started, which is
