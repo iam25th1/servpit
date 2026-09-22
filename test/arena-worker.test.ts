@@ -74,6 +74,9 @@ describe("the worker with arena mode on", () => {
       WALLET_BACKEND: "fake",
       SERVPIT_ARENA_MODE: "true",
       SERVPIT_ROUND_INTERVAL_SECONDS: "5",
+      // The shortest window the config allows, so the test is not held for
+      // the forty five seconds a real pit gives its viewers.
+      SERVPIT_BACKING_WINDOW_SECONDS: "5",
       SERVPIT_ARENA_MAX_ROUNDS: "1",
     });
     expect(run.code).toBe(0);
@@ -83,6 +86,10 @@ describe("the worker with arena mode on", () => {
     expect(phases).toContain("deciding");
     expect(phases).toContain("settling");
     expect(phases).toContain("reels");
+    // Picks happen between the draw and the fight, and the fight waits.
+    expect(phases).toContain("backing");
+    expect(phases.indexOf("backing")).toBeGreaterThan(phases.indexOf("reels"));
+    expect(phases.indexOf("backing")).toBeLessThan(phases.indexOf("fight"));
     expect(phases).toContain("fight");
     expect(phases).toContain("result");
     // The figures stand for a moment and then the pit is plainly waiting,

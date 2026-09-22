@@ -10,6 +10,7 @@
 // rest and what to publish.
 
 import { existsSync } from "node:fs";
+import { backingWindowSeconds } from "@/config/backing";
 import { toChips, weiPerChip } from "@/config/stake";
 import { ticksToMs } from "@/config/playback";
 import type { ServerContext } from "../context";
@@ -304,6 +305,16 @@ export async function playArenaRound(ctx: ServerContext, store: ArenaStore, next
     { durationMs: REEL_REVEAL_MS },
   );
   await sleepMs(REEL_REVEAL_MS);
+
+  // Picks, between the draw and the fight.
+  //
+  // Here because a viewer has to see what each agent drew before backing one,
+  // and because the fight cannot have started: the outcome was fixed by the
+  // seed at planning and is not published until the fight phase, so a window
+  // that closed after it began would be a window on a known result.
+  const backingMs = backingWindowSeconds() * 1_000;
+  publish({}, "backing", { durationMs: backingMs });
+  await sleepMs(backingMs);
 
   // Settled. The fight can be shown now, and only now: everything in here
   // decides the winner, and the resolver is deterministic.
