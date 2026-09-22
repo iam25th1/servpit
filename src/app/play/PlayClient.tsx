@@ -42,7 +42,7 @@ import { runRequestFor } from "./roundRequest";
 import { arenaStanding, type ArenaStanding } from "./screens/arenaHud";
 import { useArenaFeed } from "./arenaFeed";
 import { readNow, useWallClock } from "./arenaClock";
-import { fightOffsetMs, watchDecisions, watchEntries, watchOccupants, watchState } from "./arenaScreens";
+import { fightOffsetMs, reasoningLine, watchDecisions, watchEntries, watchOccupants, watchState } from "./arenaScreens";
 import type { GraveShape } from "./screens/graveyardRows";
 import type { ReplacementShape, WreckShape } from "./screens/wreckMoment";
 import type { BankShape, LoanShape, RefusalShape } from "./screens/BankPanel";
@@ -704,6 +704,7 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
                     paused: watch.paused,
                     nextRoundAt: watch.nextRoundAt,
                     now: wallNow,
+                    reasoning: reasoningLine(watch.round, watch.resting),
                     last: watch.round?.result ? (watch.round as unknown as { result: Record<string, unknown> }).result : null,
                   }
                 : null

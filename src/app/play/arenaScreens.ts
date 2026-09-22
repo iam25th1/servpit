@@ -120,6 +120,24 @@ export function fightOffsetMs(round: ArenaFeedRound | null, now: number): number
   return Math.min(elapsed, round.fight.durationMs);
 }
 
+/**
+ * One line saying whether this round's agents reasoned, or null.
+ *
+ * Read from the decisions themselves rather than from a flag beside them, so
+ * it can never disagree with the per decision labels next to it: the same
+ * source field the row prints as reasoned or on instinct is what this counts.
+ * Null until somebody has answered, because a round with no decisions yet has
+ * nothing true to say about them.
+ */
+export function reasoningLine(round: ArenaFeedRound | null, resting: boolean): string | null {
+  if (!round || round.decisions.length === 0) return null;
+  const total = round.decisions.length;
+  const reasoned = round.decisions.filter((d) => d.source === "serv").length;
+  if (reasoned === total) return resting ? "Agents reasoned with SERV last round." : "Agents are reasoning with SERV this round.";
+  if (reasoned === 0) return resting ? "Agents ran on instinct last round." : "Agents are running on instinct this round.";
+  return `${reasoned} of ${total} agents reasoned with SERV ${resting ? "last" : "this"} round.`;
+}
+
 /** Seconds until the next round, or null when nothing is scheduled. */
 export function secondsUntil(at: string | null, now: number): number | null {
   if (!at) return null;

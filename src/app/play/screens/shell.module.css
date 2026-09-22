@@ -1147,6 +1147,13 @@ a.transferHash {
   color: var(--good);
 }
 
+/* The same dim ink as the rest of the header meta, because whether a round is
+   reasoned is context, not a warning. */
+.reasoningNote {
+  font-size: var(--text-micro);
+  color: var(--on-surface-dim, var(--bone-dim));
+}
+
 .offair {
   color: var(--bad);
   background: var(--pit-deep);

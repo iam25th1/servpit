@@ -14,6 +14,7 @@ import type { PlannedLoan } from "./types";
 import { totalOwed } from "./debt";
 import type { Entrant } from "@/engine/resolveRound";
 import { decideForAgents } from "../decisions/decide";
+import { servReasoningOn } from "../serv/switch";
 import { decideLoan, lendableChips, type BankDecision, type LoanBounds, type LoanRequest } from "../decisions/bank";
 import type { AgentDecision, AgentSnapshot, RoundContext } from "../decisions/types";
 import { ChainUnreachableError } from "../errors";
@@ -72,6 +73,12 @@ export async function planRound(
   // behaves any differently than it did before the bank existed.
   const stakeMultiple = bankEnabled() ? maxStakeMultiple() : 1;
   const roundId = roundIdFor(seed, ctx.entrants);
+  // Once per round, for the agents and for the lender together, so a switch
+  // flipped between the two cannot produce a round that is half reasoned.
+  // Undefined rather than the client is the whole mechanism: decideForAgent
+  // and decideLoan already answer deterministically when there is nobody to
+  // ask, which is the same path a pit with no key has always taken.
+  const serv = servReasoningOn(ctx.servSwitchFile) ? ctx.serv : undefined;
 
   ctx.bankroll.invalidate();
   // Every balance in one chain request. It used to be one request per agent,
@@ -171,7 +178,7 @@ export async function planRound(
   const tappedIds = new Set(tapped.map((s) => s.profile.id));
   const asked = snapshots.filter((s) => !tappedIds.has(s.profile.id));
 
-  const run = await decideForAgents({ client: ctx.serv, meter: ctx.meter }, asked, context, onDecided);
+  const run = await decideForAgents({ client: serv, meter: ctx.meter }, asked, context, onDecided);
 
   const tappedDecisions: AgentDecision[] = tapped.map((s) => ({
     agentId: s.profile.id,
@@ -270,7 +277,7 @@ export async function planRound(
           refusals.push({ agentId: snapshot.profile.id, name: snapshot.profile.name, reason: "Nothing left to lend against that record.", askedWei: shortfallWei, tappedOut: tappedOutHere });
           if (tappedIds.has(snapshot.profile.id)) deniedCredit.push(snapshot.profile.id);
         } else {
-          const answer = await decideLoan({ client: ctx.serv, meter: ctx.meter }, request, bounds);
+          const answer = await decideLoan({ client: serv, meter: ctx.meter }, request, bounds);
           onLoan?.(answer, snapshot.profile.name);
           if (answer.decision.approve && answer.decision.amountChips > 0) {
             lentWei = toWei(answer.decision.amountChips);

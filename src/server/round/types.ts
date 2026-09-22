@@ -55,6 +55,15 @@ export interface FlowContext {
    * sets it.
    */
   settleLockFile?: string;
+  /**
+   * The file whose presence means this round reasons without SERV.
+   *
+   * Read at the start of every round rather than when the client is built,
+   * because the client is built once per process and an operator saving
+   * credits must not have to restart anything. Optional, like the lock: a
+   * context without one keeps whatever client it was given.
+   */
+  servSwitchFile?: string;
   entrants: number;
 }
 

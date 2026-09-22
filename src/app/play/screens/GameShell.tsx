@@ -131,6 +131,8 @@ export interface WatchingShape {
   nextRoundAt: string | null;
   /** Wall time, from the one clock in the client that keeps it. */
   now: number;
+  /** Whether this round's agents reasoned, in one sentence, or null. */
+  reasoning: string | null;
   last: Record<string, unknown> | null;
 }
 
@@ -193,6 +195,10 @@ export function GameShell(props: GameShellProps) {
               {props.watching.error ?? (props.watching.live ? "watching live" : "reconnecting")}
             </span>
           )}
+          {/* Whether this round is being reasoned, beside the connection,
+              because it is the other thing that is true of the whole round
+              rather than of one screen. The rows say it per agent. */}
+          {props.watching?.reasoning && <span className={styles.reasoningNote}>{props.watching.reasoning}</span>}
           {state.player && <span>{state.player.label}</span>}
           <Button onClick={props.onToggleMute} scale={2} aria-pressed={!props.muted}>
             {props.muted ? "Sound off" : "Sound on"}
@@ -611,6 +617,11 @@ export function GameShell(props: GameShellProps) {
           <h2 className={styles.restHead} data-rest-row="">
             {headline}
           </h2>
+          {watching.reasoning && (
+            <p className={styles.restReason} data-rest-row="">
+              {watching.reasoning}
+            </p>
+          )}
           {watching.restReason && (
             <p className={styles.restReason} data-rest-row="">
               {watching.restReason}

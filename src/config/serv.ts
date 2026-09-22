@@ -22,6 +22,17 @@
 //                 audit call per cache miss. The brief says leave it off and
 //                 the budget is one dollar, so it stays off.
 
+/**
+ * The file whose presence turns reasoning off, inside the data directory.
+ *
+ * The same shape as the arena's pause file: a file rather than an
+ * environment variable, because a running worker and a running site both
+ * hold their client for the life of the process and neither rereads its
+ * environment. Absent means on, so a pit that has never been switched
+ * behaves exactly as it always has.
+ */
+export const SERV_OFF_FILE = "serv-off";
+
 export interface ServFeatures {
   promptGuard: boolean;
   shadowAgent: boolean;
