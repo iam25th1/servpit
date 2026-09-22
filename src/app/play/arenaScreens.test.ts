@@ -64,6 +64,23 @@ describe("which screen a phase is", () => {
     expect(watchState(view(failed)).restReason).toBe("the chain did not answer");
   });
 
+  it("shows the finished round while resting, since the live copy has no result", () => {
+    // A round keeps its id into the resting phase, and the projection strips
+    // the result from a round that is still live. The whole one is in last.
+    const live = round("resting", { phases: [{ phase: "resting", at: AT }] });
+    const finished = round("result", { result: { winner: "agent-atlas", potWei: "60000000000000" } });
+    const state = watchState(view(live, {}, finished));
+    expect(state.screen).toBe("resting");
+    expect(state.round?.result?.winner).toBe("agent-atlas");
+  });
+
+  it("keeps the live round when the last one on file is an older round", () => {
+    const live = round("resting");
+    const older = round("result", { roundId: "r-0", result: { winner: "agent-atlas" } });
+    expect(watchState(view(live, {}, older)).round?.roundId).toBe("r-1");
+    expect(watchState(view(live, {}, older)).round?.result).toBeUndefined();
+  });
+
   it("shows the last round while there is no live one at all", () => {
     const state = watchState(view(null, { paused: true }, round("result")));
     expect(state.screen).toBe("resting");

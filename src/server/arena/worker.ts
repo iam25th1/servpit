@@ -30,6 +30,16 @@ const sleepMs = (ms: number): Promise<void> => new Promise((resolve) => setTimeo
  */
 export const REEL_REVEAL_MS = 6_000;
 
+/**
+ * How long the result stands before the pit is simply waiting.
+ *
+ * The figures are a moment, not a state: without this the last round's result
+ * is what a viewer stares at for the rest of the interval, and the pit never
+ * looks like it is between rounds. Capped by whatever is left of the interval,
+ * so a short interval skips the dwell rather than overrunning.
+ */
+export const RESULT_DWELL_MS = 12_000;
+
 /** Whether an interval produced a round or a reason there was not one. */
 export type ArenaOutcome = "played" | "rested";
 
@@ -357,6 +367,13 @@ export async function playArenaRound(ctx: ServerContext, store: ArenaStore, next
   const settled = store.read();
   store.write({ round, last: round, paused: settled.paused, nextRoundAt: new Date(nextAt).toISOString() });
   log.info("arena round complete", { roundId: plan.roundId, winner: run.round.placements[0], reconciled: run.reconciliation.ok, durationMs });
+
+  // The figures stand for a moment, then the pit is plainly waiting. A
+  // resting phase with no reason is the ordinary gap between rounds, which is
+  // what a viewer should see for most of an interval.
+  const dwellMs = Math.min(RESULT_DWELL_MS, Math.max(0, nextAt - Date.now()));
+  if (dwellMs > 0) await sleepMs(dwellMs);
+  publish({}, "resting");
   return "played";
 }
 

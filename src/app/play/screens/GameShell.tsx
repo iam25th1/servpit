@@ -234,7 +234,9 @@ export function GameShell(props: GameShellProps) {
           )}
       </div>
 
-      {state.screen === "resting" && props.watching && <Resting watching={props.watching} run={run} onShowGraveyard={props.onShowGraveyard} bankEnabled={props.bankEnabled} />}
+      {state.screen === "resting" && props.watching && (
+        <Resting watching={props.watching} run={run} bank={plan?.bank ?? null} onShowGraveyard={props.onShowGraveyard} bankEnabled={props.bankEnabled} />
+      )}
       {state.screen === "wreck" && run && <WreckScreen run={run} onContinue={props.onWreckSeen} />}
       {state.screen === "result" && run && <ResultScreen run={run} onPlayAgain={props.onPlayAgain} />}
       </div>
@@ -566,7 +568,19 @@ export function GameShell(props: GameShellProps) {
    * countdown reads from the one wall clock in the client; everything else
    * here is the last round, which is over and gives nothing away.
    */
-  function Resting({ watching, run, onShowGraveyard, bankEnabled }: { watching: WatchingShape; run: RunShape | null; onShowGraveyard: () => void; bankEnabled: boolean }) {
+  function Resting({
+    watching,
+    run,
+    bank,
+    onShowGraveyard,
+    bankEnabled,
+  }: {
+    watching: WatchingShape;
+    run: RunShape | null;
+    bank: BankShape | null;
+    onShowGraveyard: () => void;
+    bankEnabled: boolean;
+  }) {
     const rootRef = useRef<HTMLDivElement>(null);
     const seconds = secondsUntil(watching.nextRoundAt, watching.now);
     const winner = run ? entrantLabel(run.winner, run.agents) : null;
@@ -616,6 +630,14 @@ export function GameShell(props: GameShellProps) {
             )}
           </div>
         </NinePatch>
+
+        {/* The lender, where it always is, so a viewer between rounds can see
+            the treasury and the book without waiting for the next one. */}
+        {bank && (
+          <div className={styles.restBank} data-rest-row="">
+            <BankPanel bank={bank} loans={[]} refusals={[]} />
+          </div>
+        )}
       </div>
     );
   }

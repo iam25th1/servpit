@@ -82,7 +82,12 @@ describe("the worker with arena mode on", () => {
     expect(phases[0]).toBe("planning");
     expect(phases).toContain("deciding");
     expect(phases).toContain("settling");
-    expect(phases[phases.length - 1]).toBe("result");
+    expect(phases).toContain("reels");
+    expect(phases).toContain("fight");
+    expect(phases).toContain("result");
+    // The figures stand for a moment and then the pit is plainly waiting,
+    // which is what a viewer sees for most of an interval.
+    expect(phases[phases.length - 1]).toBe("resting");
     for (const mark of state.round.phases) expect(typeof mark.at).toBe("string");
     // The lock is released on the way out, so the next worker can start.
     expect(existsSync(join(data, "arena-fake.lock"))).toBe(false);

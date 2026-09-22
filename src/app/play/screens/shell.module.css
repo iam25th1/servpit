@@ -1159,8 +1159,16 @@ a.transferHash {
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: var(--space-wide);
   flex: 1;
   min-height: 0;
+}
+
+/* Marrow beside the card rather than under it: the stage is 720 tall and the
+   card is already the tallest thing on an otherwise empty screen. */
+.restBank {
+  width: 360px;
+  flex: none;
 }
 
 .restCard {
@@ -1170,6 +1178,10 @@ a.transferHash {
   gap: var(--space-snug);
   text-align: center;
   min-width: 420px;
+  /* A reason is a sentence, and a sentence that never wraps stretches the
+     card across the stage. Wrapping keeps the card the same shape whatever
+     the pit is waiting on. */
+  max-width: 520px;
 }
 
 .restHead {

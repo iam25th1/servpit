@@ -161,6 +161,11 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
   const [manifest, setManifest] = useState<Manifest | null>(null);
   const [assetError, setAssetError] = useState<string | null>(null);
   const [muted, setMuted] = useState(true);
+  // Whether the canvas engine exists yet. A spectator can arrive in the
+  // middle of a fight, and the phase to act on is usually known before the
+  // sprites have finished loading, so the effect below waits for this
+  // rather than dropping the phase it lost the race to.
+  const [engineReady, setEngineReady] = useState(false);
   const [leverNote, setLeverNote] = useState("");
   // What the arena HUD shows while the replay runs. It is read from the
   // timeline's own actor state on each batch, so the count and the feed are
@@ -173,7 +178,12 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
   const feed = useArenaFeed(arenaMode);
   const wallNow = useWallClock(arenaMode);
   const watch = watchState(feed.view);
+  // The screen on show: the pit's phase while it runs itself, the machine's
+  // own screen otherwise. Boot and the title belong to the machine either way.
+  const watchingNow = arenaMode && state.screen !== "boot" && state.screen !== "title";
+  const shownScreen: Screen = watchingNow ? watch.screen : state.screen;
   const watchedPhaseRef = useRef<string>("");
+  const arenaModeRef = useRef(arenaMode);
 
   const slotCanvasRef = useRef<HTMLCanvasElement>(null);
   const arenaCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -181,9 +191,25 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
   // The loop reads the current screen without being restarted on every
   // change, so the ref is synced in an effect rather than during render.
   const stateRef = useRef<FlowState>(state);
+  /**
+   * The screen actually on show, which in arena mode is the pit's phase
+   * rather than the machine's state.
+   *
+   * The render loop reads this to decide whether to draw the arena or the
+   * slot. Reading the machine instead left the fight canvas frozen for every
+   * spectator: the machine never leaves the screen it was on, because in
+   * arena mode nothing it knows about is happening.
+   */
+  const shownScreenRef = useRef<Screen>(state.screen);
   useEffect(() => {
     stateRef.current = state;
   }, [state]);
+  // Written in an effect rather than during a render, which is the rule for
+  // refs, and read by the render loop rather than by React.
+  useEffect(() => {
+    shownScreenRef.current = shownScreen;
+    arenaModeRef.current = arenaMode;
+  }, [shownScreen, arenaMode]);
   /** Provisional reel targets, replaced by the real draw when the round lands. */
   const pendingDrawRef = useRef<[string, string, string] | null>(null);
 
@@ -247,6 +273,7 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
           elapsedMs: 0,
         };
         engineRef.current = engine;
+        setEngineReady(true);
         setMuted(audio.muted);
 
         // Reel stops: click, ring, and a tiered burst on the last one.
@@ -292,14 +319,17 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
           engine.reels.advance(deltaMs);
           engine.vfx.advance(deltaMs);
 
-          const screen = stateRef.current.screen;
+          const screen = shownScreenRef.current;
           if (screen === "arena" && engine.timeline) {
             if (!engine.juice.frozen) engine.timeline.advance(deltaMs);
             engine.juice.advance(deltaMs);
             const actors = engine.timeline.actors();
             arenaTarget.beginFrame();
             arenaRenderer.draw(arenaTarget, { actors, timeMs: engine.timeline.timeMs, fx: engine.juice.actorFx(actors), drawEffects: (t) => engine.juice.drawEffects(t) });
-            if (engine.timeline.finished) {
+            // Only the lever flow hands over when the playback ends. In arena
+            // mode the worker decides when the fight is over, and it says so
+            // by publishing the next phase.
+            if (engine.timeline.finished && !arenaModeRef.current) {
               // The machine never reads the run payload, so what it is told
               // is whether anybody was finished, not who.
               const finished = (stateRef.current.run as RunResponse | null)?.wrecks ?? [];
@@ -331,6 +361,7 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
       cancelled = true;
       stop?.();
       engineRef.current = null;
+      setEngineReady(false);
     };
   }, [manifest]);
 
@@ -589,13 +620,13 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
     if (round.phase === "result" || round.phase === "resting" || round.phase === "failed") {
       engine.timeline?.pause();
     }
-  }, [arenaMode, watch.round?.roundId, watch.round?.phase, watch.round]);
+  }, [arenaMode, engineReady, watch.round?.roundId, watch.round?.phase, watch.round]);
 
   // Arena mode: the worker owns the round, so the phase it publishes is the
   // screen. The machine still runs boot and title, and everything after that
   // is what the pit says it is doing.
   const watchedRound = watch.round;
-  const shownState: FlowState = arenaMode && state.screen !== "boot" && state.screen !== "title" ? { ...state, screen: watch.screen, leverLive: false } : state;
+  const shownState: FlowState = watchingNow ? { ...state, screen: shownScreen, leverLive: false } : state;
   const shownPlan: PlanResponse | null = arenaMode
     ? watchedRound
       ? ({
@@ -614,7 +645,7 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
       : null
     : plan;
   const shownRun: RunResponse | null =
-    arenaMode && watchedRound?.result && watchedRound.fight
+    arenaMode && watchedRound?.result && watchedRound?.fight
       ? ({
           ...(watchedRound.result as unknown as RunResponse),
           roundId: watchedRound.roundId,

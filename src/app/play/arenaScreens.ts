@@ -85,9 +85,15 @@ export function watchState(view: ArenaFeedView | null): WatchState {
   const round = view.round;
   const screen = SCREEN_FOR[round.phase];
   const resting = screen === "resting";
+  // Between rounds the round on screen is the one that just finished, and the
+  // live copy of it carries no result: a round that is still going must not,
+  // so the projection strips it from every phase but the fight and the
+  // result. The finished copy is kept whole in last, which is where the card
+  // that names a winner reads it from.
+  const shown = resting && view.last && view.last.roundId === round.roundId ? view.last : round;
   return {
     screen,
-    round,
+    round: shown,
     resting,
     restReason: resting ? (phaseMark(round, round.phase)?.reason ?? null) : null,
     nextRoundAt: view.pit.nextRoundAt,
