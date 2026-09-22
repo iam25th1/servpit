@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fightOffsetMs, phaseMark, secondsUntil, watchDecisions, watchEntries, watchOccupants, watchState, type ArenaFeedRound, type ArenaFeedView } from "./arenaScreens";
+import { fightOffsetMs, phaseMark, reasoningLine, secondsUntil, watchDecisions, watchEntries, watchOccupants, watchState, type ArenaFeedRound, type ArenaFeedView } from "./arenaScreens";
 import type { ArenaPhase } from "@/server/arena/state";
 
 const AT = "2026-09-22T00:00:00.000Z";
@@ -120,6 +120,33 @@ describe("joining mid fight", () => {
   it("has no offset when there is no fight to be in", () => {
     expect(fightOffsetMs(round("deciding"), T0)).toBeNull();
     expect(fightOffsetMs(null, T0)).toBeNull();
+  });
+});
+
+describe("saying whether this round is reasoned", () => {
+  it("says so plainly when every agent reasoned", () => {
+    const reasoned = round("deciding", { decisions: round("deciding").decisions.map((d) => ({ ...d, source: "serv" })) });
+    expect(reasoningLine(reasoned, false)).toBe("Agents are reasoning with SERV this round.");
+  });
+
+  it("says so plainly when none did", () => {
+    const instinct = round("deciding", { decisions: round("deciding").decisions.map((d) => ({ ...d, source: "heuristic" })) });
+    expect(reasoningLine(instinct, false)).toBe("Agents are running on instinct this round.");
+  });
+
+  it("counts the mixture rather than rounding it to one or the other", () => {
+    const mixed = round("deciding");
+    expect(reasoningLine(mixed, false)).toBe("1 of 2 agents reasoned with SERV this round.");
+  });
+
+  it("is in the past tense between rounds, because the round is over", () => {
+    const done = round("resting", { decisions: round("resting").decisions.map((d) => ({ ...d, source: "serv" })) });
+    expect(reasoningLine(done, true)).toBe("Agents reasoned with SERV last round.");
+  });
+
+  it("says nothing before anybody has answered", () => {
+    expect(reasoningLine(round("planning", { decisions: [] }), false)).toBeNull();
+    expect(reasoningLine(null, false)).toBeNull();
   });
 });
 

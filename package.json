@@ -16,6 +16,7 @@
     "sim:economy": "tsx scripts/sim-economy.ts",
     "round": "tsx scripts/round.ts",
     "arena": "tsx scripts/arena.ts",
+    "serv": "tsx scripts/serv.ts",
     "generate-wallets": "tsx scripts/generate-wallets.ts",
     "fund-wallets": "tsx scripts/fund-wallets.ts"
   },

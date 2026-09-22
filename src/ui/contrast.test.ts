@@ -108,6 +108,7 @@ const PAIRS = [
   { what: "a decision made on instinct", text: palette.boneDim, surface: darkSurfaces.bg },
   { what: "the live badge", text: palette.good, surface: palette.pit },
   { what: "the reconnecting badge, in its cleared band", text: palette.bad, surface: palette.pitDeep },
+  { what: "the replay badge", text: palette.amber, surface: palette.pit },
   { what: "the resting headline on the sage panel", text: palette.ink, surface: lightSurfaces.panelAlt },
   { what: "the resting reason on the sage panel", text: palette.inkDim, surface: lightSurfaces.panelAlt },
 

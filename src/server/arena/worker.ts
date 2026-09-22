@@ -228,12 +228,17 @@ export async function playArenaRound(ctx: ServerContext, store: ArenaStore, next
         "deciding",
       );
     },
-    (answer, name) => {
+    (answer, name, bank) => {
       const entry = { agentId: answer.agentId, name, asked: 0, reason: answer.decision.reason, source: answer.source };
+      // The lender itself, alongside its answer. Until this the banking phase
+      // published the answers and nothing that draws them, so a viewer
+      // watching a round where everybody had to borrow saw the tapped out
+      // lineup and no Marrow at all.
+      const book = { treasury: toChips(bank.treasuryWei), book: bank.book.map((b) => ({ agentId: b.agentId, name: b.name, owed: toChips(b.principalWei + b.interestWei), principal: toChips(b.principalWei), rateBps: b.rateBps })) };
       publish(
         answer.decision.approve
-          ? { loans: [...round.loans, { ...entry, amount: answer.decision.amountChips, rateBps: answer.decision.rateBps }] }
-          : { refusals: [...round.refusals, entry] },
+          ? { bank: book, loans: [...round.loans, { ...entry, amount: answer.decision.amountChips, rateBps: answer.decision.rateBps }] }
+          : { bank: book, refusals: [...round.refusals, entry] },
         "banking",
       );
     },

@@ -16,6 +16,7 @@ import { WreckStore } from "./wrecks";
 import { planRound, runRound } from "./flow";
 import { UNREACHABLE_REASON } from "./plan";
 import { ChainUnreachableError } from "../errors";
+import { setServReasoning } from "../serv/switch";
 
 let dir: string;
 afterEach(() => {
@@ -65,6 +66,31 @@ describe("planRound", () => {
     expect(plan.bots.length).toBe(24 - plan.entering.length);
     expect(new Set(plan.entrants.map((e) => e.id)).size).toBe(24);
     for (const e of plan.entrants) expect(e.id).toMatch(/^[A-Za-z0-9_-]{1,64}$/);
+  });
+
+  it("makes no serv call at all while the switch is off, and records instinct", async () => {
+    // The point of the switch is that it costs nothing: not a refused call,
+    // not a failed one, none at all. The transport is the only place a call
+    // can happen, so counting it is the measurement.
+    const transport = enterTransport();
+    const { ctx } = await harness({ transport });
+    const switchFile = join(dir, "serv-off");
+    setServReasoning(switchFile, false);
+    const plan = await planRound({ ...ctx, servSwitchFile: switchFile }, "demo");
+    expect((transport.create as unknown as { mock: { calls: unknown[] } }).mock.calls).toHaveLength(0);
+    expect(plan.decisions).toHaveLength(6);
+    expect(plan.decisions.every((d) => d.source === "heuristic")).toBe(true);
+  });
+
+  it("asks serv again the moment the switch is back on, with no restart", async () => {
+    const transport = enterTransport();
+    const { ctx } = await harness({ transport });
+    const switchFile = join(dir, "serv-off");
+    setServReasoning(switchFile, false);
+    await planRound({ ...ctx, servSwitchFile: switchFile }, "demo");
+    setServReasoning(switchFile, true);
+    const plan = await planRound({ ...ctx, servSwitchFile: switchFile }, "demo");
+    expect(plan.decisions.every((d) => d.source === "serv")).toBe(true);
   });
 
   it("reads bankroll from chain for every agent", async () => {

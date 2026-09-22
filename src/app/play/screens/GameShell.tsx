@@ -41,6 +41,23 @@ export interface EntryShape {
 const BUYIN_BEATS = 8;
 
 /** What the result screen says instead of a button, while the pit runs itself. */
+/**
+ * What the badge says, in order of what a viewer most needs to know.
+ *
+ * A replay outranks the connection: a recording on screen while the badge
+ * reads watching live would be a lie about a money surface, whatever the
+ * stream is doing underneath.
+ */
+function badgeText(watching: WatchingShape): string {
+  if (watching.replay) return "replay of a finished round";
+  return watching.error ?? (watching.live ? "watching live" : "reconnecting");
+}
+
+function badgeStyle(watching: WatchingShape): string {
+  if (watching.replay) return styles.replay;
+  return watching.live && !watching.error ? styles.live : styles.offair;
+}
+
 function nextRoundLine(watching: WatchingShape): string {
   if (watching.paused) return "The pit is closed for now.";
   const seconds = secondsUntil(watching.nextRoundAt, watching.now);
@@ -131,6 +148,12 @@ export interface WatchingShape {
   nextRoundAt: string | null;
   /** Wall time, from the one clock in the client that keeps it. */
   now: number;
+  /** Whether this round's agents reasoned, in one sentence, or null. */
+  reasoning: string | null;
+  /** True while what is on screen is a recording, not the pit. */
+  replay: boolean;
+  /** Whether there is a finished round to watch again. */
+  canReplay: boolean;
   last: Record<string, unknown> | null;
 }
 
@@ -169,6 +192,9 @@ export interface GameShellProps {
   onCloseGraveyard: () => void;
   /** The player is done looking at whoever died. */
   onWreckSeen: () => void;
+  /** Watch the last finished round again, from the recording. */
+  onReplay: () => void;
+  onLeaveReplay: () => void;
   onPlayAgain: () => void;
   onToggleMute: () => void;
 }
@@ -189,9 +215,18 @@ export function GameShell(props: GameShellProps) {
                reach long enough to be worth mentioning it says that instead.
                Here rather than on one screen, because a viewer can lose the
                pit during a fight as easily as between rounds. */
-            <span className={props.watching.live && !props.watching.error ? styles.live : styles.offair} data-anim="live" role="status">
-              {props.watching.error ?? (props.watching.live ? "watching live" : "reconnecting")}
+            <span className={badgeStyle(props.watching)} data-anim="live" role="status">
+              {badgeText(props.watching)}
             </span>
+          )}
+          {/* Whether this round is being reasoned, beside the connection,
+              because it is the other thing that is true of the whole round
+              rather than of one screen. The rows say it per agent. */}
+          {props.watching?.reasoning && <span className={styles.reasoningNote}>{props.watching.reasoning}</span>}
+          {props.watching?.replay && (
+            <Button onClick={props.onLeaveReplay} scale={2}>
+              Back to the pit
+            </Button>
           )}
           {state.player && <span>{state.player.label}</span>}
           <Button onClick={props.onToggleMute} scale={2} aria-pressed={!props.muted}>
@@ -239,7 +274,7 @@ export function GameShell(props: GameShellProps) {
       </div>
 
       {state.screen === "resting" && props.watching && (
-        <Resting watching={props.watching} run={run} bank={plan?.bank ?? null} onShowGraveyard={props.onShowGraveyard} bankEnabled={props.bankEnabled} />
+        <Resting watching={props.watching} run={run} bank={plan?.bank ?? null} onShowGraveyard={props.onShowGraveyard} onReplay={props.onReplay} bankEnabled={props.bankEnabled} />
       )}
       {state.screen === "wreck" && run && <WreckScreen run={run} onContinue={props.onWreckSeen} />}
       {state.screen === "result" && run && <ResultScreen run={run} onPlayAgain={props.onPlayAgain} />}
@@ -538,7 +573,10 @@ export function GameShell(props: GameShellProps) {
         </div>
         <div className={styles.hudRow}>
           <span>Pot</span>
-          <span className={styles.hudValue}>{run ? run.potWei : "-"}</span>
+          {/* Chips, like every other figure on screen. It printed raw wei,
+              which is a fifteen digit number nobody can read at a glance,
+              and a replay puts this panel in front of a visitor. */}
+          <span className={styles.hudValue}>{run ? `${chipsOf(BigInt(run.potWei), run.weiPerChip)} chips` : "-"}</span>
         </div>
         {/* The feed grows as the pit empties. It used to render the final
             placement list in full the moment the replay started, which is
@@ -577,12 +615,14 @@ export function GameShell(props: GameShellProps) {
     run,
     bank,
     onShowGraveyard,
+    onReplay,
     bankEnabled,
   }: {
     watching: WatchingShape;
     run: RunShape | null;
     bank: BankShape | null;
     onShowGraveyard: () => void;
+    onReplay: () => void;
     bankEnabled: boolean;
   }) {
     const rootRef = useRef<HTMLDivElement>(null);
@@ -611,6 +651,11 @@ export function GameShell(props: GameShellProps) {
           <h2 className={styles.restHead} data-rest-row="">
             {headline}
           </h2>
+          {watching.reasoning && (
+            <p className={styles.restReason} data-rest-row="">
+              {watching.reasoning}
+            </p>
+          )}
           {watching.restReason && (
             <p className={styles.restReason} data-rest-row="">
               {watching.restReason}
@@ -622,6 +667,11 @@ export function GameShell(props: GameShellProps) {
             </p>
           )}
           <div className={styles.restActions} data-rest-row="">
+            {watching.canReplay && (
+              <Button onClick={onReplay} scale={2}>
+                Watch the last round
+              </Button>
+            )}
             {bankEnabled && (
               <Button onClick={onShowGraveyard} scale={2}>
                 The graveyard

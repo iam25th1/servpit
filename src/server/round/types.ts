@@ -21,6 +21,13 @@ import type { Wallets } from "../wallets/open";
 import type { Entrant, RoundResult } from "@/engine/resolveRound";
 import type { RoundStore } from "./store";
 
+/** What the lender is holding and who owes it, for the panel. */
+export interface BankSnapshot {
+  treasuryWei: bigint;
+  /** Everyone who owes something, as the round starts. */
+  book: Array<{ agentId: string; name: string; principalWei: bigint; interestWei: bigint; rateBps: number }>;
+}
+
 export interface FlowContext {
   /**
    * Plans already quoted. A settle reads one and is not allowed to make one,
@@ -55,6 +62,15 @@ export interface FlowContext {
    * sets it.
    */
   settleLockFile?: string;
+  /**
+   * The file whose presence means this round reasons without SERV.
+   *
+   * Read at the start of every round rather than when the client is built,
+   * because the client is built once per process and an operator saving
+   * credits must not have to restart anything. Optional, like the lock: a
+   * context without one keeps whatever client it was given.
+   */
+  servSwitchFile?: string;
   entrants: number;
 }
 
@@ -111,11 +127,7 @@ export interface RoundPlan {
    * The lender's state as the round was planned. Null when the bank is off,
    * which is what tells the client there is no lender to draw.
    */
-  bank: {
-    treasuryWei: bigint;
-    /** Everyone who owes something, as the round starts. */
-    book: Array<{ agentId: string; name: string; principalWei: bigint; interestWei: bigint; rateBps: number }>;
-  } | null;
+  bank: BankSnapshot | null;
   /**
    * Agents that could not cover a seat and were refused the difference.
    *

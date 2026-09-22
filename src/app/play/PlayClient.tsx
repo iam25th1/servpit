@@ -42,7 +42,8 @@ import { runRequestFor } from "./roundRequest";
 import { arenaStanding, type ArenaStanding } from "./screens/arenaHud";
 import { useArenaFeed } from "./arenaFeed";
 import { readNow, useWallClock } from "./arenaClock";
-import { fightOffsetMs, watchDecisions, watchEntries, watchOccupants, watchState } from "./arenaScreens";
+import { fightOffsetMs, reasoningLine, watchDecisions, watchEntries, watchOccupants, watchState } from "./arenaScreens";
+import { replayFrame, replayableRound } from "./arenaReplay";
 import type { GraveShape } from "./screens/graveyardRows";
 import type { ReplacementShape, WreckShape } from "./screens/wreckMoment";
 import type { BankShape, LoanShape, RefusalShape } from "./screens/BankPanel";
@@ -177,7 +178,14 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
   // time. Both are inert unless arena mode is on.
   const feed = useArenaFeed(arenaMode);
   const wallNow = useWallClock(arenaMode);
-  const watch = watchState(feed.view);
+  const live = watchState(feed.view);
+  // Watching the last round again, which is the resting screen's offer and
+  // never the pit's. It yields the moment the pit is no longer resting, so a
+  // live round always wins the screen back without anybody being asked.
+  const replayable = arenaMode ? replayableRound(feed.view) : null;
+  const [replayStartedAt, setReplayStartedAt] = useState<number | null>(null);
+  const replayRound = replayStartedAt !== null && replayable && live.resting ? replayFrame(replayable, replayStartedAt, wallNow) : null;
+  const watch = replayRound && feed.view ? watchState({ ...feed.view, round: replayRound }) : live;
   // The screen on show: the pit's phase while it runs itself, the machine's
   // own screen otherwise. Boot and the title belong to the machine either way.
   const watchingNow = arenaMode && state.screen !== "boot" && state.screen !== "title";
@@ -586,7 +594,9 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
     const engine = engineRef.current;
     const round = watch.round;
     if (!engine || !round) return;
-    const key = `${round.roundId}:${round.phase}`;
+    // The replay's start is part of the key, so watching the same round twice
+    // plays it twice rather than being taken for the phase already acted on.
+    const key = `${replayStartedAt ?? 0}:${round.roundId}:${round.phase}`;
     if (watchedPhaseRef.current === key) return;
     watchedPhaseRef.current = key;
 
@@ -620,7 +630,7 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
     if (round.phase === "result" || round.phase === "resting" || round.phase === "failed") {
       engine.timeline?.pause();
     }
-  }, [arenaMode, engineReady, watch.round?.roundId, watch.round?.phase, watch.round]);
+  }, [arenaMode, engineReady, replayStartedAt, watch.round?.roundId, watch.round?.phase, watch.round]);
 
   // Arena mode: the worker owns the round, so the phase it publishes is the
   // screen. The machine still runs boot and title, and everything after that
@@ -704,6 +714,11 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
                     paused: watch.paused,
                     nextRoundAt: watch.nextRoundAt,
                     now: wallNow,
+                    // A replay is showing the last round, so the line reads
+                    // in the past tense exactly as the resting card does.
+                    reasoning: reasoningLine(watch.round, watch.resting || replayRound !== null),
+                    replay: replayRound !== null,
+                    canReplay: replayable !== null,
                     last: watch.round?.result ? (watch.round as unknown as { result: Record<string, unknown> }).result : null,
                   }
                 : null
@@ -716,6 +731,8 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
             onShowGraveyard={() => void showGraveyard()}
             onCloseGraveyard={() => dispatch({ type: "closeGraveyard" })}
             onWreckSeen={() => dispatch({ type: "wreckSeen" })}
+            onReplay={() => setReplayStartedAt(readNow())}
+            onLeaveReplay={() => setReplayStartedAt(null)}
             onRetry={retry}
             onPull={() => void pullLever()}
             onPlayAgain={playAgain}
