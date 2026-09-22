@@ -6,10 +6,36 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { STAGE_HEIGHT, STAGE_WIDTH, fitStage, type StageFit } from "./stageFit";
+import { layoutFor, type LayoutMode } from "./layoutMode";
 import styles from "./stage.module.css";
+
+/**
+ * The layout this viewport is in, watched.
+ *
+ * Exported because the screens ask for it too: a phone gets a different
+ * arrangement rather than the same one scaled down, and the components that
+ * draw canvases need to know which they are in.
+ */
+export function useLayoutMode(): LayoutMode {
+  // Desktop until the browser says otherwise, which is also what the server
+  // renders: the phone layout arrives on the first measure, before paint.
+  const [mode, setMode] = useState<LayoutMode>("desktop");
+  useEffect(() => {
+    const measure = (): void => setMode(layoutFor(window.innerWidth, window.innerHeight));
+    measure();
+    window.addEventListener("resize", measure);
+    window.addEventListener("orientationchange", measure);
+    return () => {
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("orientationchange", measure);
+    };
+  }, []);
+  return mode;
+}
 
 export function Stage({ children }: { children: ReactNode }) {
   const [fit, setFit] = useState<StageFit>(() => fitStage(STAGE_WIDTH, STAGE_HEIGHT));
+  const mode = useLayoutMode();
   const frameRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -22,6 +48,17 @@ export function Stage({ children }: { children: ReactNode }) {
       window.removeEventListener("orientationchange", measure);
     };
   }, []);
+
+  // A phone does not get the stage. It gets the viewport, with the screens
+  // arranged for it, because a 1280 by 720 composition fits a phone at about
+  // a third and nothing on it can be read at a third.
+  if (mode !== "desktop") {
+    return (
+      <div className={styles.fluid} data-layout={mode}>
+        {children}
+      </div>
+    );
+  }
 
   return (
     <div className={styles.letterbox} data-stage-scale={fit.scale.toFixed(3)} data-stage-fractional={String(fit.fractional)}>

@@ -67,8 +67,20 @@ export const space = {
  */
 export const type = {
   family: {
-    ui: "'ServpitNormal', 'Courier New', monospace",
-    numeral: "'ServpitNormal', 'Courier New', monospace",
+    /**
+     * Pixelify Sans, for everything a player reads.
+     *
+     * The pack's own face was the only one here, and it is a display face:
+     * it ships a near zero width space, so sentences rendered as one long
+     * word and the stylesheet carried a word-spacing hack to pull them
+     * apart. At 12 and 14 px, which is most of this interface, it is work to
+     * read. Pixelify Sans is drawn for small sizes, has a real space and a
+     * proper lower case, and is under the SIL Open Font License.
+     */
+    ui: "'PixelifySans', 'Courier New', monospace",
+    numeral: "'PixelifySans', 'Courier New', monospace",
+    /** The pack's face, kept for the wordmark and the big headings. */
+    display: "'ServpitNormal', 'PixelifySans', monospace",
   },
   /**
    * Raised in phase 7. The previous scale topped out at 14 px for body text
@@ -121,6 +133,7 @@ export function tokensToCss(): string {
     `--tier-uncommon: ${palette.tier.uncommon}`,
     `--tier-rare: ${palette.tier.rare}`,
     `--font-ui: ${type.family.ui}`,
+    `--font-display: ${type.family.display}`,
     `--ui-scale: ${uiScale}`,
   ];
   for (const [name, value] of Object.entries(space)) lines.push(`--space-${name}: ${value}px`);

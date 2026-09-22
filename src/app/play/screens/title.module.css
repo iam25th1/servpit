@@ -79,7 +79,7 @@
 }
 
 .wordmark {
-  font-family: var(--font-ui);
+  font-family: var(--font-display);
   /* The stage is a fixed pixel box, so this is a token rather than a vw
      clamp. The clamp was a viewport read and at 1200 px wide it resolved to
      the token anyway. */
