@@ -20,8 +20,15 @@ import { dirname } from "node:path";
 
 /** How long a lock is believed. One append, not one round. */
 export const APPEND_LOCK_STALE_MS = 2_000;
-/** How long a waiter keeps trying before giving up on the write. */
-export const APPEND_LOCK_WAIT_MS = 2_000;
+/**
+ * How long a waiter keeps trying before giving up on the write.
+ *
+ * The hold itself is microseconds, so this only matters when the machine is
+ * saturated: six writers on a busy box took longer than two seconds to take
+ * turns once, and a refused pick is a worse answer than a slow one. Still
+ * short enough that a request cannot sit on it.
+ */
+export const APPEND_LOCK_WAIT_MS = 5_000;
 
 /** What a caller sees when the log could not be written at all. */
 export class PickLogBusy extends Error {
