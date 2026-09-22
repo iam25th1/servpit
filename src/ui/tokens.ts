@@ -61,35 +61,50 @@ export const space = {
 } as const;
 
 /**
- * Type scale. NormalFont is the pack's own pixel face and is the interface
- * font; the bitmap sheets are used for numerals and headings where a drawn
- * glyph reads better than a rendered one.
+ * Type scale, built on the grid the reading face is drawn on.
+ *
+ * The interface turns font smoothing off, so every glyph is thresholded: a
+ * stroke either covers a pixel or it does not. A face whose outlines sit on
+ * a grid of whole modules therefore draws exactly as it was designed at any
+ * size that puts one module on a whole pixel, and falls apart at every other
+ * size, because the threshold keeps a stroke here and drops one there.
  */
 export const type = {
   family: {
     /**
-     * Pixelify Sans, for everything a player reads.
+     * Tiny5, for everything a player reads.
      *
-     * The pack's own face was the only one here, and it is a display face:
-     * it ships a near zero width space, so sentences rendered as one long
-     * word and the stylesheet carried a word-spacing hack to pull them
-     * apart. At 12 and 14 px, which is most of this interface, it is work to
-     * read. Pixelify Sans is drawn for small sizes, has a real space and a
-     * proper lower case, and is under the SIL Open Font License.
+     * Pixelify Sans was here and could not be made crisp. Measured from its
+     * outlines: nothing in the face divides the em cleanly, so whole pixels
+     * would need a size that is a multiple of a thousand. At body size two
+     * digits differed by two pixels out of about two hundred, which is how
+     * 938 read as 999 and bot-20 as bot-80, and its advances were fractions
+     * of a pixel, which is why the gaps inside a word were uneven.
+     *
+     * Tiny5 is drawn on eight modules to the em: every outline coordinate
+     * and every advance is a whole number of them, so at a size that is a
+     * multiple of eight the whole face lands on whole pixels. It carries a
+     * full lower case, so sentences stay sentences. SIL Open Font License,
+     * see public/assets/fonts/OFL-Tiny5.txt.
      */
-    ui: "'PixelifySans', 'Courier New', monospace",
-    numeral: "'PixelifySans', 'Courier New', monospace",
+    ui: "'Tiny5', 'Courier New', monospace",
+    numeral: "'Tiny5', 'Courier New', monospace",
     /** The pack's face, kept for the wordmark and the big headings. */
-    display: "'ServpitNormal', 'PixelifySans', monospace",
+    display: "'ServpitNormal', 'Tiny5', monospace",
   },
+  /** Modules to the em in the reading face, and so the step of the scale. */
+  grid: 8,
   /**
-   * Raised in phase 7. The previous scale topped out at 14 px for body text
-   * on a 1280 wide stage, which is unreadable at a normal viewing distance.
-   * Every step moved up and the ratios between them were kept.
+   * Every step is a whole number of modules. The grid leaves nothing usable
+   * below 16: one step down is 8 px, which is a five pixel cap height and
+   * not text anybody reads. So micro, small and body are the same size now,
+   * and the difference between them is carried where it was already carried,
+   * in colour and in the surface the line sits on.
    */
-  size: { micro: 12, small: 14, body: 16, lead: 22, title: 32, hero: 48 },
-  leading: { tight: 1.15, body: 1.5 },
-  tracking: { tight: "0.01em", wide: "0.08em" },
+  size: { micro: 16, small: 16, body: 16, lead: 24, title: 32, hero: 48 },
+  /** Both land every size in the scale on a whole number of pixels. */
+  leading: { tight: 1.25, body: 1.5 },
+  tracking: { tight: "0", wide: "2px" },
 } as const;
 
 /**

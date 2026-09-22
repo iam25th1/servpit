@@ -34,7 +34,7 @@
   padding: var(--space-snug) var(--space-wide);
   font-family: var(--font-ui);
   font-size: var(--text-body);
-  letter-spacing: 0.04em;
+  letter-spacing: 1px;
   /* The label colour is set by Button, because it depends on which of the
      four sprites is showing. */
   background: transparent;
@@ -56,13 +56,13 @@
 
 .label {
   font-family: var(--font-ui);
-  letter-spacing: 0.04em;
+  letter-spacing: 1px;
 }
 
 .title {
   font-family: var(--font-ui);
   font-size: var(--text-title);
-  letter-spacing: 0.06em;
+  letter-spacing: 2px;
   margin: 0;
   color: var(--bone);
 }

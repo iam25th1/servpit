@@ -30,7 +30,7 @@
 .title {
   font-family: var(--font-ui);
   font-size: var(--text-lead);
-  letter-spacing: 0.04em;
+  letter-spacing: 1px;
   color: var(--ink);
   margin: 0;
 }

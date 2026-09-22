@@ -5,11 +5,13 @@
    against it by a test, because the two had drifted: raising a size in the
    module used to change nothing on screen. */
 
-/* What a player reads. Drawn for small sizes, with a real space in it, under
-   the SIL Open Font License: see public/assets/fonts/OFL-PixelifySans.txt. */
+/* What a player reads. Drawn on eight modules to the em, so at any size that
+   is a multiple of eight every stroke lands on a whole pixel and nothing is
+   left to the threshold. SIL Open Font License: see
+   public/assets/fonts/OFL-Tiny5.txt. */
 @font-face {
-  font-family: "PixelifySans";
-  src: url("/assets/fonts/PixelifySans.ttf") format("truetype");
+  font-family: "Tiny5";
+  src: url("/assets/fonts/Tiny5.ttf") format("truetype");
   font-display: block;
 }
 
@@ -42,8 +44,8 @@
 
   /* No serif is reachable from either of these: the fallback is a monospace,
      which keeps glyph width honest if a face fails to load. */
-  --font-ui: 'PixelifySans', 'Courier New', monospace;
-  --font-display: 'ServpitNormal', 'PixelifySans', monospace;
+  --font-ui: 'Tiny5', 'Courier New', monospace;
+  --font-display: 'ServpitNormal', 'Tiny5', monospace;
   --ui-scale: 3;
 
   --space-hair: 2px;
@@ -54,10 +56,10 @@
   --space-loose: 24px;
   --space-vast: 40px;
 
-  --text-micro: 12px;
-  --text-small: 14px;
+  --text-micro: 16px;
+  --text-small: 16px;
   --text-body: 16px;
-  --text-lead: 22px;
+  --text-lead: 24px;
   --text-title: 32px;
   --text-hero: 48px;
 
