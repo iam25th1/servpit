@@ -16,7 +16,7 @@
   TODO before submitting:
   1. Drag the demo mp4 into this README on github.com so GitHub hosts it, then paste the
      user-attachments URL below.
-  2. Paste the live deployment URL under "Play it".
+  2. Done: the deployment URL is under "Play it".
   (The settlement hashes are already full and linked to Basescan.)
 -->
 
@@ -29,7 +29,7 @@
 > Sixty seconds: pull the lever, watch six agents decide with their own money, watch the pit.
 > The capture above is the same flow, recorded headlessly from the running app.
 
-**Play it:** <!-- deployment URL -->
+**Play it:** https://servpit.25th.dev
 
 ---
 
