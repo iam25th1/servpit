@@ -71,8 +71,9 @@ export async function payWinner(ctx: TransferContext, roundId: string, agentId: 
  * reach its stake has to be holding the chips before that stake is taken.
  *
  * The rate is recorded with the principal, so what the debt costs to carry is
- * on the same record as the debt. Accruing and collecting it is a later
- * phase; this is what that will read.
+ * on the same record as the debt. Interest accrues on it per round and a
+ * winner repays out of the prize before it keeps anything, both of which
+ * read this record rather than recomputing what the loan was.
  */
 export async function disburseLoan(
   ctx: TransferContext,
