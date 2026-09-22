@@ -178,6 +178,12 @@ export async function playArenaRound(ctx: ServerContext, store: ArenaStore, next
     store.write({ round, last: current.last, paused: current.paused, nextRoundAt: new Date(nextAt).toISOString() });
   };
 
+  // Published before anything is read from the chain, so a viewer joining
+  // during the ten seconds of balance reads sees a round starting rather than
+  // the last one's result. Without it nothing reached the file until the
+  // first agent answered.
+  publish({});
+
   const plan = await planRound(
     flow,
     seed,
