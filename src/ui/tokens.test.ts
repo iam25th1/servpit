@@ -53,7 +53,9 @@ describe("scales", () => {
     const sizes = Object.values(type.size);
     expect([...sizes].sort((a, b) => a - b)).toEqual(sizes);
     for (const family of Object.values(type.family)) {
-      expect(family).toMatch(/ServpitNormal/);
+      // One of the two faces this project ships, and nothing a system might
+      // substitute: the fallback is a monospace, never a serif.
+      expect(family).toMatch(/PixelifySans|ServpitNormal/);
       expect(family).not.toMatch(/serif|Georgia|Times|Palatino|Iowan/i);
     }
   });
@@ -125,8 +127,9 @@ describe("no serif is reachable anywhere in the app", () => {
       const body = readFileSync(file, "utf8");
       for (const line of body.split("\n")) {
         if (!/font-family:/.test(line)) continue;
-        // The @font-face block names the face itself; everything else uses the token.
-        if (/ServpitNormal/.test(line) || /var\(--font-ui\)/.test(line)) continue;
+        // The @font-face blocks name the faces themselves; everything else
+        // goes through a token.
+        if (/ServpitNormal|PixelifySans/.test(line) || /var\(--font-(ui|display)\)/.test(line)) continue;
         offenders.push(`${file}: ${line.trim()}`);
       }
     }
