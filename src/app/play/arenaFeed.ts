@@ -24,6 +24,9 @@ export const RECONNECT_POLL_MS = 3_000;
 export const RETRY_BASE_MS = 1_000;
 export const RETRY_MAX_MS = 15_000;
 
+/** How many failed requests in a row are worth saying out loud. */
+export const QUIET_FAILURES = 1;
+
 export type FeedConnection = "connecting" | "live" | "retrying";
 
 export interface ArenaFeed {
@@ -36,12 +39,36 @@ export interface ArenaFeed {
 /** The only thing a viewer is ever told about a failure here. */
 export const FEED_UNREACHABLE = "Lost the pit for a moment. Still trying.";
 
+/**
+ * How long to wait before opening the stream again, after this many failures.
+ *
+ * Doubling keeps a pit that is down from being asked sixty times a minute,
+ * and the cap keeps a viewer who leaves the tab open from waiting minutes
+ * once it comes back.
+ */
+export function retryDelayMs(failures: number): number {
+  return Math.min(RETRY_MAX_MS, RETRY_BASE_MS * 2 ** Math.max(0, failures));
+}
+
+/**
+ * What to say after this many failed requests in a row, or null.
+ *
+ * One failure is a blip and saying so would put a line on screen for
+ * something that fixed itself. Two is a pattern worth a sentence.
+ */
+export function feedError(failures: number): string | null {
+  return failures > QUIET_FAILURES ? FEED_UNREACHABLE : null;
+}
+
 export function useArenaFeed(enabled: boolean): ArenaFeed {
   const [view, setView] = useState<ArenaFeedView | null>(null);
   const [connection, setConnection] = useState<FeedConnection>("connecting");
   const [error, setError] = useState<string | null>(null);
-  // Held in a ref so the fetch loop below never restarts when it changes.
+  // Held in refs so the loop below never restarts when they change: how many
+  // requests have failed in a row, and how many times the stream has been
+  // opened without reaching an open event.
   const failures = useRef(0);
+  const attempts = useRef(0);
 
   useEffect(() => {
     if (!enabled) return;
@@ -63,8 +90,7 @@ export function useArenaFeed(enabled: boolean): ArenaFeed {
         // Never the thrown error: a fetch failure quotes the url it tried.
         if (!alive) return;
         failures.current += 1;
-        // One bad request happens. Two in a row is worth saying out loud.
-        if (failures.current > 1) setError(FEED_UNREACHABLE);
+        setError(feedError(failures.current));
       }
     };
 
@@ -78,8 +104,14 @@ export function useArenaFeed(enabled: boolean): ArenaFeed {
       source = new EventSource("/api/arena/stream");
       source.addEventListener("open", () => {
         if (!alive) return;
+        attempts.current = 0;
         setConnection("live");
         setError(null);
+        // Whatever happened while the stream was down happened without this
+        // viewer, so the round is read again rather than waited for: without
+        // this the screen stays on the phase the drop caught it in until the
+        // next event, which can be a whole fight away.
+        void load();
         // The stream is the fast path; the poll underneath it is the slow
         // safety net rather than the thing that keeps the screen current.
         startPolling(IDLE_POLL_MS);
@@ -97,8 +129,8 @@ export function useArenaFeed(enabled: boolean): ArenaFeed {
         // Keep asking while the stream is down, so a viewer still sees the
         // round change even if the stream never comes back.
         startPolling(RECONNECT_POLL_MS);
-        const waitMs = Math.min(RETRY_MAX_MS, RETRY_BASE_MS * 2 ** Math.min(failures.current, 4));
-        retry = setTimeout(open, waitMs);
+        retry = setTimeout(open, retryDelayMs(attempts.current));
+        attempts.current += 1;
       });
     };
 

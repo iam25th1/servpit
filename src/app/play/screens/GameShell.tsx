@@ -185,8 +185,12 @@ export function GameShell(props: GameShellProps) {
         <h1 className={styles.wordmark}>SERVPIT</h1>
         <div className={styles.topmeta}>
           {props.watching && (
-            <span className={props.watching.live ? styles.live : styles.offair} data-anim="live">
-              {props.watching.live ? "watching live" : "reconnecting"}
+            /* The badge says the connection, and when the pit has been out of
+               reach long enough to be worth mentioning it says that instead.
+               Here rather than on one screen, because a viewer can lose the
+               pit during a fight as easily as between rounds. */
+            <span className={props.watching.live && !props.watching.error ? styles.live : styles.offair} data-anim="live" role="status">
+              {props.watching.error ?? (props.watching.live ? "watching live" : "reconnecting")}
             </span>
           )}
           {state.player && <span>{state.player.label}</span>}
@@ -610,11 +614,6 @@ export function GameShell(props: GameShellProps) {
           {watching.restReason && (
             <p className={styles.restReason} data-rest-row="">
               {watching.restReason}
-            </p>
-          )}
-          {watching.error && (
-            <p className={styles.restReason} data-rest-row="" role="status">
-              {watching.error}
             </p>
           )}
           {winner && (
