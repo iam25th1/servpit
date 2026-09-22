@@ -20,12 +20,14 @@ import { existsSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { PAUSE_FILE, arenaMode, roundIntervalSeconds } from "../src/config/arena";
 import { SERV_OFF_FILE } from "../src/config/serv";
+import { maxLoanStakes } from "../src/config/economy";
+import { CHIPS_PER_FUNDED_WALLET, stakeWeiFrom, toChips, weiPerChip } from "../src/config/stake";
 import { servReasoningOn } from "../src/server/serv/switch";
 import { getServerContext } from "../src/server/context";
 import { readEnv } from "../src/server/env";
 import { log } from "../src/server/log";
 import { ArenaStore, arenaFile } from "../src/server/arena/state";
-import { ArenaAlreadyRunning, arenaLockFile, holdArenaLock } from "../src/server/arena/lock";
+import { ArenaAlreadyRunning, arenaLockFile, heartbeatAt, holdArenaLock } from "../src/server/arena/lock";
 import { runArenaLoop } from "../src/server/arena/worker";
 import { loadLocalEnv } from "./lib/loadEnv";
 import { requireDeclaredBackend } from "./lib/requireBackend";
@@ -56,13 +58,70 @@ function operate(command: Exclude<Command, "run">, dataDir: string, network: str
   const paused = existsSync(pauseFile);
   const state = new ArenaStore(arenaFile(dataDir, network), network).read();
   console.log(paused ? "The pit is paused. The round in flight finishes, then it rests." : "The pit is running.");
-  console.log(`arena mode: ${arenaMode() ? "on" : "off"}, a round every ${roundIntervalSeconds()} s`);
+  // Whether a worker is there, from its own heartbeat, rather than from this
+  // shell's environment: an operator running status in another terminal has
+  // whatever flags that terminal has, and the pit has the ones it started
+  // with. The line below says which is which rather than implying they agree.
+  const beat = heartbeatAt(dataDir, network);
+  const beatAgo = beat === null ? null : Math.round((Date.now() - beat) / 1000);
+  console.log(beat === null ? "worker: no lock held, so none is running here" : `worker: alive, last heartbeat ${beatAgo} s ago`);
+  console.log(`this shell: arena mode ${arenaMode() ? "on" : "off"}, a round every ${roundIntervalSeconds()} s`);
   // A round has no id until its plan lands, so the phase is the whole answer
   // for the first few seconds of one.
   if (state.round) console.log(`current round: phase ${state.round.phase}${state.round.roundId ? `, ${state.round.roundId}` : ""}`);
   if (state.nextRoundAt && !paused) console.log(`next round at: ${state.nextRoundAt}`);
+  if (state.last?.result) {
+    const at = state.last.phases.at(-1)?.at ?? state.last.startedAt;
+    console.log(`last round: ${state.last.roundId}, won by ${state.last.result.winner}, at ${at}`);
+  }
   console.log(`serv reasoning: ${servReasoningOn(join(dataDir, SERV_OFF_FILE)) ? "on" : "off"}, change it with npm run serv -- on|off`);
   console.log(`pause file: ${pauseFile}`);
+}
+
+/**
+ * What the wallets hold, and whether that is enough for another round.
+ *
+ * Only for status, and only on the machine: this opens every wallet and reads
+ * the chain, which is why pause and resume do not. The thresholds are the ones
+ * the pit actually fails on, rather than a number somebody liked: the pot has
+ * to cover the prize it carries plus the fee a payout costs, the bank has to
+ * cover the largest loan it is allowed to make, and the operator has to cover
+ * funding one replacement.
+ */
+async function reportBalances(): Promise<void> {
+  let ctx;
+  try {
+    ctx = await getServerContext();
+  } catch (e) {
+    console.log(`balances: could not be read (${e instanceof Error ? e.message : String(e)})`);
+    return;
+  }
+  ctx.bankroll.invalidate();
+  const chips = (wei: bigint): string => `${toChips(wei)} chips`;
+  const warnings: string[] = [];
+
+  const potWei = await ctx.bankroll.get(ctx.wallets.pot);
+  const carriedWei = ctx.flow.rollover.carriedWei;
+  const needsWei = carriedWei + ctx.chain.gasReserveWei;
+  console.log(`pot: ${chips(potWei)}${carriedWei > 0n ? `, carrying ${chips(carriedWei)} into the next round` : ""}`);
+  if (potWei <= needsWei) warnings.push("The pot cannot cover the prize it carries and the fee a payout costs. The pit will rest until it is topped up.");
+
+  if (ctx.wallets.bank) {
+    const bankWei = await ctx.bankroll.get(ctx.wallets.bank);
+    const largestLoanWei = maxLoanStakes() * stakeWeiFrom();
+    console.log(`bank: ${chips(bankWei)}`);
+    if (bankWei < largestLoanWei) warnings.push(`Marrow is under the largest loan it may make, ${chips(largestLoanWei)}, so it will refuse borrowers it would otherwise carry.`);
+  }
+
+  if (ctx.wallets.operator) {
+    const operatorWei = await ctx.bankroll.get(ctx.wallets.operator);
+    const replacementWei = weiPerChip() * BigInt(CHIPS_PER_FUNDED_WALLET);
+    console.log(`operator: ${chips(operatorWei)}`);
+    if (operatorWei < replacementWei) warnings.push(`The operator is under one replacement, ${chips(replacementWei)}, so a wrecked seat will stay empty.`);
+  }
+
+  for (const warning of warnings) console.log(`warning: ${warning}`);
+  if (warnings.length === 0) console.log("balances: enough for another round.");
 }
 
 async function main(): Promise<void> {
@@ -70,6 +129,8 @@ async function main(): Promise<void> {
   const command = commandFrom(process.argv);
   if (command !== "run") {
     operate(command, env.dataDir, env.network);
+    // Only status reads the chain. Pausing a pit should not need a wallet.
+    if (command === "status") await reportBalances();
     return;
   }
   requireDeclaredBackend(env, envFile);

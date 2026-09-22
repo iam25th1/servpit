@@ -779,8 +779,12 @@ finishes the round it is in before it goes.
   `SERVPIT_GAS_RESERVE_ETH`, `SERVPIT_BANK_ENABLED`, `PORT`. `SERVPIT_ARENA_MODE` is set by the
   command itself, so the site and the worker cannot disagree about which flow is on.
 - **Watch it** with `GET /api/health`, which says whether the worker is alive, how long since
-  the last round and whether the pit is running, resting or paused, and nothing else. On the
-  machine, `npm run arena -- status` adds the balances and warns when one is low.
+  the last round and whether the pit is running, resting or paused, and nothing else. It
+  answers 200 while the worker's heartbeat is inside an interval and 503 once it is not, so an
+  uptime check that reads only the status code gets the same answer as one that reads the body.
+  On the machine, `npm run arena -- status` adds the last and next round, the SERV switch, the
+  pot, bank and operator balances, and a plain warning when one of them is low enough that the
+  pit will soon rest.
 
 **What is not served in production.** The wallet view at `/api/agents`, the seed box at
 `/arena`, and both lever routes, which write. In production a visitor can read the pit and

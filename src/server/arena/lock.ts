@@ -83,6 +83,18 @@ function writeHolder(file: string, now: () => number): void {
  * on the way out. Without the heartbeat a worker on a long interval would
  * look stale to the next one to start.
  */
+/**
+ * When the worker last said it was alive, or null when no lock is held.
+ *
+ * The heartbeat rather than the round file, because the round file is quiet
+ * between rounds by design and an hour of quiet is what a healthy pit on an
+ * hourly interval looks like. Read only: the health endpoint may not take,
+ * take over or touch the lock, and the pid inside it never leaves here.
+ */
+export function heartbeatAt(dataDir: string, network: string): number | null {
+  return readHolder(arenaLockFile(dataDir, network))?.at ?? null;
+}
+
 export function holdArenaLock(file: string, now: () => number = Date.now): { beat: () => void; release: () => void } {
   mkdirSync(dirname(file), { recursive: true });
   try {
