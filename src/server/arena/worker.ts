@@ -20,6 +20,16 @@ import { ArenaStore, type ArenaPhase, type ArenaRound, type ArenaState, type Pha
 
 const sleepMs = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
 
+/**
+ * How long the draw is on screen before the fight starts.
+ *
+ * The lever takes about a second to pull and release, the reels spin and stop
+ * one at a time, and the payoff lands on the last one. Six seconds covers all
+ * of that with room to read it, and it is fixed rather than measured so every
+ * viewer's reveal ends at the same moment the fight begins.
+ */
+export const REEL_REVEAL_MS = 6_000;
+
 /** Whether an interval produced a round or a reason there was not one. */
 export type ArenaOutcome = "played" | "rested";
 
@@ -260,6 +270,26 @@ export async function playArenaRound(ctx: ServerContext, store: ArenaStore, next
     },
   });
 
+  // The draw, before the fight and after the money has moved. It is its own
+  // phase with its own length so the reveal has somewhere to happen: the
+  // fight's start time stays exactly what it says, rather than drifting by
+  // however long a client decides to spin its reels for.
+  publish(
+    {
+      reels: run.round.reels.map((pull, i) => ({
+        entrantId: plan.entrants[i].id,
+        symbols: [...pull.symbols],
+        characterId: pull.characterId,
+        tier: pull.characterTier,
+        combo: pull.combo,
+        bonusPct: pull.bonusPct,
+      })),
+    },
+    "reels",
+    { durationMs: REEL_REVEAL_MS },
+  );
+  await sleepMs(REEL_REVEAL_MS);
+
   // Settled. The fight can be shown now, and only now: everything in here
   // decides the winner, and the resolver is deterministic.
   // Whole milliseconds: this is published as the length of a moment every
@@ -313,6 +343,12 @@ export async function playArenaRound(ctx: ServerContext, store: ArenaStore, next
         interest: run.interest.map((i) => ({ agentId: i.agentId, chargedWei: i.chargedWei.toString(), rateBps: i.rateBps })),
         servCalls: plan.servCalls,
         costSummary: flow.meter.summary(),
+        // Read back from the round store the settle just wrote, which is the
+        // same place the lever route reads it, so the bankrolls panel draws
+        // from one source whichever flow put it there.
+        agents: (flow.store.get(plan.roundId)?.agents ?? []).map((a) => ({ agentId: a.agentId, name: a.name, balanceBeforeWei: a.balanceBeforeWei, balanceAfterWei: a.balanceAfterWei })),
+        checks: run.reconciliation.checks,
+        settles: ctx.chain.settles,
       },
     },
     "result",

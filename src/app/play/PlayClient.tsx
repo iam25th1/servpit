@@ -40,6 +40,9 @@ import { getWithTimeout, requestWithTimeout, RequestTimeoutError } from "./reque
 import { pickPlayerDraw, type RunReel } from "./reelPick";
 import { runRequestFor } from "./roundRequest";
 import { arenaStanding, type ArenaStanding } from "./screens/arenaHud";
+import { useArenaFeed } from "./arenaFeed";
+import { readNow, useWallClock } from "./arenaClock";
+import { fightOffsetMs, watchDecisions, watchEntries, watchOccupants, watchState } from "./arenaScreens";
 import type { GraveShape } from "./screens/graveyardRows";
 import type { ReplacementShape, WreckShape } from "./screens/wreckMoment";
 import type { BankShape, LoanShape, RefusalShape } from "./screens/BankPanel";
@@ -153,7 +156,7 @@ function playerMessage(e: unknown): string {
   return GENERIC_FAILURE;
 }
 
-export function PlayClient({ bankEnabled = false }: { bankEnabled?: boolean } = {}) {
+export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEnabled?: boolean; arenaMode?: boolean } = {}) {
   const [state, dispatch] = useReducer(reduce, undefined, initialState);
   const [manifest, setManifest] = useState<Manifest | null>(null);
   const [assetError, setAssetError] = useState<string | null>(null);
@@ -165,6 +168,12 @@ export function PlayClient({ bankEnabled = false }: { bankEnabled?: boolean } = 
   const [arena, setArena] = useState<ArenaStanding>({ standing: 0, downed: [] });
   /** The wall, once it has been read. Null while the request is in flight. */
   const [graves, setGraves] = useState<GraveShape[] | null>(null);
+  // The pit's own feed, and the only clock in the client that runs in wall
+  // time. Both are inert unless arena mode is on.
+  const feed = useArenaFeed(arenaMode);
+  const wallNow = useWallClock(arenaMode);
+  const watch = watchState(feed.view);
+  const watchedPhaseRef = useRef<string>("");
 
   const slotCanvasRef = useRef<HTMLCanvasElement>(null);
   const arenaCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -534,6 +543,90 @@ export function PlayClient({ bankEnabled = false }: { bankEnabled?: boolean } = 
     void playTransition(null, node, { grid: state.screen === "modeSelect" ? [3, 2] : undefined });
   }, [state.screen]);
 
+  // Arena mode: the reels and the fight are driven by the phase the worker
+  // publishes, not by a lever anybody pulled.
+  //
+  // Keyed on the round and the phase together, so each phase is acted on once
+  // however many times the feed reports it: the endpoint is polled underneath
+  // the stream, and starting the fight again on every poll would restart the
+  // playback four times a minute.
+  useEffect(() => {
+    if (!arenaMode) return;
+    const engine = engineRef.current;
+    const round = watch.round;
+    if (!engine || !round) return;
+    const key = `${round.roundId}:${round.phase}`;
+    if (watchedPhaseRef.current === key) return;
+    watchedPhaseRef.current = key;
+
+    if (round.phase === "reels" && round.reels && round.reels.length > 0) {
+      const draw = pickPlayerDraw(round.reels as unknown as RunReel[]);
+      if (draw) {
+        const symbols = [...draw.symbols].slice(0, 3) as [string, string, string];
+        pendingDrawRef.current = symbols;
+        engine.bulbsReversed = TIER_PAYOFF({ tier: draw.tier, combo: draw.combo }).reverseBulbs;
+        // The house pulls the lever. Its own release starts the reels, the
+        // same way a player's pull does, so the pause the pull is built
+        // around is not skipped for a viewer.
+        if (engine.reels.state === "spinning") engine.reels.retarget(symbols);
+        else engine.lever.pull();
+      }
+    }
+
+    if (round.phase === "fight" && round.fight) {
+      engine.arenaRenderer.floorSeed = round.roundId;
+      engine.timeline = new Timeline({ characters: round.fight.characters, log: round.fight.log, placements: round.fight.placements, names: round.fight.names } as never);
+      engine.timeline.onBatch((batch, silent) => engine.juice.onBatch(batch, silent, (id) => engine.timeline!.actor(id)));
+      setArena(arenaStanding(engine.timeline.actors()));
+      engine.timeline.onBatch(() => setArena(arenaStanding(engine.timeline!.actors())));
+      // Where the fight actually is, not where it started. A viewer who
+      // arrives forty seconds into a playback joins it forty seconds in.
+      const offsetMs = fightOffsetMs(round, readNow());
+      if (offsetMs && offsetMs > 0) engine.timeline.seek(offsetMs);
+      engine.timeline.play();
+    }
+
+    if (round.phase === "result" || round.phase === "resting" || round.phase === "failed") {
+      engine.timeline?.pause();
+    }
+  }, [arenaMode, watch.round?.roundId, watch.round?.phase, watch.round]);
+
+  // Arena mode: the worker owns the round, so the phase it publishes is the
+  // screen. The machine still runs boot and title, and everything after that
+  // is what the pit says it is doing.
+  const watchedRound = watch.round;
+  const shownState: FlowState = arenaMode && state.screen !== "boot" && state.screen !== "title" ? { ...state, screen: watch.screen, leverLive: false } : state;
+  const shownPlan: PlanResponse | null = arenaMode
+    ? watchedRound
+      ? ({
+          roundId: watchedRound.roundId,
+          seed: "",
+          servCalls: 0,
+          costSummary: "",
+          decisions: watchDecisions(watchedRound) as unknown as PlanDecision[],
+          bots: watchedRound.bots,
+          entrants: watchedRound.entrants,
+          bank: watchedRound.bank as PlanResponse["bank"],
+          loans: watchedRound.loans as PlanResponse["loans"],
+          refusals: watchedRound.refusals.map((r) => ({ ...r, tappedOut: false })) as PlanResponse["refusals"],
+          tappedOut: [],
+        } as PlanResponse)
+      : null
+    : plan;
+  const shownRun: RunResponse | null =
+    arenaMode && watchedRound?.result && watchedRound.fight
+      ? ({
+          ...(watchedRound.result as unknown as RunResponse),
+          roundId: watchedRound.roundId,
+          seed: "",
+          network: watchedRound.network,
+          backend: watchedRound.backend,
+          weiPerChip: watchedRound.weiPerChip,
+          reels: [],
+          replay: { characters: [] as never[], log: [] as never[], placements: watchedRound.fight.placements },
+        } as unknown as RunResponse)
+      : run;
+
   if (assetError) {
     return (
       <main className={styles.shell}>
@@ -561,15 +654,29 @@ export function PlayClient({ bankEnabled = false }: { bankEnabled?: boolean } = 
 
         <div ref={screenRef} className={state.screen === "boot" || state.screen === "title" ? styles.hidden : undefined}>
           <GameShell
-            state={state}
-            plan={plan}
-            run={run}
+            state={shownState}
+            plan={shownPlan}
+            run={shownRun}
             muted={muted}
             leverNote={leverNote}
             arena={arena}
-            decided={state.decided as DecidedShape[]}
-            occupants={state.occupants as OccupantShape[]}
-            entries={state.entries as EntryShape[]}
+            decided={arenaMode ? watchDecisions(watchedRound) : (state.decided as DecidedShape[])}
+            occupants={arenaMode ? watchOccupants(watchedRound) : (state.occupants as OccupantShape[])}
+            entries={arenaMode ? watchEntries(watchedRound) : (state.entries as EntryShape[])}
+            watching={
+              arenaMode
+                ? {
+                    live: feed.connection === "live",
+                    error: feed.error,
+                    resting: watch.resting,
+                    restReason: watch.restReason,
+                    paused: watch.paused,
+                    nextRoundAt: watch.nextRoundAt,
+                    now: wallNow,
+                    last: watch.round?.result ? (watch.round as unknown as { result: Record<string, unknown> }).result : null,
+                  }
+                : null
+            }
             slotCanvasRef={slotCanvasRef}
             arenaCanvasRef={arenaCanvasRef}
             bankEnabled={bankEnabled}

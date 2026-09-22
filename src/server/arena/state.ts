@@ -19,17 +19,18 @@ import { StoreFile, UNKNOWN_NETWORK } from "../store/file";
  * deciding  the agents are answering
  * banking   the lender is answering, one request at a time
  * settling  entries are moving on chain
+ * reels     the draw is revealed, for a known duration, before the fight
  * fight     the pit is playing out, for a known duration
  * result    settled, and the figures are final
  * resting   nothing is running, and the reason says why
  * failed    the round did not finish, and the reason says why
  */
-export type ArenaPhase = "planning" | "deciding" | "banking" | "settling" | "fight" | "result" | "resting" | "failed";
+export type ArenaPhase = "planning" | "deciding" | "banking" | "settling" | "reels" | "fight" | "result" | "resting" | "failed";
 
 export interface PhaseMark {
   phase: ArenaPhase;
   at: string;
-  /** Only on fight: how long the playback runs, so every viewer sees one moment. */
+  /** On reels and fight: how long it lasts, so every viewer sees one moment. */
   durationMs?: number;
   /** Only on resting and failed: a sentence a player can read. */
   reason?: string;
@@ -99,6 +100,12 @@ export interface ArenaResult {
   interest: Array<{ agentId: string; chargedWei: string; rateBps: number }>;
   servCalls: number;
   costSummary: string;
+  /** What each wallet did over the round, for the bankrolls panel. */
+  agents: Array<{ agentId: string; name: string; balanceBeforeWei: string; balanceAfterWei: string }>;
+  /** Per check, so a failure can name what went wrong rather than just failing. */
+  checks: Array<{ name: string; ok: boolean; expected: string; actual: string }>;
+  /** True on a chain where a hash is worth linking. */
+  settles: boolean;
 }
 
 export interface ArenaRound {
@@ -117,6 +124,14 @@ export interface ArenaRound {
   refusals: ArenaRefusal[];
   bank: { treasury: number; book: Array<{ agentId: string; name: string; owed: number; principal: number; rateBps: number }> } | null;
   entries: Array<{ agentId: string; amountWei: string; txHash: string | null; link: string | null }>;
+  /**
+   * What each entrant drew, from the reels phase onwards.
+   *
+   * Not a spoiler and deliberately allowed early: the reels pick a fighter's
+   * character, and the resolver runs the same way whoever is in it. Absent
+   * before the reveal only because there is nothing to show yet.
+   */
+  reels?: Array<{ entrantId: string; symbols: string[]; characterId: string; tier: string; combo: string; bonusPct: number }>;
   /** Absent until the fight phase begins. */
   fight?: ArenaFight;
   /** Absent until the round is settled. */

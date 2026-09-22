@@ -1118,3 +1118,92 @@ a.transferHash {
   margin: 0;
   flex: none;
 }
+
+/* Where a decision came from, beside the verdict. Two words, and the pair
+   never share a colour: a fallback that reads like reasoning is the thing
+   this is here to stop. */
+.reasoned,
+.instinct {
+  font-size: var(--text-micro);
+  margin-left: var(--space-tight);
+}
+
+.reasoned {
+  color: var(--good);
+}
+
+.instinct {
+  color: var(--on-surface-dim, var(--bone-dim));
+}
+
+/* The stream's state, in the corner, where a viewer can ignore it until it
+   matters. */
+.live,
+.offair {
+  font-size: var(--text-micro);
+}
+
+.live {
+  color: var(--good);
+}
+
+.offair {
+  color: var(--bad);
+  background: var(--pit-deep);
+  padding: 0 var(--space-tight);
+}
+
+/* The quiet between rounds. One card, centred, with the countdown as the
+   thing a viewer reads first. */
+.resting {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  min-height: 0;
+}
+
+.restCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-snug);
+  text-align: center;
+  min-width: 420px;
+}
+
+.restHead {
+  font-family: var(--font-ui);
+  font-size: var(--text-lead);
+  letter-spacing: 0.04em;
+  color: var(--ink);
+  margin: 0;
+}
+
+.restReason {
+  font-size: var(--text-small);
+  color: var(--ink-dim, var(--ink));
+  margin: 0;
+}
+
+.restLast {
+  font-size: var(--text-small);
+  color: var(--ink);
+  margin: 0;
+}
+
+.restActions {
+  display: flex;
+  gap: var(--space-snug);
+  margin-top: var(--space-tight);
+}
+
+/* The schedule, where the button is in the lever flow. Amber, because it is
+   the thing a viewer is waiting on. */
+.nextRound {
+  font-family: var(--font-ui);
+  font-size: var(--text-small);
+  color: var(--amber);
+  margin: 0;
+  text-align: right;
+}

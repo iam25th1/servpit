@@ -23,6 +23,7 @@ import type { ArenaStanding } from "./arenaHud";
 import { swingMeters } from "./bankrollMeter";
 import { entrantLabel } from "./entrantLabel";
 import { decidedCount, lineupRows, type DecidedShape, type OccupantShape } from "./lineupRows";
+import { secondsUntil } from "../arenaScreens";
 import { GRAVES_PER_PAGE, graveyardPage, type GraveShape } from "./graveyardRows";
 import { wreckMoments, type ReplacementShape, type WreckShape } from "./wreckMoment";
 
@@ -38,6 +39,21 @@ export interface EntryShape {
 
 /** Exchanges the buy in panel has room for, newest last. Four asks answered. */
 const BUYIN_BEATS = 8;
+
+/** What the result screen says instead of a button, while the pit runs itself. */
+function nextRoundLine(watching: WatchingShape): string {
+  if (watching.paused) return "The pit is closed for now.";
+  const seconds = secondsUntil(watching.nextRoundAt, watching.now);
+  if (seconds === null) return "The next round will start when the pit is ready.";
+  if (seconds <= 0) return "The next round is starting.";
+  return `Next round in ${seconds === 1 ? "a second" : `${seconds} seconds`}.`;
+}
+
+/** Chips from wei, for a screen that has no round of its own to divide by. */
+function chipsOf(wei: bigint, weiPerChip: string | undefined): string {
+  const per = weiPerChip ? BigInt(weiPerChip) : 1n;
+  return String(wei < 0n ? -wei / per : wei / per);
+}
 
 /** The transfer kinds only a round with a lender in it produces. */
 const BANK_KINDS = new Set(["loan", "repayment", "seizure", "refill"]);
@@ -103,6 +119,21 @@ interface RunShape {
   replay: { placements: string[] };
 }
 
+/** The spectator's view of a pit that runs itself. */
+export interface WatchingShape {
+  /** True while the phase stream is connected. */
+  live: boolean;
+  /** A plain sentence when the pit cannot be reached, or null. */
+  error: string | null;
+  resting: boolean;
+  restReason: string | null;
+  paused: boolean;
+  nextRoundAt: string | null;
+  /** Wall time, from the one clock in the client that keeps it. */
+  now: number;
+  last: Record<string, unknown> | null;
+}
+
 export interface GameShellProps {
   state: FlowState;
   plan: PlanShape | null;
@@ -119,6 +150,13 @@ export interface GameShellProps {
   occupants: OccupantShape[];
   /** True only with the bank on, which is the only thing that makes a grave. */
   bankEnabled: boolean;
+  /**
+   * What the pit is doing, when the pit is running itself.
+   *
+   * Null in the lever flow, where the player starts the round and there is no
+   * quiet between them to fill.
+   */
+  watching: WatchingShape | null;
   /** The wall, once it has been read. Null while the request is in flight. */
   graves: GraveShape[] | null;
   slotCanvasRef: RefObject<HTMLCanvasElement | null>;
@@ -146,6 +184,11 @@ export function GameShell(props: GameShellProps) {
       <header className={styles.topbar} data-anim="topbar">
         <h1 className={styles.wordmark}>SERVPIT</h1>
         <div className={styles.topmeta}>
+          {props.watching && (
+            <span className={props.watching.live ? styles.live : styles.offair} data-anim="live">
+              {props.watching.live ? "watching live" : "reconnecting"}
+            </span>
+          )}
           {state.player && <span>{state.player.label}</span>}
           <Button onClick={props.onToggleMute} scale={2} aria-pressed={!props.muted}>
             {props.muted ? "Sound off" : "Sound on"}
@@ -191,6 +234,7 @@ export function GameShell(props: GameShellProps) {
           )}
       </div>
 
+      {state.screen === "resting" && props.watching && <Resting watching={props.watching} run={run} onShowGraveyard={props.onShowGraveyard} bankEnabled={props.bankEnabled} />}
       {state.screen === "wreck" && run && <WreckScreen run={run} onContinue={props.onWreckSeen} />}
       {state.screen === "result" && run && <ResultScreen run={run} onPlayAgain={props.onPlayAgain} />}
       </div>
@@ -354,6 +398,12 @@ export function GameShell(props: GameShellProps) {
                     ) : (
                       <span className={styles.agentVerdict}>thinking</span>
                     )}
+                    {/* Where the answer came from, in the two words that say
+                        it: a line the fallback wrote must never read as
+                        though an agent reasoned its way to it. */}
+                    {row.state === "decided" && row.decision.source && (
+                      <span className={row.decision.source === "serv" ? styles.reasoned : styles.instinct}>{row.decision.source === "serv" ? "reasoned" : "on instinct"}</span>
+                    )}
                   </span>
                   {/* What it holds and what it owes, kept apart. A balance and
                       a debt read as one number if they share a colour, and an
@@ -508,6 +558,68 @@ export function GameShell(props: GameShellProps) {
    * it. Nothing moves the stage, the page or a container, and no blur, shake
    * or rotation is used anywhere in it.
    */
+  /**
+   * The quiet between rounds, which the lever flow never has.
+   *
+   * A pit that is doing nothing still has to say what it is doing and when it
+   * will do it again, or a viewer cannot tell a schedule from a failure. The
+   * countdown reads from the one wall clock in the client; everything else
+   * here is the last round, which is over and gives nothing away.
+   */
+  function Resting({ watching, run, onShowGraveyard, bankEnabled }: { watching: WatchingShape; run: RunShape | null; onShowGraveyard: () => void; bankEnabled: boolean }) {
+    const rootRef = useRef<HTMLDivElement>(null);
+    const seconds = secondsUntil(watching.nextRoundAt, watching.now);
+    const winner = run ? entrantLabel(run.winner, run.agents) : null;
+
+    useEffect(() => {
+      const root = rootRef.current;
+      if (!root) return;
+      void staggerIn([...root.querySelectorAll<HTMLElement>("[data-rest-row]")], { delay: 80 });
+    }, [watching.nextRoundAt]);
+
+    const headline = watching.paused
+      ? "The pit is closed for now."
+      : watching.restReason
+        ? "The pit is sitting this one out."
+        : seconds === null
+          ? "The pit is between rounds."
+          : seconds > 0
+            ? `Next round in ${seconds === 1 ? "a second" : `${seconds} seconds`}.`
+            : "The next round is starting.";
+
+    return (
+      <div ref={rootRef} className={styles.resting} data-anim="resting">
+        <NinePatch sprite="panelAlt" scale={uiScale} className={styles.restCard} data-anim="rest-card">
+          <h2 className={styles.restHead} data-rest-row="">
+            {headline}
+          </h2>
+          {watching.restReason && (
+            <p className={styles.restReason} data-rest-row="">
+              {watching.restReason}
+            </p>
+          )}
+          {watching.error && (
+            <p className={styles.restReason} data-rest-row="" role="status">
+              {watching.error}
+            </p>
+          )}
+          {winner && (
+            <p className={styles.restLast} data-rest-row="">
+              Last round: {winner} took {run ? chipsOf(BigInt(run.potWei) - BigInt(run.rakeWei), run.weiPerChip) : "0"} chips.
+            </p>
+          )}
+          <div className={styles.restActions} data-rest-row="">
+            {bankEnabled && (
+              <Button onClick={onShowGraveyard} scale={2}>
+                The graveyard
+              </Button>
+            )}
+          </div>
+        </NinePatch>
+      </div>
+    );
+  }
+
   function WreckScreen({ run, onContinue }: { run: RunShape; onContinue: () => void }) {
     const rootRef = useRef<HTMLDivElement>(null);
     const per = run.weiPerChip ? BigInt(run.weiPerChip) : 1n;
@@ -820,7 +932,9 @@ export function GameShell(props: GameShellProps) {
               ? `Settled on ${run.network}. Every hash above links to the block explorer.`
               : "This round ran off chain against the local test chain. The hashes above are local, so there is nothing to look up on a block explorer. Set the wallet keys to settle on Base Sepolia."}
           </p>
-          <Button onClick={onPlayAgain}>Another round</Button>
+          {/* Watching a pit that runs itself, nothing a viewer presses starts
+              a round. The button becomes the schedule it is waiting on. */}
+          {props.watching ? <p className={styles.nextRound}>{nextRoundLine(props.watching)}</p> : <Button onClick={onPlayAgain}>Another round</Button>}
         </div>
       </div>
     );

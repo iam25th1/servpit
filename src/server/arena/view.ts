@@ -68,6 +68,9 @@ export function roundView(round: ArenaRound | null): ArenaRoundView | null {
     refusals: round.refusals,
     bank: round.bank,
     entries: round.entries,
+    // The draw, which does not decide the fight: the resolver runs the same
+    // way whoever is in it. Everything that does decide it is left out above.
+    ...(round.reels ? { reels: round.reels } : {}),
   };
 }
 

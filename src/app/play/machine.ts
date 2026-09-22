@@ -17,13 +17,18 @@
 // decoded. title is the attract screen and the only way past it is the
 // player asking to start.
 //
+// In arena mode the screen is not this machine's to decide: the worker owns
+// the round and the phase it publishes is the screen. The machine still runs
+// boot and title, and resting is the one screen the lever flow never reaches,
+// because the lever flow has no quiet between rounds.
+//
 // spinning waits on two independent things: the reels finishing their stop
 // sequence, and the server returning the settled round. They can land in
 // either order, so both are tracked and the handoff happens when both are in.
 
 import { GAME_MODES, type GameMode } from "@/config/modes";
 
-export type Screen = "boot" | "title" | "modeSelect" | "graveyard" | "lobby" | "slot" | "spinning" | "arena" | "wreck" | "result";
+export type Screen = "boot" | "title" | "modeSelect" | "graveyard" | "lobby" | "slot" | "spinning" | "arena" | "wreck" | "result" | "resting";
 
 export interface Player {
   id: string;
