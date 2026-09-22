@@ -27,6 +27,16 @@ export async function GET(request: Request): Promise<Response> {
             open = false;
           }
         },
+        // A comment line. It keeps the connection alive through a rest that
+        // can last an hour, and a browser's EventSource ignores it.
+        ping: () => {
+          if (!open) return;
+          try {
+            controller.enqueue(encoder.encode(": ping\n\n"));
+          } catch {
+            open = false;
+          }
+        },
         close: () => {
           if (!open) return;
           open = false;
