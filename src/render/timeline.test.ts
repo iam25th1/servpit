@@ -211,12 +211,19 @@ describe("render source hygiene", () => {
 describe("slot source hygiene", () => {
   it("no timers or clocks in the slot code or the play screen either", () => {
     const banned = [/setTimeout/, /setInterval/, /requestAnimationFrame/, /Date\.now/, /performance\.now/];
+    // Two files, named here rather than pattern matched, and both about wall
+    // time rather than animation: a spectator's connection to the pit
+    // reconnects and polls on a timer, and a countdown to the next round is a
+    // clock. The Timeline runs in round time and does not exist at all while
+    // the pit is resting, so neither of those can come from it. Everything
+    // that moves on a canvas still does.
+    const clockwork = new Set(["arenaFeed.ts", "arenaClock.ts"]);
     const offenders: string[] = [];
     const walk = (dir: string) => {
       for (const name of readdirSync(dir)) {
         const p = join(dir, name);
         if (statSync(p).isDirectory()) walk(p);
-        else if (/\.(ts|tsx)$/.test(p) && !/\.test\.tsx?$/.test(p)) {
+        else if (/\.(ts|tsx)$/.test(p) && !/\.test\.tsx?$/.test(p) && !clockwork.has(name)) {
           const body = readFileSync(p, "utf8");
           if (banned.some((re) => re.test(body))) offenders.push(p);
         }
@@ -257,13 +264,21 @@ describe("slot source hygiene", () => {
     // Scoped to what renders. src/server schedules an HTTP retry backoff,
     // which is a different concern from the animation clock and is not what
     // this rule protects.
+    //
+    // The same two spectator files are named here as above, for the same
+    // reason: a reconnect and a countdown are wall time, not animation. A
+    // requestAnimationFrame in either of them would still be caught, because
+    // that is the animation clock and it belongs to loop.ts.
+    const clockwork = new Set(["arenaFeed.ts", "arenaClock.ts"]);
     const offenders: string[] = [];
     const walk = (dir: string) => {
       for (const name of readdirSync(dir)) {
         const p = join(dir, name);
         if (statSync(p).isDirectory()) walk(p);
         else if (/\.(ts|tsx)$/.test(p) && !/\.test\.tsx?$/.test(p) && !p.endsWith("loop.ts")) {
-          if (/requestAnimationFrame|setInterval\(|setTimeout\(/.test(readFileSync(p, "utf8"))) offenders.push(p);
+          const body = readFileSync(p, "utf8");
+          const banned = clockwork.has(name) ? /requestAnimationFrame/ : /requestAnimationFrame|setInterval\(|setTimeout\(/;
+          if (banned.test(body)) offenders.push(p);
         }
       }
     };

@@ -20,6 +20,26 @@ import { ArenaStore, type ArenaPhase, type ArenaRound, type ArenaState, type Pha
 
 const sleepMs = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
 
+/**
+ * How long the draw is on screen before the fight starts.
+ *
+ * The lever takes about a second to pull and release, the reels spin and stop
+ * one at a time, and the payoff lands on the last one. Six seconds covers all
+ * of that with room to read it, and it is fixed rather than measured so every
+ * viewer's reveal ends at the same moment the fight begins.
+ */
+export const REEL_REVEAL_MS = 6_000;
+
+/**
+ * How long the result stands before the pit is simply waiting.
+ *
+ * The figures are a moment, not a state: without this the last round's result
+ * is what a viewer stares at for the rest of the interval, and the pit never
+ * looks like it is between rounds. Capped by whatever is left of the interval,
+ * so a short interval skips the dwell rather than overrunning.
+ */
+export const RESULT_DWELL_MS = 12_000;
+
 /** Whether an interval produced a round or a reason there was not one. */
 export type ArenaOutcome = "played" | "rested";
 
@@ -260,6 +280,26 @@ export async function playArenaRound(ctx: ServerContext, store: ArenaStore, next
     },
   });
 
+  // The draw, before the fight and after the money has moved. It is its own
+  // phase with its own length so the reveal has somewhere to happen: the
+  // fight's start time stays exactly what it says, rather than drifting by
+  // however long a client decides to spin its reels for.
+  publish(
+    {
+      reels: run.round.reels.map((pull, i) => ({
+        entrantId: plan.entrants[i].id,
+        symbols: [...pull.symbols],
+        characterId: pull.characterId,
+        tier: pull.characterTier,
+        combo: pull.combo,
+        bonusPct: pull.bonusPct,
+      })),
+    },
+    "reels",
+    { durationMs: REEL_REVEAL_MS },
+  );
+  await sleepMs(REEL_REVEAL_MS);
+
   // Settled. The fight can be shown now, and only now: everything in here
   // decides the winner, and the resolver is deterministic.
   // Whole milliseconds: this is published as the length of a moment every
@@ -313,6 +353,12 @@ export async function playArenaRound(ctx: ServerContext, store: ArenaStore, next
         interest: run.interest.map((i) => ({ agentId: i.agentId, chargedWei: i.chargedWei.toString(), rateBps: i.rateBps })),
         servCalls: plan.servCalls,
         costSummary: flow.meter.summary(),
+        // Read back from the round store the settle just wrote, which is the
+        // same place the lever route reads it, so the bankrolls panel draws
+        // from one source whichever flow put it there.
+        agents: (flow.store.get(plan.roundId)?.agents ?? []).map((a) => ({ agentId: a.agentId, name: a.name, balanceBeforeWei: a.balanceBeforeWei, balanceAfterWei: a.balanceAfterWei })),
+        checks: run.reconciliation.checks,
+        settles: ctx.chain.settles,
       },
     },
     "result",
@@ -321,6 +367,13 @@ export async function playArenaRound(ctx: ServerContext, store: ArenaStore, next
   const settled = store.read();
   store.write({ round, last: round, paused: settled.paused, nextRoundAt: new Date(nextAt).toISOString() });
   log.info("arena round complete", { roundId: plan.roundId, winner: run.round.placements[0], reconciled: run.reconciliation.ok, durationMs });
+
+  // The figures stand for a moment, then the pit is plainly waiting. A
+  // resting phase with no reason is the ordinary gap between rounds, which is
+  // what a viewer should see for most of an interval.
+  const dwellMs = Math.min(RESULT_DWELL_MS, Math.max(0, nextAt - Date.now()));
+  if (dwellMs > 0) await sleepMs(dwellMs);
+  publish({}, "resting");
   return "played";
 }
 

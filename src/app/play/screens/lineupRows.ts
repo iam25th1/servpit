@@ -27,6 +27,14 @@ export interface DecidedShape {
   debt?: number;
   /** The roster face for a replacement. Null or absent for the originals. */
   face?: string | null;
+  /**
+   * Whether a model answered or the deterministic fallback did.
+   *
+   * Shown, because a line written by the fallback must never read as though
+   * an agent reasoned its way to it. Absent on a decision streamed before
+   * this was carried.
+   */
+  source?: "serv" | "heuristic";
 }
 
 export type LineupRow =

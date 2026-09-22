@@ -45,6 +45,11 @@ const round = (phase: ArenaPhase): ArenaRound => ({
   refusals: [],
   bank: { treasury: 900, book: [] },
   entries: [{ agentId: "flint", amountWei: "10000000000000", txHash: null, link: null }],
+  // A draw for somebody who is neither the winner nor in the placements, so
+  // the check below still catches a winner that escapes into the payload. In
+  // a real round every entrant has a draw, including whoever wins, and that
+  // is not a leak: one of twenty four ids, indistinguishable from the rest.
+  reels: [{ entrantId: "agent-comet", symbols: ["a", "b", "c"], characterId: "Knight", tier: "rare", combo: "three", bonusPct: 10 }],
   fight: outcome,
   result: {
     winner: WINNER,
@@ -61,13 +66,16 @@ const round = (phase: ArenaPhase): ArenaRound => ({
     interest: [],
     servCalls: 6,
     costSummary: "6 calls",
+    agents: [{ agentId: "flint", name: "Flint", balanceBeforeWei: "1", balanceAfterWei: "2" }],
+    checks: [{ name: "conservation", ok: true, expected: "1", actual: "1" }],
+    settles: false,
   },
 });
 
 const state = (phase: ArenaPhase): ArenaState => ({ round: round(phase), last: null, paused: false, nextRoundAt: null, updatedAt: "2026-09-21T00:00:00.000Z" });
 
 /** Every phase a round passes through before its fight is on screen. */
-const BEFORE_THE_FIGHT: ArenaPhase[] = ["planning", "deciding", "banking", "settling", "resting", "failed"];
+const BEFORE_THE_FIGHT: ArenaPhase[] = ["planning", "deciding", "banking", "settling", "reels", "resting", "failed"];
 
 const spoilers = (body: string): string[] =>
   [
@@ -104,6 +112,22 @@ describe("before the fight", () => {
     expect(view.round?.entries).toHaveLength(1);
     expect(view.round?.bank?.treasury).toBe(900);
     expect(view.round?.phases[0]?.at).toBe("2026-09-21T00:00:00.000Z");
+  });
+
+  it("never carries a winner or a placements field before the fight, whatever it carries", () => {
+    for (const phase of BEFORE_THE_FIGHT) {
+      const view = roundView(round(phase))!;
+      expect(Object.keys(view)).not.toContain("fight");
+      expect(Object.keys(view)).not.toContain("result");
+    }
+  });
+
+  it("still shows the draw, which does not decide anything", () => {
+    // The reels pick a fighter's character and the resolver runs the same way
+    // whoever is in it, so the reveal is allowed to happen before the fight.
+    const view = roundView(round("reels"))!;
+    expect(view.reels).toHaveLength(1);
+    expect("fight" in view).toBe(false);
   });
 
   it("drops the whole fight and the whole result, not some fields of them", () => {

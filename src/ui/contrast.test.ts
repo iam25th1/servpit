@@ -102,6 +102,17 @@ const PAIRS = [
   { what: "the graveyard's empty wall", text: palette.boneDim, surface: palette.pit },
   { what: "the note under the menu's graveyard door", text: palette.boneDim, surface: palette.pit },
 
+  // The spectator's own lines: where a decision came from, and whether the
+  // stream is up. On the dark bg frame and on the page.
+  { what: "a decision that was reasoned", text: palette.good, surface: darkSurfaces.bg },
+  { what: "a decision made on instinct", text: palette.boneDim, surface: darkSurfaces.bg },
+  { what: "the live badge", text: palette.good, surface: palette.pit },
+  { what: "the reconnecting badge, in its cleared band", text: palette.bad, surface: palette.pitDeep },
+  { what: "the resting headline on the sage panel", text: palette.ink, surface: lightSurfaces.panelAlt },
+  { what: "the resting reason on the sage panel", text: palette.inkDim, surface: lightSurfaces.panelAlt },
+
+  { what: "the next round line on the result screen", text: palette.amber, surface: palette.pit },
+
   // On the page itself.
   { what: "offchain notice", text: palette.boneDim, surface: palette.pit },
   { what: "lever note", text: palette.boneDim, surface: palette.pit },
@@ -160,7 +171,7 @@ describe("every text style against the surface it lands on", () => {
   });
 
   it("covers every text style, so a new one cannot be added unchecked", () => {
-    expect(PAIRS.length).toBeGreaterThanOrEqual(64);
+    expect(PAIRS.length).toBeGreaterThanOrEqual(70);
   });
 });
 
