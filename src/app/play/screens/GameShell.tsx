@@ -11,6 +11,7 @@ import { useEffect, useRef, useState, type RefObject } from "react";
 import { GAME_MODES } from "@/config/modes";
 import { BankPanel, loanBeats, type BankShape, type LoanShape, type RefusalShape } from "./BankPanel";
 import { Button } from "@/ui/Button";
+import { liveBadge, type BadgeTone } from "./liveBadge";
 import { Dialog } from "@/ui/Dialog";
 import { Meter } from "@/ui/Meter";
 import { NinePatch } from "@/ui/NinePatch";
@@ -47,27 +48,19 @@ export interface EntryShape {
 const BUYIN_BEATS = 8;
 
 /** What the result screen says instead of a button, while the pit runs itself. */
-/**
- * What the badge says, in order of what a viewer most needs to know.
- *
- * A replay outranks the connection: a recording on screen while the badge
- * reads watching live would be a lie about a money surface, whatever the
- * stream is doing underneath.
- */
-function badgeText(watching: WatchingShape): string {
-  if (watching.replay) return "replay of a finished round";
-  return watching.error ?? (watching.live ? "watching live" : "reconnecting");
-}
 
 /** True while what is on screen is a recording rather than the pit. */
 function watchingReplay(watching: WatchingShape | null): boolean {
   return watching?.replay === true;
 }
 
-function badgeStyle(watching: WatchingShape): string {
-  if (watching.replay) return styles.replay;
-  return watching.live && !watching.error ? styles.live : styles.offair;
-}
+/** The colour the badge is said in, one class per tone. */
+const BADGE_STYLE: Record<BadgeTone, string> = {
+  live: styles.live,
+  waiting: styles.waiting,
+  replay: styles.replay,
+  offair: styles.offair,
+};
 
 /**
  * The only thing in this file a passing second may change.
@@ -1240,12 +1233,12 @@ export function GameShell(props: GameShellProps) {
         <h1 className={styles.wordmark}>SERVPIT</h1>
         <div className={styles.topmeta}>
           {props.watching && (
-            /* The badge says the connection, and when the pit has been out of
-               reach long enough to be worth mentioning it says that instead.
-               Here rather than on one screen, because a viewer can lose the
-               pit during a fight as easily as between rounds. */
-            <span className={badgeStyle(props.watching)} data-anim="live" role="status">
-              {badgeText(props.watching)}
+            /* The badge says what the pit is doing, and says the stream
+               instead when the stream is the thing that is wrong. Here
+               rather than on one screen, because a viewer can lose the pit
+               during a fight as easily as between rounds. */
+            <span className={BADGE_STYLE[liveBadge(props.watching).tone]} data-anim="live" role="status">
+              {liveBadge(props.watching).text}
             </span>
           )}
           {/* Whether this round is being reasoned, beside the connection,

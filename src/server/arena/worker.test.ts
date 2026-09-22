@@ -185,4 +185,37 @@ describe("the kill switch", () => {
 
     expect(played).toBe(1);
   });
+
+  it("stops saying it is paused the moment it plays again", async () => {
+    // The flag went into the state once, on the rest that paused the pit, and
+    // every later write carried it forward. So a resumed pit ran rounds under
+    // a state that still read paused, and anything reading the state, the
+    // health line and the badge in the header, said the pit was stopped while
+    // it was playing.
+    const { store: arena, dir: data } = store();
+    const pauseFile = join(data, "arena-paused");
+    writeFileSync(pauseFile, "");
+    let round = 0;
+    await runArenaLoop({
+      ctx: context({ potWei: 100n }),
+      store: arena,
+      pauseFile,
+      intervalMs: 0,
+      maxRounds: 2,
+      sleep: async () => undefined,
+      running: bounded(4),
+      beat: () => {
+        round += 1;
+        if (round === 2) rmSync(pauseFile, { force: true });
+      },
+      // A round writes the state the way the real one does, carrying whatever
+      // the state already said about the pause.
+      play: async (_ctx, s, nextAt) => {
+        const current = s.read();
+        s.write({ round: current.round, last: current.last, paused: current.paused, nextRoundAt: new Date(nextAt).toISOString() });
+      },
+    });
+
+    expect(arena.read().paused).toBe(false);
+  });
 });
