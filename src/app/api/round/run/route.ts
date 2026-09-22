@@ -15,6 +15,7 @@ import { runRound } from "@/server/round/settle";
 import { overReached } from "@/server/round/wrecks";
 import { parseRoundRequest } from "../plan/params";
 import { arenaMode } from "@/config/arena";
+import { LEVER_CLOSED, inProduction } from "@/server/production";
 import { ARENA_RUNNING } from "@/server/arena/message";
 
 export const runtime = "nodejs";
@@ -35,6 +36,10 @@ export async function POST(request: Request): Promise<Response> {
   // and the same stores: the settle lock would serialise the two, which is
   // not the same as there being only one.
   if (arenaMode()) return Response.json({ code: "arena_running", error: ARENA_RUNNING, message: ARENA_RUNNING, retryable: false }, { status: 409 });
+  // And closed outright on a public deployment. This is the route that moves
+  // money: entries, loans, payouts and seizures, from keys that sit on the
+  // server. Only the worker settles a round there.
+  if (inProduction()) return Response.json({ code: "lever_closed", error: LEVER_CLOSED, message: LEVER_CLOSED, retryable: false }, { status: 403 });
 
   const ctx = await getSettleContext();
   const flow = { ...ctx.flow, entrants: parsed.entrants };

@@ -749,6 +749,47 @@ npm run dev
 
 Opens at `http://localhost:3000` against a local test chain. No credentials needed to play.
 
+### Serving it publicly
+
+One command runs the pit: the built site and the worker, together, with arena mode on.
+
+```bash
+npm ci --ignore-scripts
+npm run build
+npm run start:arena
+```
+
+It prints what it is about to do, starts both, and restarts whichever one exits. A child that
+keeps exiting quickly is backed off to every thirty seconds, so a configuration that will not
+start is a readable log rather than a spin. `SIGINT` and `SIGTERM` stop both, and the worker
+finishes the round it is in before it goes.
+
+**What a host needs.**
+
+- **One instance, never scaled out.** The worker is one writer by design: it holds a lock file
+  in the data directory and a second worker is refused. Two instances behind a load balancer
+  means two workers, two settles and two sets of transfers against the same wallets.
+- **A persistent data directory**, pointed at by `SERVPIT_DATA_DIR`. It holds the round
+  history, the ledger, the debts, the graveyard, the rollover, the picks, the leaderboard and
+  both operator switches. A container that loses it loses the pit's memory, and a rollover
+  that survives in the pot with no record of it is money the next round cannot pay out.
+- **Environment, by name**: `WALLET_BACKEND`, the nine `SERVPIT_KEY_*` wallet keys,
+  `SERV_API_KEY`, `BASE_SEPOLIA_RPC_URLS`, `SERVPIT_DATA_DIR`, `SERVPIT_ROUND_INTERVAL_SECONDS`,
+  `SERVPIT_BACKING_WINDOW_SECONDS`, `SERVPIT_FUND_TARGET_ETH`, `SERVPIT_STAKE_FRACTION`,
+  `SERVPIT_GAS_RESERVE_ETH`, `SERVPIT_BANK_ENABLED`, `PORT`. `SERVPIT_ARENA_MODE` is set by the
+  command itself, so the site and the worker cannot disagree about which flow is on.
+- **Watch it** with `GET /api/health`, which says whether the worker is alive, how long since
+  the last round and whether the pit is running, resting or paused, and nothing else. It
+  answers 200 while the worker's heartbeat is inside an interval and 503 once it is not, so an
+  uptime check that reads only the status code gets the same answer as one that reads the body.
+  On the machine, `npm run arena -- status` adds the last and next round, the SERV switch, the
+  pot, bank and operator balances, and a plain warning when one of them is low enough that the
+  pit will soon rest.
+
+**What is not served in production.** The wallet view at `/api/agents`, the seed box at
+`/arena`, and both lever routes, which write. In production a visitor can read the pit and
+write exactly one thing: a pick, rate limited and bound to a handle and a browser token.
+
 <details>
 <summary><b>Settling on Base Sepolia for real</b></summary>
 
