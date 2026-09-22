@@ -14,10 +14,11 @@ import { Button } from "@/ui/Button";
 import { Dialog } from "@/ui/Dialog";
 import { Meter } from "@/ui/Meter";
 import { NinePatch } from "@/ui/NinePatch";
+import { useLayoutMode } from "@/ui/Stage";
 import { useWallClock } from "../arenaClock";
 import { tierOf } from "@/config/roster";
 import { Onboarding } from "./Onboarding";
-import { SlotCanvas } from "./SlotCanvas";
+import { SlotCanvas, usePixelFit } from "./SlotCanvas";
 import type { OnboardingScreen } from "../onboarding";
 import { useUiKit } from "@/ui/UiKit";
 import { ninePatchStyle } from "@/ui/ninePatchGeometry";
@@ -1217,15 +1218,24 @@ function ResultScreen({ run, onPlayAgain, backing, watching }: { run: RunShape; 
   );
 }
 
+/** The fight's canvas, fitted the same way the slot's is. */
+function ArenaCanvas({ canvasRef, hidden, fitToWidth }: { canvasRef: RefObject<HTMLCanvasElement | null>; hidden: boolean; fitToWidth: boolean }) {
+  usePixelFit(canvasRef, fitToWidth && !hidden);
+  return <canvas ref={canvasRef} className={`${styles.canvas} ${hidden ? styles.hidden : ""}`} role="img" aria-label="Arena replay" />;
+}
+
 export function GameShell(props: GameShellProps) {
   // The canvases come out of props here rather than being read from them
   // inside the markup: a ref read in the middle of a render makes the compiler
   // treat every later props read as a ref read too.
   const { state, plan, run, decided, entries, occupants, slotCanvasRef, arenaCanvasRef } = props;
+  // The arrangement, not a size: a phone gets its own layout rather than the
+  // stage at a third. Every rule for it is scoped to this attribute.
+  const layout = useLayoutMode();
   const showStage = state.screen === "lobby" || state.screen === "slot" || state.screen === "spinning" || state.screen === "arena";
 
   return (
-    <main className={styles.shell}>
+    <main className={styles.shell} data-layout={layout}>
       <header className={styles.topbar} data-anim="topbar">
         <h1 className={styles.wordmark}>SERVPIT</h1>
         <div className={styles.topmeta}>
@@ -1269,8 +1279,8 @@ export function GameShell(props: GameShellProps) {
       <div className={showStage ? styles.playfield : styles.offstage} aria-hidden={!showStage}>
           <div className={styles.cabinet}>
             <NinePatch sprite="panelAlt" data-anim="cabinet" style={{ padding: "var(--space-base)", position: "relative" }}>
-              <SlotCanvas canvasRef={slotCanvasRef} hidden={state.screen === "arena"} probeSymbol={props.probeSymbol} labelFor={fighterLabel} />
-              <canvas ref={arenaCanvasRef} className={`${styles.canvas} ${state.screen === "arena" ? "" : styles.hidden}`} role="img" aria-label="Arena replay" />
+              <SlotCanvas canvasRef={slotCanvasRef} hidden={state.screen === "arena"} probeSymbol={props.probeSymbol} labelFor={fighterLabel} fitToWidth={layout !== "desktop"} />
+              <ArenaCanvas canvasRef={arenaCanvasRef} hidden={state.screen !== "arena"} fitToWidth={layout !== "desktop"} />
             </NinePatch>
             {state.screen !== "arena" && (
               <>

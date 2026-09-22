@@ -9,8 +9,49 @@
 // there, and shows the name. No animejs, no transform, no motion at all.
 
 import type { PointerEvent as ReactPointerEvent, RefObject } from "react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { wholePixelWidth } from "@/ui/layoutMode";
 import styles from "./shell.module.css";
+
+/**
+ * Sizes a pixel canvas to a whole number of device pixels per source pixel.
+ *
+ * On the fixed stage a canvas is shown at its own size and the stage scale is
+ * whole, so nothing is resampled. On a phone the width is whatever the phone
+ * is, and a canvas stretched to it lands source pixels on fractions of device
+ * pixels, which is how pixel art turns to mush. This picks the largest whole
+ * multiple that fits and leaves the rest as margin.
+ *
+ * Off on the desktop stage, where the stage already does this.
+ */
+export function usePixelFit(ref: RefObject<HTMLCanvasElement | null>, enabled: boolean): void {
+  useEffect(() => {
+    const canvas = ref.current;
+    if (!canvas) return;
+    if (!enabled) {
+      canvas.style.width = "";
+      canvas.style.height = "";
+      return;
+    }
+    const fit = (): void => {
+      const parent = canvas.parentElement;
+      if (!parent || canvas.width === 0) return;
+      const room = parent.clientWidth;
+      const width = wholePixelWidth(canvas.width, room, window.devicePixelRatio || 1);
+      // Nothing whole fits on a one to one screen, so fill the width and take
+      // the soft edges over a canvas wider than the phone.
+      canvas.style.width = width === null ? "100%" : `${width}px`;
+      canvas.style.height = "auto";
+    };
+    fit();
+    window.addEventListener("resize", fit);
+    window.addEventListener("orientationchange", fit);
+    return () => {
+      window.removeEventListener("resize", fit);
+      window.removeEventListener("orientationchange", fit);
+    };
+  }, [ref, enabled]);
+}
 
 export interface SlotCanvasProps {
   canvasRef: RefObject<HTMLCanvasElement | null>;
@@ -19,10 +60,13 @@ export interface SlotCanvasProps {
   probeSymbol: (x: number, y: number) => string | null;
   /** What to call that symbol on screen, or null when it has no name. */
   labelFor: (symbol: string) => string | null;
+  /** True on a phone, where the canvas has to fit the width it is given. */
+  fitToWidth: boolean;
 }
 
-export function SlotCanvas({ canvasRef, hidden, probeSymbol, labelFor }: SlotCanvasProps) {
+export function SlotCanvas({ canvasRef, hidden, probeSymbol, labelFor, fitToWidth }: SlotCanvasProps) {
   const [tip, setTip] = useState<{ label: string; x: number; y: number } | null>(null);
+  usePixelFit(canvasRef, fitToWidth);
 
   const read = (event: ReactPointerEvent<HTMLCanvasElement>): void => {
     const canvas = event.currentTarget;

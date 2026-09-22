@@ -26,3 +26,23 @@
   background: var(--pit);
   overflow: hidden;
 }
+
+/* The phone layout's container.
+ *
+ * No transform, no fixed size, no letterbox: the viewport is the stage. The
+ * safe area insets keep the top bar out of the notch and the last button off
+ * the home indicator, and nothing is allowed to scroll sideways, which is the
+ * failure mode of a wide composition on a narrow screen.
+ */
+.fluid {
+  position: absolute;
+  inset: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  background: var(--pit-deep);
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  /* A tap should act, not wait for a double tap to be ruled out. */
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
+}

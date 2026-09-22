@@ -1475,3 +1475,223 @@ a.transferHash {
 .agentPortrait:focus-within .faceTip {
   visibility: visible;
 }
+
+/* ------------------------------------------------------------ the phone ----
+ *
+ * Not the stage scaled down. The stage is a 1280 by 720 composition and it
+ * fits a phone at about a third, which puts sixteen pixel text at five. So on
+ * a phone the shell is an ordinary column in an ordinary scroll, with the
+ * type stepped up, the panels stacked in the order they matter, and every
+ * control given a thumb sized box.
+ *
+ * Everything here is scoped to the layout attribute the stage sets, so the
+ * desktop rules above are untouched.
+ */
+.shell[data-layout="portrait"],
+.shell[data-layout="compact"] {
+  position: static;
+  inset: auto;
+  display: flex;
+  flex-direction: column;
+  /* The container the stage hands a phone is already the viewport, so this
+     fills it without naming a viewport unit, which the guard bans and which
+     lies about height on a phone with a browser bar anyway. */
+  min-height: 100%;
+  padding: var(--space-snug) var(--space-base) var(--space-loose);
+  gap: var(--space-base);
+  /* Read at arm's length rather than at desk distance. The scale steps up
+     rather than the layout zooming, so line lengths stay sensible. */
+  --text-micro: 13px;
+  --text-small: 15px;
+  --text-body: 17px;
+  --text-lead: 21px;
+  --text-title: 28px;
+  --text-hero: 40px;
+}
+
+/* A thumb, not a mouse. Every control gets the full touch target even when
+   its label is two words. */
+.shell[data-layout="portrait"] button,
+.shell[data-layout="compact"] button,
+.shell[data-layout="portrait"] input,
+.shell[data-layout="compact"] input {
+  min-height: 44px;
+}
+
+.shell[data-layout="portrait"] .topbar,
+.shell[data-layout="compact"] .topbar {
+  flex-wrap: wrap;
+  row-gap: var(--space-tight);
+  column-gap: var(--space-snug);
+}
+
+.shell[data-layout="portrait"] .topmeta,
+.shell[data-layout="compact"] .topmeta {
+  flex-wrap: wrap;
+  row-gap: var(--space-tight);
+  column-gap: var(--space-snug);
+}
+
+.shell[data-layout="portrait"] .body,
+.shell[data-layout="compact"] .body {
+  justify-content: flex-start;
+}
+
+/* The round, stacked: what is happening on the canvas, then who it is
+   happening to. On a phone held sideways the two sit beside each other again,
+   because there is width and there is no height. */
+.shell[data-layout="portrait"] .playfield {
+  display: flex;
+  flex-direction: column;
+  height: auto;
+  gap: var(--space-base);
+}
+
+.shell[data-layout="compact"] .playfield {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  height: auto;
+  gap: var(--space-base);
+}
+
+.shell[data-layout="portrait"] .cabinet,
+.shell[data-layout="compact"] .cabinet {
+  width: 100%;
+  gap: var(--space-snug);
+}
+
+.shell[data-layout="portrait"] .canvas,
+.shell[data-layout="compact"] .canvas {
+  max-width: 100%;
+  height: auto;
+}
+
+/* The legend reads under the lever on a phone, where there is no spare width
+   beside it. */
+.shell[data-layout="portrait"] .leverRow,
+.shell[data-layout="compact"] .leverRow {
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-snug);
+}
+
+.shell[data-layout="portrait"] .legend,
+.shell[data-layout="compact"] .legend {
+  width: auto;
+  text-align: center;
+}
+
+/* Lists grow down the page instead of fighting for a fixed height. The page
+   scrolls; the panels do not. */
+.shell[data-layout="portrait"] .lineup,
+.shell[data-layout="compact"] .lineup,
+.shell[data-layout="portrait"] .backList,
+.shell[data-layout="compact"] .backList,
+.shell[data-layout="portrait"] .feed,
+.shell[data-layout="compact"] .feed {
+  overflow: visible;
+  flex: none;
+}
+
+.shell[data-layout="portrait"] .agentRow,
+.shell[data-layout="compact"] .agentRow {
+  align-items: flex-start;
+}
+
+/* A pick is the one thing a viewer does here, and it is done with a thumb
+   inside a window that closes. Rows are tall, the action is on the right
+   where a thumb already is, and nothing is smaller than a thumb. */
+.shell[data-layout="portrait"] .backRow,
+.shell[data-layout="compact"] .backRow {
+  min-height: 56px;
+  gap: var(--space-snug);
+}
+
+.shell[data-layout="portrait"] .backCount,
+.shell[data-layout="compact"] .backCount {
+  text-align: right;
+}
+
+/* The handle field and its button share a row on a phone only if both still
+   fit; otherwise the button drops under the field, which is what happens with
+   the keyboard open on a narrow screen. */
+.shell[data-layout="portrait"] .handleRow,
+.shell[data-layout="compact"] .handleRow {
+  flex-wrap: wrap;
+}
+
+.shell[data-layout="portrait"] .handleInput,
+.shell[data-layout="compact"] .handleInput {
+  flex: 1;
+  min-width: 140px;
+  /* Anything under sixteen makes iOS zoom the page on focus, which is how a
+     layout ends up scrolled sideways with the keyboard open. */
+  font-size: 16px;
+}
+
+/* The quiet between rounds, and the result: one column, in reading order. */
+.shell[data-layout="portrait"] .resting,
+.shell[data-layout="compact"] .resting {
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-base);
+}
+
+.shell[data-layout="portrait"] .restCard,
+.shell[data-layout="compact"] .restCard,
+.shell[data-layout="portrait"] .restBank,
+.shell[data-layout="compact"] .restBank {
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+}
+
+.shell[data-layout="portrait"] .ledger,
+.shell[data-layout="compact"] .ledger {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.shell[data-layout="portrait"] .result,
+.shell[data-layout="compact"] .result {
+  height: auto;
+}
+
+/* The side rooms are sheets on a phone: the whole screen, scrolled, with the
+   way out at the bottom where a thumb is. */
+.shell[data-layout="portrait"] .boardOver,
+.shell[data-layout="compact"] .boardOver {
+  position: fixed;
+  padding: var(--space-base);
+  align-items: stretch;
+}
+
+.shell[data-layout="portrait"] .boardCard,
+.shell[data-layout="compact"] .boardCard {
+  width: 100%;
+  max-height: none;
+  overflow-y: auto;
+}
+
+.shell[data-layout="portrait"] .graveyard,
+.shell[data-layout="compact"] .graveyard {
+  width: 100%;
+}
+
+.shell[data-layout="portrait"] .graves,
+.shell[data-layout="compact"] .graves {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* Nothing is allowed off the side. A pixel panel that overflows by four
+   pixels is a page that scrolls sideways forever. */
+.shell[data-layout="portrait"] *,
+.shell[data-layout="compact"] * {
+  max-width: 100%;
+}
+
+/* While the window is open the pick is the thing to do, so on a phone it sits
+   above the cabinet rather than under it and under the lender. The cabinet is
+   still there, one thumb away, showing the draw it is a pick about. */
+.shell[data-layout="portrait"] .playfield > [data-anim="backing"],
+.shell[data-layout="compact"] .playfield > [data-anim="backing"] {
+  order: -1;
+}
