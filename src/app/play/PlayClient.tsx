@@ -26,6 +26,7 @@ import { ReelSet } from "@/render/slot/reels";
 import { SlotVfx, TIER_PAYOFF } from "@/render/slot/vfx";
 import { createWebAudioSink } from "@/render/slot/webAudio";
 import { Timeline } from "@/render/timeline";
+import { symbolAtPoint } from "@/render/slot/probe";
 import { initialState, reduce, type FlowState, type Screen } from "./machine";
 import { BootScreen } from "./screens/BootScreen";
 import { TitleScreen } from "./screens/TitleScreen";
@@ -808,6 +809,12 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
               if (kept) setHandle(kept);
             }}
             onboarding={howOpen ? onboardingScreens(arenaMode) : null}
+            probeSymbol={(x, y) => {
+              const engine = engineRef.current;
+              // The reels' own state, read at the moment it is asked for, so
+              // the answer is the symbol on screen rather than a cached one.
+              return engine ? symbolAtPoint(SLOT_LAYOUT, engine.reels.reelStates(), x, y) : null;
+            }}
             onShowHow={showHow}
             onCloseHow={closeHow}
             onShowBoard={() => void showBoard(1)}

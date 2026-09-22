@@ -122,6 +122,11 @@ const PAIRS = [
   { what: "a row on the points board", text: palette.ink, surface: lightSurfaces.panelAlt },
   { what: "a rank and a stat on the points board", text: palette.inkDim, surface: lightSurfaces.panelAlt },
   { what: "the handle box a viewer types into", text: palette.ink, surface: palette.bone },
+
+  // Reading the reels: the legend on the dark frame, and what the pointer is
+  // over, in its own cleared band.
+  { what: "the reel legend", text: palette.boneDim, surface: darkSurfaces.bg },
+  { what: "a fighter's name under the pointer", text: palette.bone, surface: palette.pitDeep },
   { what: "the resting headline on the sage panel", text: palette.ink, surface: lightSurfaces.panelAlt },
   { what: "the resting reason on the sage panel", text: palette.inkDim, surface: lightSurfaces.panelAlt },
 

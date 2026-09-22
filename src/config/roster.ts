@@ -43,6 +43,16 @@ export const ROSTER: readonly RosterEntry[] = Object.freeze([
   monster("Bear"),
 ]);
 
+/**
+ * The tier a character belongs to, or null when the id is not on the roster.
+ *
+ * The reels and the lineup both draw roster characters, and a viewer looking
+ * at one should be able to find out what it is without reading this file.
+ */
+export function tierOf(id: string): Tier | null {
+  return ROSTER.find((entry) => entry.id === id)?.tier ?? null;
+}
+
 /** Animations copied for character (non monster) entries, in manifest order. */
 export const CHARACTER_ANIMATIONS = ["Idle", "Walk", "Attack", "Dead"] as const;
 
