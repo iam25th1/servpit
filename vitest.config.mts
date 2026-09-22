@@ -7,6 +7,8 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    include: ["src/**/*.test.ts", "scripts/**/*.test.ts", "test/**/*.test.ts"],
+    // tsx as well, for the screens that are mounted in a dom rather than
+    // called as functions.
+    include: ["src/**/*.test.ts", "src/**/*.test.tsx", "scripts/**/*.test.ts", "test/**/*.test.ts"],
   },
 });
