@@ -17,6 +17,7 @@ import type { ServerContext } from "../context";
 import { log } from "../log";
 import { basescanTx } from "../money";
 import { planRound, runRound, type RoundPlan } from "../round/flow";
+import { settleBackingQuietly } from "../backing/settle";
 import { ArenaStore, type ArenaPhase, type ArenaRound, type ArenaState, type PhaseMark } from "./state";
 
 const sleepMs = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
@@ -382,6 +383,10 @@ export async function playArenaRound(ctx: ServerContext, store: ArenaStore, next
 
   const settled = store.read();
   store.write({ round, last: round, paused: settled.paused, nextRoundAt: new Date(nextAt).toISOString() });
+  // Points for whoever called it, from the picks the window took and the
+  // winner the round already has. Never money, and never a reason for a
+  // finished round to be recorded as failed.
+  settleBackingQuietly(ctx.env.dataDir, ctx.chain.network, plan.roundId, run.round.placements[0]!);
   log.info("arena round complete", { roundId: plan.roundId, winner: run.round.placements[0], reconciled: run.reconciliation.ok, durationMs });
 
   // The figures stand for a moment, then the pit is plainly waiting. A

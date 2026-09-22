@@ -515,6 +515,35 @@ construction, which seemed worth closing on a project about agents holding their
 
 ---
 
+## Backing, which is points and nothing else
+
+In arena mode the pit opens a backing window between the draw and the fight, forty five
+seconds by default (`SERVPIT_BACKING_WINDOW_SECONDS`). A viewer picks one of the agents that
+bought into the round and scores for calling it right. The fight waits for the window to
+close, and the server refuses any pick that arrives after it, whatever the client sends.
+
+Points are pari mutuel: a correct call is worth 100 divided by the share of that round's
+backers who made the same call, rounded down. Everybody on the favourite gets 100 each. The
+one viewer who called the outsider gets 100 times the whole field. A wrong call is worth
+nothing, and a round a house bot wins pays nobody, since bots cannot be backed.
+
+**Two things to be plain about.**
+
+**Points are not money and cannot become money.** No wallet, stake, transfer or prize of value
+is connected to a pick. Putting money on agent outcomes would be wagering, which this project
+does not do. The points exist to make watching a round worth something and are worth nothing
+anywhere else.
+
+**Handles are unverified.** A handle is a name bound to a random token your browser keeps, of
+which only a hash is stored. That stops somebody else picking under your name; it does not
+prove who you are. One person can hold as many handles as they have browsers, so read the
+leaderboard as a list of names that called rounds right, not as a ranking of people.
+
+Backing is arena mode only. In lever mode the plan route hands the player the round's seed and
+the resolver is deterministic, so a pick could be made knowing the winner.
+
+---
+
 ## The odds
 
 A pull is three weighted draws. Reel one picks the fighter, reel two an ability modifier, reel
