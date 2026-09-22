@@ -109,6 +109,19 @@ const PAIRS = [
   { what: "the live badge", text: palette.good, surface: palette.pit },
   { what: "the reconnecting badge, in its cleared band", text: palette.bad, surface: palette.pitDeep },
   { what: "the replay badge", text: palette.amber, surface: palette.pit },
+
+  // Backing: the pick interface on the dark bg frame, and the board on the
+  // sage panel the graveyard uses.
+  { what: "a backer's name in the pick list", text: palette.bone, surface: darkSurfaces.bg },
+  { what: "what an agent drew, under its name", text: palette.boneDim, surface: darkSurfaces.bg },
+  { what: "how many have backed an agent", text: palette.amber, surface: darkSurfaces.bg },
+  { what: "the pick carried through the fight", text: palette.amber, surface: darkSurfaces.bg },
+  { what: "a refused pick, in its cleared band", text: palette.bad, surface: palette.pitDeep },
+  { what: "a call that came in", text: palette.ink, surface: lightSurfaces.panelAlt },
+  { what: "a call that did not", text: palette.inkDim, surface: lightSurfaces.panelAlt },
+  { what: "a row on the points board", text: palette.ink, surface: lightSurfaces.panelAlt },
+  { what: "a rank and a stat on the points board", text: palette.inkDim, surface: lightSurfaces.panelAlt },
+  { what: "the handle box a viewer types into", text: palette.ink, surface: palette.bone },
   { what: "the resting headline on the sage panel", text: palette.ink, surface: lightSurfaces.panelAlt },
   { what: "the resting reason on the sage panel", text: palette.inkDim, surface: lightSurfaces.panelAlt },
 

@@ -75,7 +75,7 @@ const round = (phase: ArenaPhase): ArenaRound => ({
 const state = (phase: ArenaPhase): ArenaState => ({ round: round(phase), last: null, paused: false, nextRoundAt: null, updatedAt: "2026-09-21T00:00:00.000Z" });
 
 /** Every phase a round passes through before its fight is on screen. */
-const BEFORE_THE_FIGHT: ArenaPhase[] = ["planning", "deciding", "banking", "settling", "reels", "resting", "failed"];
+const BEFORE_THE_FIGHT: ArenaPhase[] = ["planning", "deciding", "banking", "settling", "reels", "backing", "resting", "failed"];
 
 const spoilers = (body: string): string[] =>
   [

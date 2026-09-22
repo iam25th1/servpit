@@ -20,17 +20,18 @@ import { StoreFile, UNKNOWN_NETWORK } from "../store/file";
  * banking   the lender is answering, one request at a time
  * settling  entries are moving on chain
  * reels     the draw is revealed, for a known duration, before the fight
+ * backing   viewers pick who they think wins, for a known duration
  * fight     the pit is playing out, for a known duration
  * result    settled, and the figures are final
  * resting   nothing is running, and the reason says why
  * failed    the round did not finish, and the reason says why
  */
-export type ArenaPhase = "planning" | "deciding" | "banking" | "settling" | "reels" | "fight" | "result" | "resting" | "failed";
+export type ArenaPhase = "planning" | "deciding" | "banking" | "settling" | "reels" | "backing" | "fight" | "result" | "resting" | "failed";
 
 export interface PhaseMark {
   phase: ArenaPhase;
   at: string;
-  /** On reels and fight: how long it lasts, so every viewer sees one moment. */
+  /** On reels, backing and fight: how long it lasts, so every viewer sees one moment. */
   durationMs?: number;
   /** Only on resting and failed: a sentence a player can read. */
   reason?: string;

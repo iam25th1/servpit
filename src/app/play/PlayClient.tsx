@@ -44,6 +44,10 @@ import { useArenaFeed } from "./arenaFeed";
 import { readNow, useWallClock } from "./arenaClock";
 import { fightOffsetMs, reasoningLine, watchDecisions, watchEntries, watchOccupants, watchState } from "./arenaScreens";
 import { replayFrame, replayableRound } from "./arenaReplay";
+import { backOptions, pickOutcome } from "./backing";
+import { useBackingFeed } from "./backingFeed";
+import { backerHandle, backerToken, browserStore, setBackerHandle, type StorageLike } from "./backerId";
+import type { BoardShape } from "./screens/GameShell";
 import type { GraveShape } from "./screens/graveyardRows";
 import type { ReplacementShape, WreckShape } from "./screens/wreckMoment";
 import type { BankShape, LoanShape, RefusalShape } from "./screens/BankPanel";
@@ -186,6 +190,42 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
   const [replayStartedAt, setReplayStartedAt] = useState<number | null>(null);
   const replayRound = replayStartedAt !== null && replayable && live.resting ? replayFrame(replayable, replayStartedAt, wallNow) : null;
   const watch = replayRound && feed.view ? watchState({ ...feed.view, round: replayRound }) : live;
+
+  // Backing: who this browser is, what the window says, and what it picked.
+  //
+  // Identity is read in an effect rather than during a render, because
+  // localStorage does not exist on the server and a page that guessed at it
+  // would hydrate into a different handle than it rendered.
+  //
+  // Read once, in the initialiser rather than in an effect: on the server
+  // browserStore falls back to one that forgets, so this is null there and
+  // whatever the browser kept here. Nothing rendered during hydration depends
+  // on it, because the pick interface only exists once the feed says a window
+  // is open, which is after the page is live.
+  const [backerStore] = useState<StorageLike>(() => browserStore());
+  const [handle, setHandle] = useState<string | null>(() => backerHandle(browserStore()));
+  const [deviceToken] = useState<string>(() => backerToken(browserStore()));
+
+  // Never during a replay: a recording has no window to back into, and a pick
+  // on a finished round would be a pick on a known result.
+  const backingLive = arenaMode && replayRound === null;
+  const backingFeed = useBackingFeed(backingLive, watch.round?.roundId ?? null, watch.round?.phase ?? null, handle);
+  const counts = backingFeed.view?.counts ?? {};
+  const myPick = backingFeed.view?.pick ?? null;
+
+  const [board, setBoard] = useState<BoardShape | null>(null);
+  const showBoard = async (page: number): Promise<void> => {
+    try {
+      const query = handle ? `&handle=${encodeURIComponent(handle)}` : "";
+      const response = await fetch(`/api/leaderboard?page=${page}${query}`, { cache: "no-store" });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      setBoard((await response.json()) as BoardShape);
+    } catch {
+      // Never the thrown error. An empty board says the same thing a failed
+      // one would, and neither is worth a stack trace on screen.
+      setBoard({ rows: [], page: 1, pages: 1, total: 0, you: null });
+    }
+  };
   // The screen on show: the pit's phase while it runs itself, the machine's
   // own screen otherwise. Boot and the title belong to the machine either way.
   const watchingNow = arenaMode && state.screen !== "boot" && state.screen !== "title";
@@ -733,6 +773,31 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
             onWreckSeen={() => dispatch({ type: "wreckSeen" })}
             onReplay={() => setReplayStartedAt(readNow())}
             onLeaveReplay={() => setReplayStartedAt(null)}
+            backing={
+              backingLive
+                ? {
+                    window: watch.round?.phase === "backing",
+                    open: backingFeed.view?.open === true,
+                    closesAt: backingFeed.view?.closesAt ?? null,
+                    options: backOptions(watch.round, counts),
+                    backers: backingFeed.view?.backers ?? 0,
+                    handle,
+                    pick: myPick,
+                    error: backingFeed.error,
+                    outcome: pickOutcome(watch.round, myPick, counts),
+                    now: wallNow,
+                  }
+                : null
+            }
+            board={board}
+            onBack={(agentId) => void backingFeed.pick(handle ?? "", deviceToken, agentId)}
+            onHandle={(raw) => {
+              const kept = setBackerHandle(backerStore, raw);
+              if (kept) setHandle(kept);
+            }}
+            onShowBoard={() => void showBoard(1)}
+            onCloseBoard={() => setBoard(null)}
+            onBoardPage={(page) => void showBoard(page)}
             onRetry={retry}
             onPull={() => void pullLever()}
             onPlayAgain={playAgain}

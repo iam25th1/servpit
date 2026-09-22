@@ -63,6 +63,8 @@ const SCREEN_FOR: Record<ArenaPhase, WatchScreen> = {
   banking: "lobby",
   settling: "spinning",
   reels: "spinning",
+  // The pick interface is drawn over the lineup, where the agents are.
+  backing: "lobby",
   fight: "arena",
   result: "result",
   resting: "resting",

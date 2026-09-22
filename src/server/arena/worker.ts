@@ -10,12 +10,14 @@
 // rest and what to publish.
 
 import { existsSync } from "node:fs";
+import { backingWindowSeconds } from "@/config/backing";
 import { toChips, weiPerChip } from "@/config/stake";
 import { ticksToMs } from "@/config/playback";
 import type { ServerContext } from "../context";
 import { log } from "../log";
 import { basescanTx } from "../money";
 import { planRound, runRound, type RoundPlan } from "../round/flow";
+import { settleBackingQuietly } from "../backing/settle";
 import { ArenaStore, type ArenaPhase, type ArenaRound, type ArenaState, type PhaseMark } from "./state";
 
 const sleepMs = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
@@ -305,6 +307,16 @@ export async function playArenaRound(ctx: ServerContext, store: ArenaStore, next
   );
   await sleepMs(REEL_REVEAL_MS);
 
+  // Picks, between the draw and the fight.
+  //
+  // Here because a viewer has to see what each agent drew before backing one,
+  // and because the fight cannot have started: the outcome was fixed by the
+  // seed at planning and is not published until the fight phase, so a window
+  // that closed after it began would be a window on a known result.
+  const backingMs = backingWindowSeconds() * 1_000;
+  publish({}, "backing", { durationMs: backingMs });
+  await sleepMs(backingMs);
+
   // Settled. The fight can be shown now, and only now: everything in here
   // decides the winner, and the resolver is deterministic.
   // Whole milliseconds: this is published as the length of a moment every
@@ -371,6 +383,10 @@ export async function playArenaRound(ctx: ServerContext, store: ArenaStore, next
 
   const settled = store.read();
   store.write({ round, last: round, paused: settled.paused, nextRoundAt: new Date(nextAt).toISOString() });
+  // Points for whoever called it, from the picks the window took and the
+  // winner the round already has. Never money, and never a reason for a
+  // finished round to be recorded as failed.
+  settleBackingQuietly(ctx.env.dataDir, ctx.chain.network, plan.roundId, run.round.placements[0]!);
   log.info("arena round complete", { roundId: plan.roundId, winner: run.round.placements[0], reconciled: run.reconciliation.ok, durationMs });
 
   // The figures stand for a moment, then the pit is plainly waiting. A
