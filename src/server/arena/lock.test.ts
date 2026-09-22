@@ -14,6 +14,9 @@ const file = (): string => {
   return join(dir, "arena.lock");
 };
 
+/** Higher than any pid this machine hands out, so nothing answers for it. */
+const DEAD_PID = 4_194_305;
+
 describe("one worker at a time", () => {
   it("takes the lock and writes who holds it", () => {
     const path = file();
@@ -25,7 +28,8 @@ describe("one worker at a time", () => {
 
   it("refuses a second worker while the first is alive", () => {
     const path = file();
-    writeFileSync(path, JSON.stringify({ pid: process.pid + 1, at: Date.now() }));
+    // A pid that is definitely running: this one.
+    writeFileSync(path, JSON.stringify({ pid: process.pid, at: Date.now() }));
     expect(() => holdArenaLock(path)).toThrow(ArenaAlreadyRunning);
     expect(() => holdArenaLock(path)).toThrow(/already running/);
     // Somebody else's lock, so it is still there.
@@ -34,7 +38,19 @@ describe("one worker at a time", () => {
 
   it("takes over a lock whose worker died, rather than leaving the pit dark", () => {
     const path = file();
-    writeFileSync(path, JSON.stringify({ pid: process.pid + 1, at: Date.now() - ARENA_LOCK_STALE_MS - 1 }));
+    writeFileSync(path, JSON.stringify({ pid: DEAD_PID, at: Date.now() - ARENA_LOCK_STALE_MS - 1 }));
+    const lock = holdArenaLock(path);
+    expect(JSON.parse(readFileSync(path, "utf8")).pid).toBe(process.pid);
+    lock.release();
+  });
+
+  it("takes over at once when the holder is gone, however fresh the lock looks", () => {
+    // A worker that was killed leaves a lock stamped a second ago. Waiting
+    // out the staleness window before its own restart may take the lock is
+    // half an hour of a pit that is not running, and a supervised process is
+    // restarted in seconds.
+    const path = file();
+    writeFileSync(path, JSON.stringify({ pid: DEAD_PID, at: Date.now() }));
     const lock = holdArenaLock(path);
     expect(JSON.parse(readFileSync(path, "utf8")).pid).toBe(process.pid);
     lock.release();
