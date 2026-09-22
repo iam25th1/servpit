@@ -12,6 +12,7 @@
 
 import { toChips, weiPerChip } from "@/config/stake";
 import { getServerContext } from "@/server/context";
+import { LEVER_CLOSED, inProduction } from "@/server/production";
 import { log } from "@/server/log";
 import { internalDetail, publicError } from "@/server/publicError";
 import type { AgentDecision } from "@/server/decisions/types";
@@ -92,6 +93,10 @@ export async function POST(request: Request): Promise<Response> {
   // costs real money to make: six agents deciding is a cent of SERV whether
   // or not anybody ever settles it.
   if (arenaMode()) return Response.json({ code: "arena_running", error: ARENA_RUNNING, message: ARENA_RUNNING, retryable: false }, { status: 409 });
+  // And closed outright on a public deployment, whatever the flag says. This
+  // route spends an operator's SERV credit and writes a plan the settle path
+  // will act on, which is not something a visitor gets to start.
+  if (inProduction()) return Response.json({ code: "lever_closed", error: LEVER_CLOSED, message: LEVER_CLOSED, retryable: false }, { status: 403 });
 
   const ctx = await getServerContext();
   const flow = { ...ctx.flow, entrants: parsed.entrants };
