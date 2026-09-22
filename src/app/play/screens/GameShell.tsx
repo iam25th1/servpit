@@ -53,6 +53,11 @@ function badgeText(watching: WatchingShape): string {
   return watching.error ?? (watching.live ? "watching live" : "reconnecting");
 }
 
+/** True while what is on screen is a recording rather than the pit. */
+function watchingReplay(watching: WatchingShape | null): boolean {
+  return watching?.replay === true;
+}
+
 function badgeStyle(watching: WatchingShape): string {
   if (watching.replay) return styles.replay;
   return watching.live && !watching.error ? styles.live : styles.offair;
@@ -136,6 +141,37 @@ interface RunShape {
   replay: { placements: string[] };
 }
 
+/** What the pick interface draws, and what happened to this viewer's call. */
+export interface BackingShape {
+  /** True while the pit is in the backing phase, and this is not a replay. */
+  window: boolean;
+  /** True while a pick would still be taken: the phase and the clock agree. */
+  open: boolean;
+  closesAt: string | null;
+  options: Array<{ agentId: string; name: string; face: string | null; characterId: string | null; tier: string | null; backers: number }>;
+  /** How many viewers have backed anybody in this round. */
+  backers: number;
+  /** The name this browser backs under, or null until one is chosen. */
+  handle: string | null;
+  /** What this viewer backed in this round, or null. */
+  pick: string | null;
+  /** A plain sentence about the last pick that was refused, or null. */
+  error: string | null;
+  /** How the call went, once the round has a result. */
+  outcome: { pick: string; won: boolean; points: number } | null;
+  /** Wall time, from the one clock in the client that keeps it. */
+  now: number;
+}
+
+/** A page of the points board. */
+export interface BoardShape {
+  rows: Array<{ handle: string; points: number; picks: number; correct: number; streak: number; best: number }>;
+  page: number;
+  pages: number;
+  total: number;
+  you: { handle: string; points: number; picks: number; correct: number; streak: number; best: number } | null;
+}
+
 /** The spectator's view of a pit that runs itself. */
 export interface WatchingShape {
   /** True while the phase stream is connected. */
@@ -195,6 +231,15 @@ export interface GameShellProps {
   /** Watch the last finished round again, from the recording. */
   onReplay: () => void;
   onLeaveReplay: () => void;
+  /** Backing, in arena mode only. Null in the lever flow, where it cannot exist. */
+  backing: BackingShape | null;
+  /** The points board, once a viewer asks for it. */
+  board: BoardShape | null;
+  onBack: (agentId: string) => void;
+  onHandle: (handle: string) => void;
+  onShowBoard: () => void;
+  onCloseBoard: () => void;
+  onBoardPage: (page: number) => void;
   onPlayAgain: () => void;
   onToggleMute: () => void;
 }
@@ -265,19 +310,33 @@ export function GameShell(props: GameShellProps) {
           </div>
 
           {state.screen === "arena" ? (
-            <ArenaHud run={run} arena={props.arena} />
+            <ArenaHud run={run} arena={props.arena} backing={props.backing} />
           ) : state.screen === "spinning" ? (
             <BuyIns plan={plan} entries={entries} error={state.error} onRetry={props.onRetry} />
+          ) : props.backing?.window ? (
+            /* The pick interface stands where the lineup does, because it is
+               the lineup with what each agent drew and who is behind it. */
+            <Backing backing={props.backing} onBack={props.onBack} onHandle={props.onHandle} />
           ) : (
             <Lineup plan={plan} decided={decided} occupants={occupants} error={state.error} onRetry={props.onRetry} />
           )}
       </div>
 
       {state.screen === "resting" && props.watching && (
-        <Resting watching={props.watching} run={run} bank={plan?.bank ?? null} onShowGraveyard={props.onShowGraveyard} onReplay={props.onReplay} bankEnabled={props.bankEnabled} />
+        <Resting
+          watching={props.watching}
+          run={run}
+          bank={plan?.bank ?? null}
+          onShowGraveyard={props.onShowGraveyard}
+          onReplay={props.onReplay}
+          onShowBoard={props.onShowBoard}
+          backingSoon={props.backing !== null && !watchingReplay(props.watching)}
+          bankEnabled={props.bankEnabled}
+        />
       )}
+      {props.board && <Board board={props.board} onClose={props.onCloseBoard} onPage={props.onBoardPage} />}
       {state.screen === "wreck" && run && <WreckScreen run={run} onContinue={props.onWreckSeen} />}
-      {state.screen === "result" && run && <ResultScreen run={run} onPlayAgain={props.onPlayAgain} />}
+      {state.screen === "result" && run && <ResultScreen run={run} onPlayAgain={props.onPlayAgain} backing={props.backing} />}
       </div>
     </main>
   );
@@ -379,6 +438,146 @@ export function GameShell(props: GameShellProps) {
         <Button onClick={onRetry} scale={2}>
           Try again
         </Button>
+      </div>
+    );
+  }
+
+  /**
+   * The pick interface, while the window is open.
+   *
+   * The lineup with what each agent drew and who is behind it, because
+   * backing a fighter nobody has seen is a coin toss with extra steps. Points
+   * only: nothing here moves a chip, and the line under the heading says so
+   * where a viewer reads it rather than only in the README.
+   */
+  function Backing({ backing, onBack, onHandle }: { backing: BackingShape; onBack: (agentId: string) => void; onHandle: (handle: string) => void }) {
+    const listRef = useRef<HTMLUListElement>(null);
+    const [draft, setDraft] = useState("");
+    const seconds = secondsUntil(backing.closesAt, backing.now);
+    useEffect(() => {
+      const rows = listRef.current ? [...listRef.current.querySelectorAll<HTMLElement>("li")] : [];
+      void staggerIn(rows, { delay: 60 });
+    }, []);
+
+    return (
+      <NinePatch sprite="bg" data-anim="backing">
+        <h2 className={styles.sideHead}>Back a fighter</h2>
+        <p className={styles.sideNote}>
+          {backing.open
+            ? `Picks close in ${seconds === null ? "a moment" : seconds === 1 ? "a second" : `${seconds} seconds`}. Points only, never money.`
+            : "Picks are closed for this round."}
+        </p>
+        {backing.handle === null ? (
+          <form
+            className={styles.handleRow}
+            onSubmit={(event) => {
+              event.preventDefault();
+              onHandle(draft);
+            }}
+          >
+            <label className={styles.handleLabel} htmlFor="backing-handle">
+              Pick a handle to back under
+            </label>
+            <input
+              id="backing-handle"
+              className={styles.handleInput}
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              maxLength={16}
+              autoComplete="off"
+              spellCheck={false}
+            />
+            <Button onClick={() => onHandle(draft)} scale={2}>
+              Use this handle
+            </Button>
+          </form>
+        ) : (
+          <p className={styles.sideNote}>
+            Backing as {backing.handle}. {backing.backers === 1 ? "1 viewer has" : `${backing.backers} viewers have`} picked so far.
+          </p>
+        )}
+        <ul ref={listRef} className={styles.backList}>
+          {backing.options.map((option) => (
+            <li key={option.agentId} className={option.agentId === backing.pick ? `${styles.backRow} ${styles.backed}` : styles.backRow}>
+              <img className={styles.faceset} src={facesetPath(option.face ?? characterFor(option.agentId))} alt="" width={38} height={38} />
+              <div className={styles.backWho}>
+                <span className={styles.backName}>{option.name}</span>
+                <span className={styles.backDraw}>{option.characterId ? `${option.characterId}, ${option.tier}` : "waiting on the draw"}</span>
+              </div>
+              <span className={styles.backCount}>{option.backers === 1 ? "1 backer" : `${option.backers} backers`}</span>
+              {/* A handle before a pick: without one the server would refuse
+                  it, and a button that only produces a refusal is a worse
+                  answer than a button that waits. */}
+              <Button onClick={() => onBack(option.agentId)} scale={2} disabled={!backing.open || backing.handle === null}>
+                {option.agentId === backing.pick ? "Backed" : "Back"}
+              </Button>
+            </li>
+          ))}
+        </ul>
+        {backing.error && (
+          <p className={styles.backError} role="status">
+            {backing.error}
+          </p>
+        )}
+      </NinePatch>
+    );
+  }
+
+  /**
+   * The points board.
+   *
+   * Handles are unverified, so this is a list of names that called rounds
+   * right rather than a ranking of people, and the line at the bottom says
+   * so on the screen rather than only in the README.
+   */
+  function Board({ board, onClose, onPage }: { board: BoardShape; onClose: () => void; onPage: (page: number) => void }) {
+    const rootRef = useRef<HTMLDivElement>(null);
+    useEffect(() => {
+      const rows = rootRef.current ? [...rootRef.current.querySelectorAll<HTMLElement>("[data-board-row]")] : [];
+      void staggerIn(rows, { delay: 40 });
+    }, [board.page]);
+
+    return (
+      <div ref={rootRef} className={styles.boardOver} data-anim="board">
+        <NinePatch sprite="panelAlt" scale={uiScale} className={styles.boardCard}>
+          <h2 className={styles.graveTitle}>Who calls it right</h2>
+          <p className={styles.sideNote}>
+            {board.total === 1 ? "1 backer" : `${board.total} backers`}. Points, never money, and handles are unverified.
+          </p>
+          <ul className={styles.boardList}>
+            {board.rows.map((row, i) => (
+              <li key={row.handle} className={row.handle === board.you?.handle ? `${styles.boardRow} ${styles.boardYou}` : styles.boardRow} data-board-row="">
+                <span className={styles.boardRank}>{(board.page - 1) * 10 + i + 1}</span>
+                <span className={styles.boardHandle}>{row.handle}</span>
+                <span className={styles.boardStat}>
+                  {row.correct} of {row.picks} called
+                </span>
+                <span className={styles.boardStat}>{row.streak > 0 ? `${row.streak} in a row` : "no run"}</span>
+                <span className={styles.boardPoints}>{row.points}</span>
+              </li>
+            ))}
+          </ul>
+          {board.total === 0 && <p className={styles.sideNote}>Nobody has backed a round yet.</p>}
+          {board.you && !board.rows.some((row) => row.handle === board.you?.handle) && (
+            <p className={styles.sideNote}>
+              You have {board.you.points} points from {board.you.picks} picks.
+            </p>
+          )}
+          <div className={styles.restActions}>
+            <Button onClick={() => onPage(board.page - 1)} scale={2} disabled={board.page <= 1}>
+              Back a page
+            </Button>
+            <span className={styles.boardStat}>
+              Page {board.page} of {board.pages}
+            </span>
+            <Button onClick={() => onPage(board.page + 1)} scale={2} disabled={board.page >= board.pages}>
+              On a page
+            </Button>
+            <Button onClick={onClose} scale={2}>
+              Close
+            </Button>
+          </div>
+        </NinePatch>
       </div>
     );
   }
@@ -549,7 +748,7 @@ export function GameShell(props: GameShellProps) {
     );
   }
 
-  function ArenaHud({ run, arena }: { run: RunShape | null; arena: ArenaStanding }) {
+  function ArenaHud({ run, arena, backing }: { run: RunShape | null; arena: ArenaStanding; backing: BackingShape | null }) {
     const feedRef = useRef<HTMLUListElement>(null);
     useEffect(() => {
       // Only the line that just arrived. Staggering the whole list on every
@@ -571,6 +770,14 @@ export function GameShell(props: GameShellProps) {
             {entrants > 0 ? <span className={styles.hudOf}> of {entrants}</span> : null}
           </span>
         </div>
+        {/* The call stays on screen for the whole fight, so a viewer can
+            watch the one they backed rather than remember which it was. */}
+        {backing?.pick && (
+          <div className={styles.hudRow}>
+            <span>Your pick</span>
+            <span className={styles.hudPick}>{backing.pick}</span>
+          </div>
+        )}
         <div className={styles.hudRow}>
           <span>Pot</span>
           {/* Chips, like every other figure on screen. It printed raw wei,
@@ -616,6 +823,8 @@ export function GameShell(props: GameShellProps) {
     bank,
     onShowGraveyard,
     onReplay,
+    onShowBoard,
+    backingSoon,
     bankEnabled,
   }: {
     watching: WatchingShape;
@@ -623,6 +832,9 @@ export function GameShell(props: GameShellProps) {
     bank: BankShape | null;
     onShowGraveyard: () => void;
     onReplay: () => void;
+    onShowBoard: () => void;
+    /** True when the pit is going to open a window in the round it is about to play. */
+    backingSoon: boolean;
     bankEnabled: boolean;
   }) {
     const rootRef = useRef<HTMLDivElement>(null);
@@ -666,12 +878,23 @@ export function GameShell(props: GameShellProps) {
               Last round: {winner} took {run ? chipsOf(BigInt(run.potWei) - BigInt(run.rakeWei), run.weiPerChip) : "0"} chips.
             </p>
           )}
+          {/* When to come back. The window opens inside the next round rather
+              than at a time of its own, so this says where in the round it
+              is instead of inventing a clock for it. */}
+          {backingSoon && (
+            <p className={styles.restLast} data-rest-row="">
+              Backing opens after the draw, once the next round is under way.
+            </p>
+          )}
           <div className={styles.restActions} data-rest-row="">
             {watching.canReplay && (
               <Button onClick={onReplay} scale={2}>
                 Watch the last round
               </Button>
             )}
+            <Button onClick={onShowBoard} scale={2}>
+              The leaderboard
+            </Button>
             {bankEnabled && (
               <Button onClick={onShowGraveyard} scale={2}>
                 The graveyard
@@ -859,7 +1082,7 @@ export function GameShell(props: GameShellProps) {
     );
   }
 
-  function ResultScreen({ run, onPlayAgain }: { run: RunShape; onPlayAgain: () => void }) {
+  function ResultScreen({ run, onPlayAgain, backing }: { run: RunShape; onPlayAgain: () => void; backing: BackingShape | null }) {
     const rootRef = useRef<HTMLDivElement>(null);
     const coinPathRef = useRef<SVGPathElement>(null);
     const prize = BigInt(run.potWei) - BigInt(run.rakeWei);
@@ -942,6 +1165,14 @@ export function GameShell(props: GameShellProps) {
                 </a>
               )}
             </div>
+          )}
+          {/* What this viewer called, and what it was worth. Points, which
+              are not money and cannot become money. */}
+          {backing?.outcome && (
+            <p className={backing.outcome.won ? styles.pickWon : styles.pickLost} data-anim="pick-result">
+              You backed {backing.outcome.pick}.{" "}
+              {backing.outcome.won ? `It won, and that is ${backing.outcome.points} points.` : "It did not win, so no points this round."}
+            </p>
           )}
           <p className={styles.sideNote}>{note.text}</p>
           {note.failed.length > 0 && (

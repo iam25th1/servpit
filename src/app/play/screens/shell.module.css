@@ -1220,8 +1220,13 @@ a.transferHash {
 
 .restActions {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   gap: var(--space-snug);
   margin-top: var(--space-tight);
+  /* Three ways out of the rest now. A button that wraps its own label into
+     four lines is a column of words, not a button. */
+  white-space: nowrap;
 }
 
 /* The schedule, where the button is in the lever flow. Amber, because it is
@@ -1231,5 +1236,187 @@ a.transferHash {
   font-size: var(--text-small);
   color: var(--amber);
   margin: 0;
+  text-align: right;
+}
+
+/* Backing. The pick interface stands where the lineup does, so it borrows the
+   lineup's rhythm: a row per agent, the faceset on the left, the action on the
+   right. Amber marks the one the viewer chose, which is the accent this
+   project already uses for the thing you are waiting on. */
+.backList {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  flex: 1;
+  min-height: 0;
+  gap: var(--space-tight);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow: hidden;
+}
+
+.backRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-snug);
+}
+
+/* The row the viewer backed. A rule down the inside edge rather than a fill,
+   because a filled row would read as a button and this is a state. */
+.backed {
+  box-shadow: inset 2px 0 0 0 var(--amber);
+  padding-left: var(--space-tight);
+}
+
+.backWho {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.backName {
+  font-family: var(--font-ui);
+  font-size: var(--text-small);
+  color: var(--on-surface, var(--bone));
+}
+
+.backDraw {
+  font-size: var(--text-micro);
+  color: var(--on-surface-dim, var(--bone-dim));
+}
+
+.backCount {
+  font-size: var(--text-micro);
+  color: var(--amber);
+  flex: none;
+}
+
+/* In a cleared band, the way the reconnecting badge is: the warning red does
+   not clear 4.5:1 on the frame it sits on, and a refusal has to be read. */
+.backError {
+  font-size: var(--text-micro);
+  color: var(--bad);
+  background: var(--pit-deep);
+  padding: var(--space-tight);
+  margin: var(--space-snug) 0 0;
+}
+
+.handleRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-snug);
+  margin-bottom: var(--space-snug);
+}
+
+.handleLabel {
+  font-size: var(--text-micro);
+  color: var(--on-surface-dim, var(--bone-dim));
+}
+
+.handleInput {
+  font-family: var(--font-ui);
+  font-size: var(--text-small);
+  color: var(--ink);
+  background: var(--bone);
+  border: 2px solid var(--pit-deep);
+  padding: var(--space-tight);
+  width: 140px;
+}
+
+/* The call, carried through the fight in the HUD beside the standing count. */
+.hudPick {
+  font-family: var(--font-ui);
+  color: var(--amber);
+}
+
+.pickWon,
+.pickLost {
+  font-family: var(--font-ui);
+  font-size: var(--text-small);
+  margin: var(--space-snug) 0 0;
+}
+
+/* The sage result panel is light, and the good green measures 1.46:1 on it,
+   so the difference between a call that came in and one that did not is the
+   sentence and the weight rather than a colour nobody could read. */
+.pickWon {
+  color: var(--ink);
+}
+
+.pickLost {
+  color: var(--ink-dim);
+}
+
+/* The points board. One card, the same shape as the graveyard's, because it is
+   the same kind of side room. */
+/* Over the stage rather than under the card that opened it: the board is a
+   side room, and a room you can see the last one through is two rooms. */
+.boardOver {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-loose);
+  background: rgba(0, 0, 0, 0.72);
+  z-index: 5;
+}
+
+.boardCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-snug);
+  width: min(760px, 100%);
+  max-height: 100%;
+  overflow: hidden;
+}
+
+.boardList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-tight);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.boardRow {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-base);
+  font-size: var(--text-small);
+  color: var(--ink);
+}
+
+/* The viewer's own row, marked the same way their pick is. */
+.boardYou {
+  box-shadow: inset 2px 0 0 0 var(--amber-deep);
+  padding-left: var(--space-tight);
+}
+
+.boardRank {
+  font-family: var(--font-ui);
+  color: var(--ink-dim);
+  width: 2.5ch;
+  flex: none;
+}
+
+.boardHandle {
+  font-family: var(--font-ui);
+  flex: 1;
+  min-width: 0;
+}
+
+.boardStat {
+  font-size: var(--text-micro);
+  color: var(--ink-dim);
+}
+
+.boardPoints {
+  font-family: var(--font-ui);
+  color: var(--ink);
+  width: 6ch;
   text-align: right;
 }

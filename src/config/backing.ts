@@ -25,6 +25,19 @@ export const MAX_BACKING_WINDOW_SECONDS = 600;
  */
 export const POINTS_PER_ROUND = 100;
 
+/**
+ * The award for one correct call among this many backers.
+ *
+ * Here rather than on the server because the result screen works it out too,
+ * from the same counts, so what a viewer reads and what the board records
+ * cannot drift. Rounded down, so the award never invents a point the split
+ * does not support and every backer of the same agent is paid the same.
+ */
+export function pointsFor(backers: number, correct: number): number {
+  if (correct <= 0 || backers <= 0) return 0;
+  return Math.floor((POINTS_PER_ROUND * backers) / correct);
+}
+
 /** What a handle may be: short, lower case, and nothing that looks like a url. */
 export const HANDLE_PATTERN = /^[a-z0-9_-]{3,16}$/;
 

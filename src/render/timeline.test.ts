@@ -211,13 +211,14 @@ describe("render source hygiene", () => {
 describe("slot source hygiene", () => {
   it("no timers or clocks in the slot code or the play screen either", () => {
     const banned = [/setTimeout/, /setInterval/, /requestAnimationFrame/, /Date\.now/, /performance\.now/];
-    // Two files, named here rather than pattern matched, and both about wall
+    // Three files, named here rather than pattern matched, and all about wall
     // time rather than animation: a spectator's connection to the pit
-    // reconnects and polls on a timer, and a countdown to the next round is a
-    // clock. The Timeline runs in round time and does not exist at all while
-    // the pit is resting, so neither of those can come from it. Everything
-    // that moves on a canvas still does.
-    const clockwork = new Set(["arenaFeed.ts", "arenaClock.ts"]);
+    // reconnects and polls on a timer, a countdown to the next round is a
+    // clock, and the backing tallies move while no phase does, so they are
+    // polled. The Timeline runs in round time and does not exist at all while
+    // the pit is resting, so none of those can come from it. Everything that
+    // moves on a canvas still does.
+    const clockwork = new Set(["arenaFeed.ts", "arenaClock.ts", "backingFeed.ts"]);
     const offenders: string[] = [];
     const walk = (dir: string) => {
       for (const name of readdirSync(dir)) {
@@ -269,7 +270,7 @@ describe("slot source hygiene", () => {
     // reason: a reconnect and a countdown are wall time, not animation. A
     // requestAnimationFrame in either of them would still be caught, because
     // that is the animation clock and it belongs to loop.ts.
-    const clockwork = new Set(["arenaFeed.ts", "arenaClock.ts"]);
+    const clockwork = new Set(["arenaFeed.ts", "arenaClock.ts", "backingFeed.ts"]);
     const offenders: string[] = [];
     const walk = (dir: string) => {
       for (const name of readdirSync(dir)) {
