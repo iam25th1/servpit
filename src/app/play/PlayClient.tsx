@@ -183,13 +183,16 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
   // The pit's own feed, and the only clock in the client that runs in wall
   // time. Both are inert unless arena mode is on.
   const feed = useArenaFeed(arenaMode);
-  const wallNow = useWallClock(arenaMode);
+  // The only thing in the client that still needs a clock is a replay, which
+  // advances its own phases in wall time. Everything else that counts seconds
+  // does it in the leaf that shows the number.
+  const [replayStartedAt, setReplayStartedAt] = useState<number | null>(null);
+  const wallNow = useWallClock(arenaMode && replayStartedAt !== null);
   const live = watchState(feed.view);
   // Watching the last round again, which is the resting screen's offer and
   // never the pit's. It yields the moment the pit is no longer resting, so a
   // live round always wins the screen back without anybody being asked.
   const replayable = arenaMode ? replayableRound(feed.view) : null;
-  const [replayStartedAt, setReplayStartedAt] = useState<number | null>(null);
   const replayRound = replayStartedAt !== null && replayable && live.resting ? replayFrame(replayable, replayStartedAt, wallNow) : null;
   const watch = replayRound && feed.view ? watchState({ ...feed.view, round: replayRound }) : live;
 
@@ -766,7 +769,6 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
                     restReason: watch.restReason,
                     paused: watch.paused,
                     nextRoundAt: watch.nextRoundAt,
-                    now: wallNow,
                     // A replay is showing the last round, so the line reads
                     // in the past tense exactly as the resting card does.
                     reasoning: reasoningLine(watch.round, watch.resting || replayRound !== null),
@@ -798,7 +800,6 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
                     pick: myPick,
                     error: backingFeed.error,
                     outcome: pickOutcome(watch.round, myPick, counts),
-                    now: wallNow,
                   }
                 : null
             }
