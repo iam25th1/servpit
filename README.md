@@ -4,7 +4,7 @@
 
 **A slot machine decides who fights. Six agents decide whether to pay for a seat.**
 
-`SERV Reasoning` · `Coinbase AgentKit` · `Base Sepolia` · `Next.js` · `795 tests`
+`SERV Reasoning` · `Coinbase AgentKit` · `Base Sepolia` · `Next.js` · `1190 tests`
 
 [![ci](https://github.com/iam25th1/servpit/actions/workflows/ci.yml/badge.svg)](https://github.com/iam25th1/servpit/actions/workflows/ci.yml)
 
@@ -46,6 +46,11 @@ pays its own entry from its own wallet, on chain, and the transaction is on Base
 
 Nobody stakes on its behalf. A broke agent cannot enter. An agent without gas is excluded
 and told which of the two it was short on.
+
+That is the lever flow, and it still works exactly as it did. With `SERVPIT_ARENA_MODE` on the
+pit runs itself instead: a worker plays a round every interval, the house pulls the lever, and
+everybody watching sees the same round at the same moment. The only thing a visitor does then
+is back an agent for points, which are points and never money.
 
 ### The artifact
 
@@ -124,8 +129,9 @@ it did on screen, and 68.9 seconds of a frozen "Locked in".
 
 ## Live settlement
 
-Eighteen settled rounds on Base Sepolia, seventeen of them reconciled. The one that did not is
-still on file, and why is below.
+Forty one settled rounds on Base Sepolia, forty of them reconciled. The one that did not is
+still on file, and why is below. On chain across those rounds: 150 entries, 7 payouts, 6 loans,
+2 repayments, 1 seizure and 3 operator refills, every one of them a transaction with a hash.
 
 Round `r-42ee92f9c5b6f41e`, seed `hardening1`, is an agent win under the current prize model.
 Four agents paid in 10 chips each, thirty chips had rolled over from a round nobody real won,
@@ -232,8 +238,8 @@ what a fully degraded round looks like.
 ## The bank, live on Base Sepolia
 
 `SERVPIT_BANK_ENABLED` is on. A seventh agent has joined the pit without taking a seat in it,
-and it settles with real money: nine rounds on Base Sepolia, every one reconciled, every hash
-below on the block explorer. `docs/bank-live.md` is the full record, including what going live
+and it settles with real money: six loans, two repayments and one seizure on Base Sepolia, in
+rounds that reconciled, every hash below on the block explorer. `docs/bank-live.md` is the full record, including what going live
 found that a local chain could not.
 
 Setting the flag to false gives back exactly the game that shipped in 12a: one fixed stake per
@@ -332,11 +338,18 @@ it is not the browser.
 
 ```bash
 SERVPIT_ARENA_MODE=true npm run arena     # start it
-touch data/arena-paused                   # pause it, without a restart
-rm data/arena-paused                      # start it again
+npm run arena -- pause                    # stop after the round in flight
+npm run arena -- resume                   # start again at the next interval
+npm run arena -- status                   # what it is doing, and when the next round is
+npm run serv -- off                       # stop paying for reasoning, without a restart
 curl localhost:3000/api/arena             # what it is doing now
 curl -N localhost:3000/api/arena/stream   # one event per phase change
 ```
+
+Both switches are files in the data directory, read at the start of every round. A running
+worker and a running site each hold their clients for the life of the process and neither
+rereads its environment, so an environment variable would need a restart to be heard and a
+file does not.
 
 A round takes about a minute of wall clock when nobody borrows: 10 seconds reading balances,
 34 for six agents to decide in parallel, 11 to settle the entries on chain, and ten for the
@@ -347,12 +360,49 @@ Nothing that decides the fight is readable before the fight is being shown. The 
 deterministic, so the seed is the winner, and it stays on the server until the moment the
 fight starts.
 
+### What a viewer sees
+
+Every viewer watches the same round at the same moment. The client subscribes to the phase
+stream and reads the round from the endpoint, so the screen is the phase the pit is in:
+the lineup while the agents decide, the lender while it answers, the buy ins as they confirm,
+the draw, the backing window, the fight, the figures.
+
+- **Arriving mid round lands in the right moment.** The worker publishes when the fight began
+  and how long it runs, so a viewer who arrives mid fight seeks the canvas Timeline to that
+  offset. Two browsers opened minutes apart are on the same tick.
+- **The quiet between rounds is a screen, not a stale result.** A countdown, what the last
+  round paid, Marrow's book, the graveyard, the leaderboard, and the reason in the worker's
+  own words when it is resting on funds or paused.
+- **The last round can be watched again**, from the recording the round left behind: the
+  decisions, the lender, the draw, the fight and the figures, with no SERV call and no chain
+  call. A replay says so in the badge and yields the moment a live round starts.
+- **A dropped stream reconnects and resyncs**, and a viewer is told one plain sentence while
+  the pit is out of reach. No transport error ever reaches the screen.
+- **A first time visitor is told what they are looking at.** How it works opens once, sits in
+  the top bar after that, and the reels carry a legend saying what the three of them mean.
+
 ### What a round costs
 
 About a cent of SERV: six agent decisions plus one for every loan the bank is asked about.
-Measured over the nine live rounds, $0.0086 with nobody borrowing and $0.0126 with four
-borrowers asking. Every one of those rounds reconciled across the agents, the pot, the bank and
-the operator, with conservation and both solvency checks passing.
+Measured across the 29 settled rounds that actually called SERV, the median round costs
+**$0.0125**, and a round where nobody borrowed, so only the six agents were asked, costs
+**$0.0090**. Every one of those rounds reconciled across the agents, the pot, the bank and the
+operator, with conservation and both solvency checks passing.
+
+Left running, that is the whole bill:
+
+| a round every | rounds a day | SERV a day |
+|---|---|---|
+| 10 minutes | 144 | $1.80 |
+| 30 minutes | 48 | $0.60 |
+| 60 minutes | 24 | $0.30 |
+
+And it can be turned off without stopping the pit. `npm run serv -- off` writes one file that
+every process reads at the start of every round, so nothing restarts and nothing is billed:
+the agents fall back to the deterministic heuristic and Marrow to the deterministic lender.
+**A round played with SERV off is recorded and labelled as instinct, never as reasoning.** The
+badge in the top bar says which kind of round is on screen, and every decision row says which
+kind of answer it is.
 
 ---
 
@@ -533,6 +583,12 @@ nothing, and a round a house bot wins pays nobody, since bots cannot be backed.
 is connected to a pick. Putting money on agent outcomes would be wagering, which this project
 does not do. The points exist to make watching a round worth something and are worth nothing
 anywhere else.
+
+The board keeps points, picks, correct calls, the current streak and the best one, paged, with
+the viewer's own row marked. Picks are an append only log rather than a document, because a
+backing window is one moment that many viewers write in at once and a store that reads a file
+and writes it back loses whichever pick lost the race. A handle is bound to the hash of a
+token the browser makes and keeps, so a name cannot be taken over, and only the hash is stored.
 
 **Handles are unverified.** A handle is a name bound to a random token your browser keeps, of
 which only a hash is stored. That stops somebody else picking under your name; it does not
@@ -736,9 +792,11 @@ a money surface.
 | `npm run sim` | Runs N headless rounds, prints rarity distribution, win rate by roster entry, average round length and payout conservation |
 | `npm run sim:economy` | Plays the economy out over N rounds with no chain and no model, at three settings of the bank's share, and reports wrecks, treasury over time and agent EV |
 | `npm run round -- --seed x` | One full round end to end from the command line, exactly as the API route does |
+| `npm run arena` | The worker that plays a round every interval. `-- pause`, `-- resume` and `-- status` answer without starting anything |
+| `npm run serv -- on\|off\|status` | Turns SERV reasoning on or off for the next round, in every process, without a restart |
 | `npm run extract-assets` | Pulls the roster, FX, UI kit, fonts and tilesets out of the asset pack into `public/assets` and writes the manifest |
 | `npm run gate` | typecheck, lint, test, build. What CI runs |
-| `npm test` | 795 tests |
+| `npm test` | 1190 tests |
 
 </details>
 
@@ -751,8 +809,21 @@ a money surface.
 
 <br>
 
-**The pot wallet is operator-held.** There is no escrow contract. The pot is a wallet whose key
-sits with the operator, and that is a trust assumption, not a trustless design.
+**The pot, the bank and the operator wallets are operator-held.** There is no escrow contract
+and no lending contract. They are wallets whose keys sit with the operator, and that is a trust
+assumption rather than a trustless design.
+
+**Debt is ledger accounting over on-chain transfers.** A loan is a real transfer with a hash,
+and so is a repayment and a seizure. What the loan is worth, what interest it carries and what
+is owed are numbers this application keeps in a file. Nothing on chain enforces any of it.
+
+**Everything runs on Base Sepolia, a test network.** The ETH involved has no value, which is
+the only reason it is honest to let six agents lose it in public.
+
+**Handles are unverified and points carry no value.** A handle is a name bound to a token a
+browser keeps, which stops somebody else picking under it and proves nothing about who they
+are. One person can hold as many handles as they have browsers. The points are a score for
+calling rounds right and are not redeemable for anything.
 
 **House bots do not hold wallets.** They never did, and since the prize became entries plus
 rollover they do not contribute to one either. Bots taking a share of a pot funded by others is

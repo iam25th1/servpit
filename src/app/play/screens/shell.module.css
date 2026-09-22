@@ -1420,3 +1420,58 @@ a.transferHash {
   width: 6ch;
   text-align: right;
 }
+
+/* Reading the reels. The legend is on screen because a first time visitor has
+   no reason to guess that three reels are three different draws. */
+.leverRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-snug);
+}
+
+.legend {
+  font-size: var(--text-micro);
+  color: var(--on-surface-dim, var(--bone-dim));
+  text-align: left;
+  margin: 0;
+  /* Fixed rather than flexible: the column is as wide as the cabinet, and a
+     line that grows to fill would widen the column and squeeze the lineup. */
+  flex: 0 0 auto;
+  width: 30ch;
+}
+
+/* What the pointer is over. Drawn where the pointer is on the cabinet, and
+   above the face in a lineup row, because neither has an element of its own
+   on the canvas. */
+.tip,
+.faceTip {
+  position: absolute;
+  font-family: var(--font-ui);
+  font-size: var(--text-micro);
+  color: var(--bone);
+  background: var(--pit-deep);
+  padding: 2px var(--space-tight);
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.tip {
+  transform: translate(8px, -22px);
+}
+
+/* Beside the face rather than above it: the lineup clips what leaves its box,
+   and a label above the top row would be clipped away. */
+.faceTip {
+  left: calc(100% + 2px);
+  top: 0;
+  visibility: hidden;
+}
+
+/* On hover, on a tap, and on keyboard focus. No animation: a label that
+   fades in is a label that is not there when it is wanted. */
+.agentPortrait:hover .faceTip,
+.agentPortrait:focus .faceTip,
+.agentPortrait:focus-within .faceTip {
+  visibility: visible;
+}

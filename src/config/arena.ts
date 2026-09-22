@@ -15,8 +15,10 @@ export const MAX_ROUND_INTERVAL_SECONDS = 24 * 3_600;
 /**
  * Whether the pit plays itself.
  *
- * Off by default. The spectator client is a later phase, so until it exists
- * the lever is the only way a round starts and this must not change that.
+ * Off by default, so the lever flow is what a fresh checkout does. With it on
+ * the worker plays a round every interval and the spectator client watches
+ * them, which is where backing and the leaderboard live: both are arena mode
+ * only, because the lever route hands the player the round's seed.
  */
 export function arenaMode(env: NodeJS.ProcessEnv = process.env): boolean {
   const raw = env.SERVPIT_ARENA_MODE?.trim().toLowerCase();

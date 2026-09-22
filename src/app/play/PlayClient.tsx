@@ -26,6 +26,7 @@ import { ReelSet } from "@/render/slot/reels";
 import { SlotVfx, TIER_PAYOFF } from "@/render/slot/vfx";
 import { createWebAudioSink } from "@/render/slot/webAudio";
 import { Timeline } from "@/render/timeline";
+import { symbolAtPoint } from "@/render/slot/probe";
 import { initialState, reduce, type FlowState, type Screen } from "./machine";
 import { BootScreen } from "./screens/BootScreen";
 import { TitleScreen } from "./screens/TitleScreen";
@@ -47,6 +48,7 @@ import { replayFrame, replayableRound } from "./arenaReplay";
 import { backOptions, pickOutcome } from "./backing";
 import { useBackingFeed } from "./backingFeed";
 import { backerHandle, backerToken, browserStore, setBackerHandle, type StorageLike } from "./backerId";
+import { hasSeenOnboarding, markOnboardingSeen, onboardingScreens } from "./onboarding";
 import type { BoardShape } from "./screens/GameShell";
 import type { GraveShape } from "./screens/graveyardRows";
 import type { ReplacementShape, WreckShape } from "./screens/wreckMoment";
@@ -212,6 +214,17 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
   const backingFeed = useBackingFeed(backingLive, watch.round?.roundId ?? null, watch.round?.phase ?? null, handle);
   const counts = backingFeed.view?.counts ?? {};
   const myPick = backingFeed.view?.pick ?? null;
+
+  // How it works: open by itself the first time, and whenever it is asked for
+  // after that. Read from storage in the initialiser for the same reason the
+  // handle is: the server has no localStorage, and nothing rendered during
+  // hydration depends on it, because the title screen comes first either way.
+  const [howOpen, setHowOpen] = useState<boolean>(() => !hasSeenOnboarding(browserStore()));
+  const showHow = (): void => setHowOpen(true);
+  const closeHow = (): void => {
+    markOnboardingSeen(backerStore);
+    setHowOpen(false);
+  };
 
   const [board, setBoard] = useState<BoardShape | null>(null);
   const showBoard = async (page: number): Promise<void> => {
@@ -795,6 +808,15 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
               const kept = setBackerHandle(backerStore, raw);
               if (kept) setHandle(kept);
             }}
+            onboarding={howOpen ? onboardingScreens(arenaMode) : null}
+            probeSymbol={(x, y) => {
+              const engine = engineRef.current;
+              // The reels' own state, read at the moment it is asked for, so
+              // the answer is the symbol on screen rather than a cached one.
+              return engine ? symbolAtPoint(SLOT_LAYOUT, engine.reels.reelStates(), x, y) : null;
+            }}
+            onShowHow={showHow}
+            onCloseHow={closeHow}
             onShowBoard={() => void showBoard(1)}
             onCloseBoard={() => setBoard(null)}
             onBoardPage={(page) => void showBoard(page)}

@@ -14,6 +14,10 @@ import { Button } from "@/ui/Button";
 import { Dialog } from "@/ui/Dialog";
 import { Meter } from "@/ui/Meter";
 import { NinePatch } from "@/ui/NinePatch";
+import { tierOf } from "@/config/roster";
+import { Onboarding } from "./Onboarding";
+import { SlotCanvas } from "./SlotCanvas";
+import type { OnboardingScreen } from "../onboarding";
 import { useUiKit } from "@/ui/UiKit";
 import { ninePatchStyle } from "@/ui/ninePatchGeometry";
 import { uiScale } from "@/ui/tokens";
@@ -240,10 +244,25 @@ export interface GameShellProps {
   onShowBoard: () => void;
   onCloseBoard: () => void;
   onBoardPage: (page: number) => void;
+  /** The screens to show, or null when nothing is being explained. */
+  onboarding: OnboardingScreen[] | null;
+  onShowHow: () => void;
+  onCloseHow: () => void;
+  /**
+   * The symbol drawn at this point of the slot canvas, in logical pixels, or
+   * null. Only the client owns the reels, so only it can answer.
+   */
+  probeSymbol: (x: number, y: number) => string | null;
   onPlayAgain: () => void;
   onToggleMute: () => void;
 }
 
+
+/** A character and what it is worth knowing about it, in three words. */
+function fighterLabel(id: string): string | null {
+  const tier = tierOf(id);
+  return tier === null ? null : `${id}, ${tier}`;
+}
 
 export function GameShell(props: GameShellProps) {
   const { state, plan, run, decided, entries, occupants } = props;
@@ -273,6 +292,11 @@ export function GameShell(props: GameShellProps) {
               Back to the pit
             </Button>
           )}
+          {/* The way back into the explanation, on every screen, because a
+              visitor who arrives mid round is the one who needs it. */}
+          <Button onClick={props.onShowHow} scale={2}>
+            How it works
+          </Button>
           {state.player && <span>{state.player.label}</span>}
           <Button onClick={props.onToggleMute} scale={2} aria-pressed={!props.muted}>
             {props.muted ? "Sound off" : "Sound on"}
@@ -289,15 +313,21 @@ export function GameShell(props: GameShellProps) {
           visibility changes. */}
       <div className={showStage ? styles.playfield : styles.offstage} aria-hidden={!showStage}>
           <div className={styles.cabinet}>
-            <NinePatch sprite="panelAlt" data-anim="cabinet" style={{ padding: "var(--space-base)" }}>
-              <canvas ref={props.slotCanvasRef} className={`${styles.canvas} ${state.screen === "arena" ? styles.hidden : ""}`} role="img" aria-label="Slot machine" />
+            <NinePatch sprite="panelAlt" data-anim="cabinet" style={{ padding: "var(--space-base)", position: "relative" }}>
+              <SlotCanvas canvasRef={props.slotCanvasRef} hidden={state.screen === "arena"} probeSymbol={props.probeSymbol} labelFor={fighterLabel} />
               <canvas ref={props.arenaCanvasRef} className={`${styles.canvas} ${state.screen === "arena" ? "" : styles.hidden}`} role="img" aria-label="Arena replay" />
             </NinePatch>
             {state.screen !== "arena" && (
               <>
-                <Button onClick={props.onPull} disabled={!state.leverLive}>
-                  {state.screen === "lobby" ? "Agents deciding" : state.leverLive ? "Pull the lever" : "Agents buying in"}
-                </Button>
+                <div className={styles.leverRow}>
+                  <Button onClick={props.onPull} disabled={!state.leverLive}>
+                    {state.screen === "lobby" ? "Agents deciding" : state.leverLive ? "Pull the lever" : "Agents buying in"}
+                  </Button>
+                  {/* What the three reels mean, beside the lever rather than
+                      under it: the stage is a fixed 1280 by 720 and the
+                      column has no spare height, but it has spare width. */}
+                  <p className={styles.legend}>Reel one picks the fighter, reel two an ability, reel three a stat roll. Three matching faces pay a bonus.</p>
+                </div>
                 <p className={styles.leverNote}>{props.leverNote}</p>
                 {/* Marrow sits under the cabinet, in the space the lever does
                     not use, rather than stacked above the lineup where it
@@ -335,6 +365,7 @@ export function GameShell(props: GameShellProps) {
         />
       )}
       {props.board && <Board board={props.board} onClose={props.onCloseBoard} onPage={props.onBoardPage} />}
+      {props.onboarding && <Onboarding screens={props.onboarding} onClose={props.onCloseHow} />}
       {state.screen === "wreck" && run && <WreckScreen run={run} onContinue={props.onWreckSeen} />}
       {state.screen === "result" && run && <ResultScreen run={run} onPlayAgain={props.onPlayAgain} backing={props.backing} />}
       </div>
@@ -620,7 +651,14 @@ export function GameShell(props: GameShellProps) {
         <ul ref={listRef} className={styles.lineup}>
           {rows.map((row) => (
             <li key={row.agentId} className={styles.agentRow} data-decided={row.state === "decided" ? "true" : "false"}>
-              <div className={styles.agentPortrait}>
+              {/* The face says what it is on hover and on a tap, in CSS
+                  rather than in state: these rows are rebuilt on every
+                  parent render, and a tooltip held in state is torn down by
+                  the rebuild the moment it is opened. */}
+              <div className={styles.agentPortrait} tabIndex={0} aria-label={fighterLabel(row.face ?? characterFor(row.agentId)) ?? row.name}>
+                <span className={styles.faceTip} aria-hidden="true">
+                  {fighterLabel(row.face ?? characterFor(row.agentId)) ?? ""}
+                </span>
                 <img
                   className={`${styles.faceset} ${row.state === "waiting" ? styles.thinkingFace : ""}`}
                   src={facesetPath(row.face ?? characterFor(row.agentId))}
