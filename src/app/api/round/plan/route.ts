@@ -89,14 +89,14 @@ export async function POST(request: Request): Promise<Response> {
   const parsed = parseRoundRequest(body);
   if (!parsed.ok) return Response.json({ error: parsed.error }, { status: 400 });
 
-  // The worker owns the round loop while the pit runs itself, and a plan
-  // costs real money to make: six agents deciding is a cent of SERV whether
-  // or not anybody ever settles it.
-  if (arenaMode()) return Response.json({ code: "arena_running", error: ARENA_RUNNING, message: ARENA_RUNNING, retryable: false }, { status: 409 });
   // And closed outright on a public deployment, whatever the flag says. This
   // route spends an operator's SERV credit and writes a plan the settle path
   // will act on, which is not something a visitor gets to start.
   if (inProduction()) return Response.json({ code: "lever_closed", error: LEVER_CLOSED, message: LEVER_CLOSED, retryable: false }, { status: 403 });
+  // The worker owns the round loop while the pit runs itself, and a plan
+  // costs real money to make: six agents deciding is a cent of SERV whether
+  // or not anybody ever settles it.
+  if (arenaMode()) return Response.json({ code: "arena_running", error: ARENA_RUNNING, message: ARENA_RUNNING, retryable: false }, { status: 409 });
 
   const ctx = await getServerContext();
   const flow = { ...ctx.flow, entrants: parsed.entrants };

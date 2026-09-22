@@ -29,6 +29,7 @@ import { log } from "../src/server/log";
 import { ArenaStore, arenaFile } from "../src/server/arena/state";
 import { ArenaAlreadyRunning, arenaLockFile, heartbeatAt, holdArenaLock } from "../src/server/arena/lock";
 import { runArenaLoop } from "../src/server/arena/worker";
+import { health } from "../src/server/arena/health";
 import { loadLocalEnv } from "./lib/loadEnv";
 import { requireDeclaredBackend } from "./lib/requireBackend";
 
@@ -63,8 +64,11 @@ function operate(command: Exclude<Command, "run">, dataDir: string, network: str
   // whatever flags that terminal has, and the pit has the ones it started
   // with. The line below says which is which rather than implying they agree.
   const beat = heartbeatAt(dataDir, network);
+  const beatState = health({ round: null, last: null, paused, nextRoundAt: null, updatedAt: "" }, beat, roundIntervalSeconds() * 1_000, network, Date.now());
   const beatAgo = beat === null ? null : Math.round((Date.now() - beat) / 1000);
-  console.log(beat === null ? "worker: no lock held, so none is running here" : `worker: alive, last heartbeat ${beatAgo} s ago`);
+  // The same rule the health endpoint answers with, so the two cannot
+  // disagree about whether anybody is running the pit.
+  console.log(beat === null ? "worker: no lock held, so none is running here" : `worker: ${beatState.worker}, last heartbeat ${beatAgo} s ago`);
   console.log(`this shell: arena mode ${arenaMode() ? "on" : "off"}, a round every ${roundIntervalSeconds()} s`);
   // A round has no id until its plan lands, so the phase is the whole answer
   // for the first few seconds of one.

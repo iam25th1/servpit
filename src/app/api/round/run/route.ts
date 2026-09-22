@@ -31,15 +31,15 @@ export async function POST(request: Request): Promise<Response> {
   const parsed = parseRoundRequest(body);
   if (!parsed.ok) return Response.json({ error: parsed.error }, { status: 400 });
 
+  // And closed outright on a public deployment. This is the route that moves
+  // money: entries, loans, payouts and seizures, from keys that sit on the
+  // server. Only the worker settles a round there.
+  if (inProduction()) return Response.json({ code: "lever_closed", error: LEVER_CLOSED, message: LEVER_CLOSED, retryable: false }, { status: 403 });
   // With the pit running itself there is one writer and it is the worker. A
   // lever pull here would settle a round beside it, against the same wallets
   // and the same stores: the settle lock would serialise the two, which is
   // not the same as there being only one.
   if (arenaMode()) return Response.json({ code: "arena_running", error: ARENA_RUNNING, message: ARENA_RUNNING, retryable: false }, { status: 409 });
-  // And closed outright on a public deployment. This is the route that moves
-  // money: entries, loans, payouts and seizures, from keys that sit on the
-  // server. Only the worker settles a round there.
-  if (inProduction()) return Response.json({ code: "lever_closed", error: LEVER_CLOSED, message: LEVER_CLOSED, retryable: false }, { status: 403 });
 
   const ctx = await getSettleContext();
   const flow = { ...ctx.flow, entrants: parsed.entrants };

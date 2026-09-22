@@ -1,0 +1,12 @@
+{
+  "name": "servpit",
+  "slug": "servpit",
+  "runtime": "node",
+  "command": "npm run start:arena",
+  "port": 7530,
+  "hostname": "servpit.test",
+  "healthPath": "/api/health",
+  "autostart": true,
+  "deploySteps": ["git pull --ff-only", "npm ci --ignore-scripts", "npm run build"],
+  "notes": "Arena mode. start:arena runs the built site and the worker together, one instance only. State lives in ./data on local disk. The environment comes from .env.local, which the app reads itself and Pier does not import, so no wallet key is ever in Pier's store. No publicHostname on purpose: servpit has its own Cloudflare tunnel in the account that holds its domain, rather than sharing this machine's."
+}

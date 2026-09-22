@@ -55,8 +55,11 @@ describe("the worker with arena mode off", () => {
 describe("the worker with arena mode on", () => {
   it("refuses to start beside another worker", async () => {
     const data = dataDir();
-    // A lock held by a process that is not this one and is not stale.
-    writeFileSync(join(data, "arena-fake.lock"), JSON.stringify({ pid: process.pid + 1, at: Date.now() }));
+    // A lock held by a process that is alive and is not stale. This one: the
+    // worker starts as a child, so it can see this pid and will refuse. A pid
+    // that is merely plausible is not enough any more, because a holder that
+    // is gone is now taken over at once rather than waited out.
+    writeFileSync(join(data, "arena-fake.lock"), JSON.stringify({ pid: process.pid, at: Date.now() }));
     const run = await runWorker({
       SERVPIT_DATA_DIR: data,
       WALLET_BACKEND: "fake",

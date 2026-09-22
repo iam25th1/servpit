@@ -95,6 +95,17 @@ describe("in production", () => {
     expect(JSON.stringify(body)).not.toMatch(/0x[0-9a-fA-F]{10}/);
   });
 
+  it("refuses even while the pit is running itself, with the production reason", async () => {
+    // Order matters here. Both refusals are correct, and on a public
+    // deployment the true one is that the lever is not open, rather than
+    // that a round happens to be in flight right now.
+    vi.stubEnv("SERVPIT_ARENA_MODE", "true");
+    const { POST } = await import("@/app/api/round/run/route");
+    const response = await POST(new Request("http://localhost/api/round/run", { method: "POST", body: JSON.stringify({ seed: "demo", entrants: 24 }) }));
+    expect(response.status).toBe(403);
+    expect(((await response.json()) as { code: string }).code).toBe("lever_closed");
+  });
+
   it("refuses to plan a round, which spends an operator's credit", async () => {
     const { POST } = await import("@/app/api/round/plan/route");
     const response = await POST(new Request("http://localhost/api/round/plan", { method: "POST", body: JSON.stringify({ seed: "demo", entrants: 24 }) }));
