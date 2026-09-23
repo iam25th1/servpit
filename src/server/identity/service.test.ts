@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { tokenHash } from "../backing/identity";
 import type { HandleOwners } from "./handles";
-import { lookUpHandle } from "./service";
+import { lookUpHandle, ownerAcross } from "./service";
 
 const TOKEN = "11111111-1111-4111-8111-111111111111";
 const OTHER = "22222222-2222-4222-8222-222222222222";
@@ -47,5 +47,13 @@ describe("asking about a handle", () => {
   it("says nothing about a browser with no token", () => {
     const view = lookUpHandle({ handle: "ash", token: "" }, { logs: [log({})] });
     expect(view.state).toBeNull();
+  });
+});
+
+describe("a handle claimed anywhere is claimed", () => {
+  it("finds the owner across every log", () => {
+    const owner = ownerAcross([log({}), log({ ash: "hash-from-the-lever" }), log({ ash: "hash-from-a-seat" })]);
+    expect(owner("ash")).toBe("hash-from-the-lever");
+    expect(owner("nobody")).toBeNull();
   });
 });

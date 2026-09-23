@@ -12,6 +12,7 @@ import { pickReader } from "@/server/backing/read";
 import { lookUpHandle } from "@/server/identity/service";
 import { log } from "@/server/log";
 import { internalDetail, publicError } from "@/server/publicError";
+import { fighterReader } from "@/server/fighters/read";
 import { pullReader } from "@/server/pulls/read";
 
 export const runtime = "nodejs";
@@ -21,8 +22,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   try {
     const handle = request.nextUrl.searchParams.get("handle");
     const token = request.nextUrl.searchParams.get("token");
-    // Both logs, because a handle claimed by pulling the lever is claimed.
-    return NextResponse.json(lookUpHandle({ handle, token }, { logs: [pickReader(), pullReader()] }));
+    // Every log, because a handle claimed at the lever or on a seat is
+    // claimed exactly as much as one claimed by backing.
+    return NextResponse.json(lookUpHandle({ handle, token }, { logs: [pickReader(), pullReader(), fighterReader()] }));
   } catch (e) {
     const shown = publicError(e);
     log.error("handle lookup failed", { code: shown.code, detail: internalDetail(e) });

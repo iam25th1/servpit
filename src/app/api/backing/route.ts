@@ -12,6 +12,8 @@ import { arenaMode } from "@/config/arena";
 import { arenaReader } from "@/server/arena/read";
 import { pickReader } from "@/server/backing/read";
 import { backingView, pickLimiter, submitPick } from "@/server/backing/service";
+import { fighterReader } from "@/server/fighters/read";
+import { ownerAcross } from "@/server/identity/service";
 import { pullReader } from "@/server/pulls/read";
 import { log } from "@/server/log";
 import { internalDetail, publicError } from "@/server/publicError";
@@ -48,7 +50,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const answer = submitPick(
       arenaReader().state(),
       { handle, token, agentId },
-      { store: pickReader(), limiter: pickLimiter, arenaMode: arenaMode(), otherOwner: (name) => pullReader().owner(name) },
+      { store: pickReader(), limiter: pickLimiter, arenaMode: arenaMode(), otherOwner: ownerAcross([pullReader(), fighterReader()]) },
     );
     if (!answer.ok) return NextResponse.json({ error: answer.message }, { status: answer.status });
     return NextResponse.json(answer.view);

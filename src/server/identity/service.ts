@@ -59,3 +59,14 @@ export function lookUpHandle(input: { handle: unknown; token: unknown }, deps: H
     suggestions: [],
   };
 }
+
+/**
+ * The owner of a handle across every log that can hold a claim.
+ *
+ * Three now: picks, pulls and fighters. One handle is one browser, and a
+ * name claimed in any of them is claimed, which is the rule that was missing
+ * when each log only ever asked itself.
+ */
+export function ownerAcross(logs: readonly HandleOwners[]): (handle: string) => string | null {
+  return (handle) => firstOwner(handle, logs);
+}
