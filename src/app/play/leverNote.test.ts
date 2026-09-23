@@ -87,3 +87,16 @@ describe("what the lever says", () => {
     expect(leverLines(state({ view: view({ left: null }) })).blocked).toBeNull();
   });
 });
+
+describe("the lever says each thing once", () => {
+  it("does not print the same sentence as both the count and the reason", () => {
+    const at = new Date(NOW + 60 * 60_000).toISOString();
+    const lines = leverLines(state({ view: view({ left: 0, resetsAt: at }) }));
+    expect(lines.blocked).toBe("No pulls left, the next in 1 hour.");
+    expect(lines.pulls).toBeNull();
+  });
+
+  it("still says the count when it is not the reason", () => {
+    expect(leverLines(state()).pulls).toBe("3 pulls left.");
+  });
+});

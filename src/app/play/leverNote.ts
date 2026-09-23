@@ -79,7 +79,9 @@ export function leverLines(state: LeverState): LeverLines {
 
   return {
     action: state.pulling ? "Pulling" : "Pull the lever",
-    pulls,
+    // Said once. Out of pulls, the count and the reason are the same
+    // sentence, and the control was printing it twice.
+    pulls: pulls === blocked ? null : pulls,
     reasoning,
     blocked,
     // What the pit said when it took the ask. It stands until the round

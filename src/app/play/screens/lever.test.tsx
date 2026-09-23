@@ -99,6 +99,39 @@ beforeEach(() => {
 
 afterEach(() => cleanup());
 
+describe("a learned answer on the lineup", () => {
+  it("shows what it was drawn from, under the answer itself", () => {
+    const decided = [
+      {
+        agentId: "atlas",
+        name: "Atlas",
+        enter: true,
+        stake: 10,
+        reason: "learned: in 7 reasoned rounds like this one it entered 7, usually for 10 chips",
+        source: "learned" as const,
+        balance: 100,
+        debt: 0,
+        evidence: { matches: 7, entered: 6, typicalStake: 20 },
+      },
+    ];
+    // The rows come from the plan once there is one, which is the shape the
+    // lever flow hands the shell.
+    const plan = { decisions: decided, bots: 18, entrants: 24, costSummary: "", servCalls: 0, stakeChips: 10 };
+    const { container } = mount(
+      shell({
+        state: { ...initialState(), screen: "lobby", player: { id: "p", label: "Guest session" } } as FlowState,
+        plan: plan as unknown as GameShellProps["plan"],
+        decided: decided as unknown as GameShellProps["decided"],
+      }),
+    );
+    const text = container.textContent ?? "";
+    expect(text).toContain("learned");
+    expect(text).toContain("Learned from 7 reasoned rounds in spots like this. SERV entered in 6, typical stake 2x.");
+    // And never the other label.
+    expect(text).not.toContain("reasoned</");
+  });
+});
+
 describe("the lever on the quiet screen", () => {
   it("says what a pull costs and whether the round will reason, before it is pulled", () => {
     const { container } = mount(shell({ lever: lever() }));
