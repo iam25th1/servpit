@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fightOffsetMs, phaseMark, reasoningLine, secondsUntil, watchDecisions, watchEntries, watchOccupants, watchState, type ArenaFeedRound, type ArenaFeedView } from "./arenaScreens";
+import { fightOffsetMs, phaseMark, pulledLine, reasoningLine, secondsUntil, watchDecisions, watchEntries, watchOccupants, watchState, type ArenaFeedRound, type ArenaFeedView } from "./arenaScreens";
 import type { ArenaPhase } from "@/server/arena/state";
 
 const AT = "2026-09-22T00:00:00.000Z";
@@ -195,5 +195,24 @@ describe("the shapes the shell already draws", () => {
       ],
     });
     expect(phaseMark(twice, "resting")?.reason).toBe("second");
+  });
+});
+
+describe("pulledLine", () => {
+  const pulled = (pulledBy: string | null | undefined): ArenaFeedRound =>
+    ({ roundId: "r-1", startedAt: "", phase: "deciding", phases: [], network: "fake", backend: "fake", entrants: 24, bots: 20, stakeChips: 10, weiPerChip: "1", decisions: [], loans: [], refusals: [], bank: null, entries: [], pulledBy }) as ArenaFeedRound;
+
+  it("names the handle that asked for the round", () => {
+    expect(pulledLine(pulled("ash"), false)).toBe("ash pulled this round.");
+  });
+
+  it("says it in the past while the pit rests, like the reasoning line", () => {
+    expect(pulledLine(pulled("ash"), true)).toBe("ash pulled the last round.");
+  });
+
+  it("says nothing about a round the interval started", () => {
+    expect(pulledLine(pulled(null), false)).toBeNull();
+    expect(pulledLine(pulled(undefined), false)).toBeNull();
+    expect(pulledLine(null, false)).toBeNull();
   });
 });

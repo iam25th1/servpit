@@ -160,3 +160,27 @@ describe("from the fight onwards", () => {
     expect(view.last?.result?.winner).toBe(WINNER);
   });
 });
+
+describe("asking for a round", () => {
+  it("answers with a sentence and a flag, and nothing about the round", async () => {
+    // The ask lands while a round is on screen carrying its whole outcome.
+    // Whatever the store holds, this path answers with two fields.
+    const { mkdtempSync, rmSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { PullStore } = await import("@/server/pulls/log");
+    const { requestPull } = await import("@/server/pulls/service");
+
+    const dir = mkdtempSync(join(tmpdir(), "servpit-spoiler-pull-"));
+    try {
+      const log = new PullStore(join(dir, "pulls-fake.ndjson"), "fake");
+      const answer = requestPull(state("resting"), { handle: "ash", token: "11111111-1111-4111-8111-111111111111" }, { store: log, arenaMode: true });
+      expect(answer.ok).toBe(true);
+      const body = JSON.stringify(answer);
+      for (const marker of [SEED, WINNER, LOG_MARKER, PLACEMENT]) expect(body).not.toContain(marker);
+      if (answer.ok) expect(Object.keys(answer.view).sort()).toEqual(["message", "queued"]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

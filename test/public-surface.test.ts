@@ -47,14 +47,23 @@ describe("the route inventory", () => {
       "src/app/api/graveyard/route.ts GET",
       "src/app/api/health/route.ts GET",
       "src/app/api/leaderboard/route.ts GET",
+      "src/app/api/pull/route.ts POST",
       "src/app/api/round/plan/route.ts POST",
       "src/app/api/round/run/route.ts POST",
     ]);
   });
 
-  it("has exactly three routes that accept a write at all", () => {
+  it("has exactly four routes that accept a write at all", () => {
+    // Two of them are the lever, closed in production. The other two are the
+    // public ones: a pick, and an ask for a round. Both write a line in a log
+    // and neither can move a chip.
     const writers = routes().filter((r) => r.methods.some((m) => m !== "GET"));
-    expect(writers.map((r) => r.path)).toEqual(["src/app/api/backing/route.ts", "src/app/api/round/plan/route.ts", "src/app/api/round/run/route.ts"]);
+    expect(writers.map((r) => r.path)).toEqual([
+      "src/app/api/backing/route.ts",
+      "src/app/api/pull/route.ts",
+      "src/app/api/round/plan/route.ts",
+      "src/app/api/round/run/route.ts",
+    ]);
   });
 
   it("closes both of the writing routes that are not picks, in their own source", () => {

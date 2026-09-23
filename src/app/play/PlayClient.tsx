@@ -43,7 +43,7 @@ import { runRequestFor } from "./roundRequest";
 import { arenaStanding, type ArenaStanding } from "./screens/arenaHud";
 import { useArenaFeed } from "./arenaFeed";
 import { readNow, useWallClock } from "./arenaClock";
-import { fightOffsetMs, reasoningLine, watchDecisions, watchEntries, watchOccupants, watchState } from "./arenaScreens";
+import { fightOffsetMs, pulledLine, reasoningLine, watchDecisions, watchEntries, watchOccupants, watchState } from "./arenaScreens";
 import { replayFrame, replayableRound } from "./arenaReplay";
 import { backOptions, pickOutcome } from "./backing";
 import { useBackingFeed } from "./backingFeed";
@@ -772,6 +772,9 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
                     // A replay is showing the last round, so the line reads
                     // in the past tense exactly as the resting card does.
                     reasoning: reasoningLine(watch.round, watch.resting || replayRound !== null),
+                    // Who asked for it, when somebody did. The same tense
+                    // rule as the reasoning line, for the same reason.
+                    pulled: pulledLine(watch.round, watch.resting || replayRound !== null),
                     replay: replayRound !== null,
                     canReplay: replayable !== null,
                     last: watch.round?.result ? (watch.round as unknown as { result: Record<string, unknown> }).result : null,

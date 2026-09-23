@@ -11,6 +11,7 @@
 
 import { existsSync } from "node:fs";
 import { backingWindowSeconds } from "@/config/backing";
+import { PULL_POLL_MS } from "@/config/pulls";
 import { toChips, weiPerChip } from "@/config/stake";
 import { ticksToMs } from "@/config/playback";
 import type { ServerContext } from "../context";
@@ -60,7 +61,22 @@ export interface LoopOptions {
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
   /** Injected by tests. The real one is playArenaRound. */
-  play?: (ctx: ServerContext, store: ArenaStore, nextAt: number) => Promise<ArenaOutcome | void>;
+  play?: (ctx: ServerContext, store: ArenaStore, nextAt: number, pulledBy?: string | null) => Promise<ArenaOutcome | void>;
+  /** The queue of asks from the site, when the pit takes them. */
+  pulls?: PullSource;
+}
+
+/**
+ * What the loop needs from the pull log.
+ *
+ * An interface rather than the store itself, so the loop can be driven by a
+ * test without a file, and so nothing in here can write a line the log did
+ * not mean to offer.
+ */
+export interface PullSource {
+  pending(): { id: string; handle: string } | null;
+  take(id: string): void;
+  start(id: string, roundId: string): void;
 }
 
 /**
@@ -96,10 +112,22 @@ export async function runArenaLoop(options: LoopOptions): Promise<{ played: numb
           counts.rested += 1;
           log.warn("arena resting on funds", { reason: funds.reason });
         } else {
+          // Somebody asking for this round, if anybody did. Taken before the
+          // round starts so a second ask cannot queue behind it while the
+          // plan is being built, and named on the round itself.
+          const asked = options.pulls?.pending() ?? null;
+          if (asked) {
+            options.pulls?.take(asked.id);
+            log.info("arena round pulled", { handle: asked.handle });
+          }
           // A round that rests because nobody could cover a seat is not a
           // round played, and counting it as one would make an empty pit look
           // busy in the only numbers an operator sees.
-          const outcome = (await play(ctx, store, nextAt)) ?? "played";
+          const outcome = (await play(ctx, store, nextAt, asked?.handle ?? null)) ?? "played";
+          if (asked) {
+            const roundId = store.read().round?.roundId;
+            if (roundId) options.pulls?.start(asked.id, roundId);
+          }
           if (outcome === "rested") counts.rested += 1;
           else counts.played += 1;
         }
@@ -112,8 +140,18 @@ export async function runArenaLoop(options: LoopOptions): Promise<{ played: numb
     }
 
     if (maxRounds > 0 && counts.played + counts.failed + counts.rested >= maxRounds) break;
-    const waitMs = nextAt - now();
-    if (waitMs > 0) await sleep(waitMs);
+    // The wait is in slices rather than one sleep, because somebody at a
+    // screen may ask for a round in the middle of it and an hour is a long
+    // time to hold a lever down. Nothing else changes: an ask that arrives
+    // ends the wait early, and the next interval is measured from the round
+    // it started, exactly as a scheduled one is.
+    let waitMs = nextAt - now();
+    while (waitMs > 0 && running()) {
+      if (options.pulls?.pending()) break;
+      const slice = Math.min(waitMs, PULL_POLL_MS);
+      await sleep(slice);
+      waitMs = nextAt - now();
+    }
     if (!running()) break;
   }
   return counts;
@@ -184,7 +222,7 @@ function failed(store: ArenaStore, reason: string, nextAt: number): void {
  * phase starts: the seed, the log and the placements all decide the winner,
  * and the resolver is deterministic.
  */
-export async function playArenaRound(ctx: ServerContext, store: ArenaStore, nextAt: number): Promise<ArenaOutcome> {
+export async function playArenaRound(ctx: ServerContext, store: ArenaStore, nextAt: number, pulledBy: string | null = null): Promise<ArenaOutcome> {
   const flow = ctx.flow;
   const seed = `arena-${Date.now().toString(36)}`;
   const link = (hash: string | null | undefined): string | null => (ctx.chain.settles && hash ? basescanTx(ctx.chain.network, hash) : null);
@@ -205,6 +243,7 @@ export async function playArenaRound(ctx: ServerContext, store: ArenaStore, next
     refusals: [],
     bank: null,
     entries: [],
+    pulledBy,
   };
   const publish = (next: Partial<ArenaRound>, phase?: ArenaPhase, mark?: Omit<PhaseMark, "phase" | "at">): void => {
     round = { ...round, ...next };

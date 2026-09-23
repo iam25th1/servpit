@@ -195,6 +195,8 @@ export interface WatchingShape {
   nextRoundAt: string | null;
   /** Whether this round's agents reasoned, in one sentence, or null. */
   reasoning: string | null;
+  /** Who pulled the lever for this round, in one sentence, or null. */
+  pulled?: string | null;
   /** True while what is on screen is a recording, not the pit. */
   replay: boolean;
   /** Whether there is a finished round to watch again. */
@@ -1245,6 +1247,9 @@ export function GameShell(props: GameShellProps) {
               because it is the other thing that is true of the whole round
               rather than of one screen. The rows say it per agent. */}
           {props.watching?.reasoning && <span className={styles.reasoningNote}>{props.watching.reasoning}</span>}
+          {/* Who asked for this round, beside what the round is doing,
+              because it is true of the whole round rather than one screen. */}
+          {props.watching?.pulled && <span className={styles.reasoningNote}>{props.watching.pulled}</span>}
           {props.watching?.replay && (
             <Button onClick={props.onLeaveReplay} scale={2}>
               Back to the pit

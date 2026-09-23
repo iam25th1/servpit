@@ -29,6 +29,8 @@ import { log } from "../src/server/log";
 import { ArenaStore, arenaFile } from "../src/server/arena/state";
 import { ArenaAlreadyRunning, arenaLockFile, heartbeatAt, holdArenaLock } from "../src/server/arena/lock";
 import { runArenaLoop } from "../src/server/arena/worker";
+import { PullStore } from "../src/server/pulls/log";
+import { pullFile } from "../src/config/pulls";
 import { health } from "../src/server/arena/health";
 import { loadLocalEnv } from "./lib/loadEnv";
 import { requireDeclaredBackend } from "./lib/requireBackend";
@@ -179,6 +181,9 @@ async function main(): Promise<void> {
       maxRounds: Number.parseInt(process.env.SERVPIT_ARENA_MAX_ROUNDS ?? "0", 10),
       running: () => running,
       beat: () => lock.beat(),
+      // The queue of asks from the site. The worker reads it; the site only
+      // ever appends to it.
+      pulls: new PullStore(pullFile(env.dataDir, ctx.chain.network), ctx.chain.network),
     });
     console.log(`arena worker stopped: ${counts.played} played, ${counts.failed} failed, ${counts.rested} rested`);
   } finally {

@@ -30,6 +30,8 @@ export interface ArenaFeedRound {
   refusals: Array<{ agentId: string; name: string; asked: number; reason: string; source: string }>;
   bank: { treasury: number; book: Array<{ agentId: string; name: string; owed: number; principal: number; rateBps: number }> } | null;
   entries: Array<{ agentId: string; amountWei: string; txHash: string | null; link: string | null }>;
+  /** The handle that asked for this round, absent when the interval started it. */
+  pulledBy?: string | null;
   reels?: Array<{ entrantId: string; symbols: string[]; characterId: string; tier: string; combo: string; bonusPct: number }>;
   fight?: { seed: string; durationMs: number; characters: unknown[]; log: unknown[]; placements: string[]; names: Record<string, string> };
   result?: Record<string, unknown>;
@@ -138,6 +140,18 @@ export function reasoningLine(round: ArenaFeedRound | null, resting: boolean): s
   if (reasoned === total) return resting ? "Agents reasoned with SERV last round." : "Agents are reasoning with SERV this round.";
   if (reasoned === 0) return resting ? "Agents ran on instinct last round." : "Agents are running on instinct this round.";
   return `${reasoned} of ${total} agents reasoned with SERV ${resting ? "last" : "this"} round.`;
+}
+
+/**
+ * Who asked for this round, in a sentence, or null when the pit started it.
+ *
+ * Past tense while the pit is resting, for the same reason the reasoning line
+ * is: the card is talking about the round that just finished.
+ */
+export function pulledLine(round: ArenaFeedRound | null, resting: boolean): string | null {
+  const handle = round?.pulledBy;
+  if (!handle) return null;
+  return resting ? `${handle} pulled the last round.` : `${handle} pulled this round.`;
 }
 
 /** Seconds until the next round, or null when nothing is scheduled. */

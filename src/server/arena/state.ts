@@ -126,6 +126,13 @@ export interface ArenaRound {
   bank: { treasury: number; book: Array<{ agentId: string; name: string; owed: number; principal: number; rateBps: number }> } | null;
   entries: Array<{ agentId: string; amountWei: string; txHash: string | null; link: string | null }>;
   /**
+   * The handle that asked for this round, or null when the interval did.
+   *
+   * A name, not an outcome: it says who pulled the lever, which is true from
+   * the moment the round starts and gives nothing about the fight away.
+   */
+  pulledBy?: string | null;
+  /**
    * What each entrant drew, from the reels phase onwards.
    *
    * Not a spoiler and deliberately allowed early: the reels pick a fighter's
