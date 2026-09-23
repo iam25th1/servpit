@@ -215,3 +215,26 @@ describe("asking the pit for a round", () => {
     }
   });
 });
+
+describe("what the lever promises about reasoning", () => {
+  it("never promises it where no key is configured, whatever the switch says", () => {
+    // The switch being on cannot make a pit with no key reason, and a lever
+    // that said otherwise would be promising something nobody can deliver.
+    const answer = requestPull(
+      state("resting"),
+      { handle: "ash", token },
+      { ...deps(store()), reasoningOn: true, reasoningConfigured: false },
+    );
+    expect(answer.ok).toBe(true);
+    if (answer.ok) {
+      expect(answer.view.willReason).toBe(false);
+      expect(answer.view.reasonBlocked).toMatch(/no reasoning configured/);
+    }
+  });
+
+  it("promises it when a key is configured and nothing else is in the way", () => {
+    const answer = requestPull(state("resting"), { handle: "ash", token }, { ...deps(store()), reasoningConfigured: true });
+    expect(answer.ok).toBe(true);
+    if (answer.ok) expect(answer.view.willReason).toBe(true);
+  });
+});

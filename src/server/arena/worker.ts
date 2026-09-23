@@ -232,7 +232,9 @@ function failed(store: ArenaStore, reason: string, nextAt: number): void {
  * A published flag that said a round was reasoning while the switch was off
  * would be a claim nobody could check from the outside.
  */
-export function roundReasons(gates: { pulled: boolean; scheduledReasoning: boolean; withinBudget: boolean; switchOn: boolean }): boolean {
+export function roundReasons(gates: { pulled: boolean; scheduledReasoning: boolean; withinBudget: boolean; switchOn: boolean; keyed?: boolean }): boolean {
+  // No key, no reasoning, whatever anybody has switched on.
+  if (gates.keyed === false) return false;
   if (!gates.switchOn) return false;
   if (!gates.withinBudget) return false;
   return gates.pulled || gates.scheduledReasoning;
@@ -262,6 +264,7 @@ export async function playArenaRound(ctx: ServerContext, store: ArenaStore, next
     scheduledReasoning: scheduledReasoningOn(flow.servScheduledFile),
     withinBudget: budget.withinBudget,
     switchOn: servReasoningOn(flow.servSwitchFile),
+    keyed: Boolean(flow.serv),
   });
   if (pulledBy !== null && !reasoning) {
     log.info("arena round on instinct", { spentMicroCents: budget.spentMicroCents, budgetMicroCents: budget.budgetMicroCents, switchOn: servReasoningOn(flow.servSwitchFile) });

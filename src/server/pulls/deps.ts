@@ -31,6 +31,8 @@ export interface PullEnvironment {
   settings: PullSettings;
   budget: BudgetState;
   reasoningOn: boolean;
+  /** Whether a key is configured at all, which no switch can make up for. */
+  reasoningConfigured: boolean;
 }
 
 /** The operator's limits, and where today's spend stands against them. */
@@ -42,6 +44,7 @@ export function pullEnvironment(now: number = Date.now()): PullEnvironment {
     settings,
     budget: budgetState(roundStore(env.dataDir, network).all(), settings.dailyBudgetCents, now),
     reasoningOn: servReasoningOn(join(env.dataDir, SERV_OFF_FILE)),
+    reasoningConfigured: Boolean(env.serv),
   };
 }
 

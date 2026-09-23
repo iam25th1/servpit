@@ -56,6 +56,13 @@ export interface PullDeps {
   budget: BudgetState;
   /** True while the operator switch allows reasoning at all. */
   reasoningOn: boolean;
+  /**
+   * Whether this deployment has reasoning configured at all.
+   *
+   * A pit with no key cannot reason however the switch is set, and a lever
+   * that promised it would be promising something nobody could deliver.
+   */
+  reasoningConfigured?: boolean;
   /** The handle owner from the pick log, so one handle is one browser everywhere. */
   backingOwner?: (handle: string) => string | null;
   now?: () => number;
@@ -69,7 +76,8 @@ export function roundInFlight(state: ArenaState): boolean {
 }
 
 /** Whether a round pulled right now would reason, and why not when it would not. */
-export function reasoningOutlook(deps: Pick<PullDeps, "budget" | "reasoningOn">): { willReason: boolean; reasonBlocked: string | null } {
+export function reasoningOutlook(deps: Pick<PullDeps, "budget" | "reasoningOn" | "reasoningConfigured">): { willReason: boolean; reasonBlocked: string | null } {
+  if (deps.reasoningConfigured === false) return { willReason: false, reasonBlocked: "This pit has no reasoning configured, so every round runs on instinct." };
   if (!deps.reasoningOn) return { willReason: false, reasonBlocked: "The operator has reasoning switched off, so this round runs on instinct." };
   if (!deps.budget.withinBudget) return { willReason: false, reasonBlocked: "The pit has spent its reasoning budget for today, so this round runs on instinct." };
   return { willReason: true, reasonBlocked: null };
