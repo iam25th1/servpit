@@ -211,14 +211,15 @@ describe("render source hygiene", () => {
 describe("slot source hygiene", () => {
   it("no timers or clocks in the slot code or the play screen either", () => {
     const banned = [/setTimeout/, /setInterval/, /requestAnimationFrame/, /Date\.now/, /performance\.now/];
-    // Three files, named here rather than pattern matched, and all about wall
+    // Four files, named here rather than pattern matched, and all about wall
     // time rather than animation: a spectator's connection to the pit
     // reconnects and polls on a timer, a countdown to the next round is a
-    // clock, and the backing tallies move while no phase does, so they are
-    // polled. The Timeline runs in round time and does not exist at all while
-    // the pit is resting, so none of those can come from it. Everything that
-    // moves on a canvas still does.
-    const clockwork = new Set(["arenaFeed.ts", "arenaClock.ts", "backingFeed.ts"]);
+    // clock, the backing tallies move while no phase does, and the lever's
+    // own state ages out of a window nothing on screen can see. The Timeline
+    // runs in round time and does not exist at all while the pit is resting,
+    // so none of those can come from it. Everything that moves on a canvas
+    // still does.
+    const clockwork = new Set(["arenaFeed.ts", "arenaClock.ts", "backingFeed.ts", "pullFeed.ts"]);
     const offenders: string[] = [];
     const walk = (dir: string) => {
       for (const name of readdirSync(dir)) {
@@ -266,11 +267,12 @@ describe("slot source hygiene", () => {
     // which is a different concern from the animation clock and is not what
     // this rule protects.
     //
-    // The same two spectator files are named here as above, for the same
-    // reason: a reconnect and a countdown are wall time, not animation. A
-    // requestAnimationFrame in either of them would still be caught, because
-    // that is the animation clock and it belongs to loop.ts.
-    const clockwork = new Set(["arenaFeed.ts", "arenaClock.ts", "backingFeed.ts"]);
+    // The same spectator files are named here as above, for the same reason:
+    // a reconnect, a countdown, a tally poll and the lever's own state are
+    // wall time, not animation. A requestAnimationFrame in any of them would
+    // still be caught, because that is the animation clock and it belongs to
+    // loop.ts.
+    const clockwork = new Set(["arenaFeed.ts", "arenaClock.ts", "backingFeed.ts", "pullFeed.ts"]);
     const offenders: string[] = [];
     const walk = (dir: string) => {
       for (const name of readdirSync(dir)) {

@@ -1235,6 +1235,25 @@ a.transferHash {
   margin: 0;
 }
 
+/* The lever, on the quiet screen. A column so the control leads and the two
+   lines under it read as its terms rather than as a caption on the card. */
+.lever {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-tight);
+  margin-bottom: var(--space-tight);
+}
+
+/* The same ink the rest of the card is set in: what the lever will do is not
+   a warning, it is the terms. */
+.leverLine {
+  font-size: var(--text-small);
+  color: var(--ink-dim, var(--ink));
+  margin: 0;
+  text-align: center;
+}
+
 .restActions {
   display: flex;
   flex-wrap: wrap;

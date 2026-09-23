@@ -184,6 +184,23 @@ export interface BoardShape {
 }
 
 /** The spectator's view of a pit that runs itself. */
+/** The lever, as the shell draws it. Every sentence is worked out in leverNote.ts. */
+export interface LeverShape {
+  /** The label on the control. */
+  action: string;
+  /** Pulls left and when more arrive, or null when there is no limit. */
+  pulls: string | null;
+  /** Whether a round pulled now would reason. */
+  reasoning: string;
+  /** Why it will not work right now, or null when it will. */
+  blocked: string | null;
+  /** What the pit said when it took the ask, until the round starts. */
+  said: string | null;
+  /** False while a pull would be refused, so the control says so rather than trying. */
+  canPull: boolean;
+  onPull: () => void;
+}
+
 export interface WatchingShape {
   /** True while the phase stream is connected. */
   live: boolean;
@@ -227,6 +244,8 @@ export interface GameShellProps {
    * quiet between them to fill.
    */
   watching: WatchingShape | null;
+  /** The lever, in arena mode, or null where a round is not something to ask for. */
+  lever?: LeverShape | null;
   /** The wall, once it has been read. Null while the request is in flight. */
   graves: GraveShape[] | null;
   slotCanvasRef: RefObject<HTMLCanvasElement | null>;
@@ -783,6 +802,7 @@ function Resting({
   watching,
   run,
   bank,
+  lever,
   onShowGraveyard,
   onReplay,
   onShowBoard,
@@ -792,6 +812,7 @@ function Resting({
   watching: WatchingShape;
   run: RunShape | null;
   bank: BankShape | null;
+  lever: LeverShape | null;
   onShowGraveyard: () => void;
   onReplay: () => void;
   onShowBoard: () => void;
@@ -846,6 +867,24 @@ function Resting({
           <p className={styles.restLast} data-rest-row="">
             Backing opens after the draw, once the next round is under way.
           </p>
+        )}
+        {/* The lever. Above the other actions because it is the one thing on
+            this screen that changes what the pit does, and it says what it
+            will cost in pulls and whether the round reasons before it is
+            pulled rather than after. */}
+        {lever && (
+          <div className={styles.lever} data-rest-row="">
+            <Button onClick={lever.onPull} scale={2} disabled={!lever.canPull}>
+              {lever.action}
+            </Button>
+            <p className={styles.leverLine}>{lever.said ?? lever.reasoning}</p>
+            {lever.pulls && <p className={styles.leverLine}>{lever.pulls}</p>}
+            {lever.blocked && (
+              <p className={styles.leverLine} role="status">
+                {lever.blocked}
+              </p>
+            )}
+          </div>
         )}
         <div className={styles.restActions} data-rest-row="">
           {watching.canReplay && (
@@ -1320,6 +1359,7 @@ export function GameShell(props: GameShellProps) {
           watching={props.watching}
           run={run}
           bank={plan?.bank ?? null}
+          lever={props.lever ?? null}
           onShowGraveyard={props.onShowGraveyard}
           onReplay={props.onReplay}
           onShowBoard={props.onShowBoard}

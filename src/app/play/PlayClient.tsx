@@ -47,6 +47,8 @@ import { fightOffsetMs, pulledLine, reasoningLine, watchDecisions, watchEntries,
 import { replayFrame, replayableRound } from "./arenaReplay";
 import { backOptions, pickOutcome } from "./backing";
 import { useBackingFeed } from "./backingFeed";
+import { usePullFeed } from "./pullFeed";
+import { leverLines } from "./leverNote";
 import { backerHandle, backerToken, browserStore, setBackerHandle, type StorageLike } from "./backerId";
 import { hasSeenOnboarding, markOnboardingSeen, onboardingScreens } from "./onboarding";
 import type { BoardShape } from "./screens/GameShell";
@@ -217,6 +219,10 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
   const backingFeed = useBackingFeed(backingLive, watch.round?.roundId ?? null, watch.round?.phase ?? null, handle);
   const counts = backingFeed.view?.counts ?? {};
   const myPick = backingFeed.view?.pick ?? null;
+
+  // The lever. Only where a round is something to ask for: in arena mode, and
+  // not over a recording, which has no round to start.
+  const pullFeed = usePullFeed(arenaMode && replayRound === null, handle, deviceToken);
 
   // How it works: open by itself the first time, and whenever it is asked for
   // after that. Read from storage in the initialiser for the same reason the
@@ -760,6 +766,31 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
             decided={arenaMode ? watchDecisions(watchedRound) : (state.decided as DecidedShape[])}
             occupants={arenaMode ? watchOccupants(watchedRound) : (state.occupants as OccupantShape[])}
             entries={arenaMode ? watchEntries(watchedRound) : (state.entries as EntryShape[])}
+            lever={
+              arenaMode && replayRound === null
+                ? {
+                    ...leverLines({
+                      view: pullFeed.view,
+                      error: pullFeed.error,
+                      pulling: pullFeed.pulling,
+                      busy: watch.round !== null && !watch.resting,
+                      handle,
+                      // Read once per render rather than on a clock: the two
+                      // figures it phrases move in minutes, and the card must
+                      // not be rebuilt every second to say so.
+                      now: readNow(),
+                    }),
+                    canPull:
+                      handle !== null &&
+                      !pullFeed.pulling &&
+                      watch.resting &&
+                      (pullFeed.view?.left === null || (pullFeed.view?.left ?? 1) > 0),
+                    onPull: () => {
+                      if (handle) void pullFeed.pull(handle, deviceToken);
+                    },
+                  }
+                : null
+            }
             watching={
               arenaMode
                 ? {
