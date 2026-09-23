@@ -13,6 +13,7 @@ import { CLAIMABLE_FACES, normaliseFighterName } from "@/config/fighters";
 import { tokenHash, validToken } from "../backing/identity";
 import type { RateLimiter } from "../backing/limit";
 import { firstOwner, type HandleOwners } from "../identity/handles";
+import type { CareerRow } from "./careerStore";
 import type { Fighter, FighterStore } from "./log";
 
 /** A fighter as a viewer sees it. No token, no hash, ever. */
@@ -30,6 +31,8 @@ export interface ClaimView {
   freeFaces: string[];
   /** One sentence a player can read. */
   message: string;
+  /** This fighter's record, or null before it has been in a round. */
+  career?: CareerRow | null;
 }
 
 export type ClaimAnswer = { ok: true; view: ClaimView } | { ok: false; status: number; message: string };
@@ -49,6 +52,8 @@ export interface FighterDeps {
   cap?: number;
   /** The other claim logs, so one handle is one browser everywhere. */
   logs?: readonly HandleOwners[];
+  /** This handle's record, when there is a board to read it from. */
+  career?: (handle: string) => CareerRow | null;
 }
 
 export const shown = (fighter: Fighter): FighterView => ({ handle: fighter.handle, name: fighter.name, face: fighter.face, entrantId: fighter.entrantId });
@@ -65,6 +70,7 @@ export function fighterStatus(input: { handle: unknown; token: unknown }, deps: 
     fighter: mine ? shown(mine) : null,
     freeFaces: deps.store.freeFaces(),
     message: mine ? `${mine.name} is yours, and enters every round.` : "Claim a fighter and it enters every round.",
+    career: mine ? (deps.career?.(mine.handle) ?? null) : null,
   };
 }
 

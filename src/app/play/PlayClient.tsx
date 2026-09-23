@@ -53,6 +53,7 @@ import { leverLines } from "./leverNote";
 import { backerHandle, backerToken, browserStore, type StorageLike } from "./backerId";
 import { useHandleClaim } from "./handleFeed";
 import { useFighterFeed } from "./fighterFeed";
+import { careerLine, myRound, myRoundLine, plateNames, type ClaimedSeat } from "./myFighter";
 import { hasSeenOnboarding, markOnboardingSeen, onboardingScreens } from "./onboarding";
 import type { BoardShape } from "./screens/GameShell";
 import type { GraveShape } from "./screens/graveyardRows";
@@ -224,6 +225,14 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
   // A fighter of your own: asked for when there is a handle, and again when
   // a claim lands. Nothing here is on a clock.
   const fighterFeed = useFighterFeed(arenaMode, handle, deviceToken);
+  const myFighter: ClaimedSeat | null = fighterFeed.view?.fighter ?? null;
+  // Read by the effect that builds the timeline, which runs on a phase rather
+  // than on this value: a ref keeps it current without rebuilding the fight,
+  // and it is written in an effect rather than during a render.
+  const myFighterRef = useRef<ClaimedSeat | null>(null);
+  useEffect(() => {
+    myFighterRef.current = myFighter;
+  }, [myFighter]);
 
   // Never during a replay: a recording has no window to back into, and a pick
   // on a finished round would be a pick on a known result.
@@ -245,6 +254,21 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
   const closeHow = (): void => {
     markOnboardingSeen(backerStore);
     setHowOpen(false);
+  };
+
+  // The fighters board, fetched when it is asked for. Its own board because a
+  // fighter's record is mostly luck, which the README says out loud.
+  const [fighterBoard, setFighterBoard] = useState<Record<string, unknown> | null>(null);
+  const showFighters = async (page: number): Promise<void> => {
+    try {
+      const query = handle ? `&handle=${encodeURIComponent(handle)}` : "";
+      const response = await fetch(`/api/fighters?page=${page}${query}`, { cache: "no-store" });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      setFighterBoard((await response.json()) as Record<string, unknown>);
+    } catch {
+      // An empty board says the same thing a failed one would.
+      setFighterBoard({ rows: [], page: 1, pages: 1, total: 0, you: null });
+    }
   };
 
   const [board, setBoard] = useState<BoardShape | null>(null);
@@ -702,7 +726,14 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
 
     if (round.phase === "fight" && round.fight) {
       engine.arenaRenderer.floorSeed = round.roundId;
-      engine.timeline = new Timeline({ characters: round.fight.characters, log: round.fight.log, placements: round.fight.placements, names: round.fight.names } as never);
+      engine.timeline = new Timeline({
+        characters: round.fight.characters,
+        log: round.fight.log,
+        placements: round.fight.placements,
+        // The agents, which the round names, and this viewer's own fighter.
+        // Nobody else's: twenty four plates is noise rather than a pit.
+        names: plateNames(round, myFighterRef.current),
+      } as never);
       engine.timeline.onBatch((batch, silent) => engine.juice.onBatch(batch, silent, (id) => engine.timeline!.actor(id)));
       setArena(arenaStanding(engine.timeline.actors()));
       engine.timeline.onBatch(() => setArena(arenaStanding(engine.timeline!.actors())));
@@ -912,6 +943,12 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
             }}
             onShowHow={showHow}
             onCloseHow={closeHow}
+            fighterBoard={fighterBoard as never}
+            onShowFighters={() => void showFighters(1)}
+            onCloseFighters={() => setFighterBoard(null)}
+            onFightersPage={(page) => void showFighters(page)}
+            myRoundLine={myRoundLine(myFighter?.name ?? "", myRound(watch.round, myFighter), fighterFeed.view?.career?.streak ?? null)}
+            myCareerLine={careerLine(fighterFeed.view?.career ?? null)}
             onShowBoard={() => void showBoard(1)}
             onCloseBoard={() => setBoard(null)}
             onBoardPage={(page) => void showBoard(page)}

@@ -140,3 +140,38 @@ describe("claiming a fighter", () => {
     expect(document.body.textContent).toContain("took that face first");
   });
 });
+
+describe("the viewer's own fighter on screen", () => {
+  it("shows the record and a way to the fighters board on the quiet screen", () => {
+    const onShowFighters = vi.fn();
+    mount(
+      shell({
+        fighter: fighter({ mine: { handle: "ash", name: "Cinder", face: "Monk", entrantId: "fighter-ash" } }),
+        myCareerLine: "Cinder: 9 rounds, 1 win, best 1st, 7 kills, streak 2 and a longest of 4.",
+        onShowFighters,
+      }),
+    );
+    expect(document.body.textContent).toContain("9 rounds, 1 win, best 1st");
+    fireEvent.click(screen.getByRole("button", { name: "The fighters" }));
+    expect(onShowFighters).toHaveBeenCalledTimes(1);
+  });
+
+  it("draws the fighters board when it is open, with its own reason on it", () => {
+    mount(
+      shell({
+        fighterBoard: {
+          rows: [{ handle: "ash", name: "Cinder", face: "Monk", rounds: 9, wins: 1, best: 1, kills: 7, streak: 2, longest: 4 }],
+          page: 1,
+          pages: 1,
+          total: 1,
+          you: null,
+        },
+        onCloseFighters: () => {},
+        onFightersPage: () => {},
+      }),
+    );
+    expect(document.body.textContent).toContain("The fighters");
+    expect(document.body.textContent).toContain("Cinder");
+    expect(document.body.textContent).toMatch(/mostly luck/);
+  });
+});

@@ -13,6 +13,9 @@ import { arenaMode } from "@/config/arena";
 import { CLAIMS_PER_MINUTE } from "@/config/fighters";
 import { pickReader } from "@/server/backing/read";
 import { RateLimiter } from "@/server/backing/limit";
+import { arenaReader } from "@/server/arena/read";
+import { readEnv } from "@/server/env";
+import { CareerStore, careerFile } from "@/server/fighters/careerStore";
 import { claimFighter, fighterStatus } from "@/server/fighters/service";
 import { fighterReader } from "@/server/fighters/read";
 import { log } from "@/server/log";
@@ -28,12 +31,21 @@ const MAX_BODY_BYTES = 2_000;
 /** The limiter for this process, since a limit per request would limit nothing. */
 const claimLimiter = new RateLimiter(CLAIMS_PER_MINUTE);
 
+let careers: CareerStore | undefined;
+
+function careerStore(): CareerStore {
+  const network = arenaReader().chain.network;
+  careers ??= new CareerStore(careerFile(readEnv().dataDir, network), network);
+  return careers;
+}
+
 function deps() {
   return {
     store: fighterReader(),
     limiter: claimLimiter,
     arenaMode: arenaMode(),
     logs: [pickReader(), pullReader()],
+    career: (handle: string) => careerStore().row(handle),
   };
 }
 

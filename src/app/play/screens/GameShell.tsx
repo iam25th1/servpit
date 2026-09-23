@@ -297,6 +297,15 @@ export interface GameShellProps {
   handle?: HandleShape | null;
   /** Claiming a fighter, in arena mode. Null in the lever flow. */
   fighter?: FighterShape | null;
+  /** The fighters board, when it is open. */
+  fighterBoard?: FighterBoardShape | null;
+  onShowFighters?: () => void;
+  onCloseFighters?: () => void;
+  onFightersPage?: (page: number) => void;
+  /** How this viewer's own fighter did in the round on screen, or null. */
+  myRoundLine?: string | null;
+  /** This viewer's fighter's record, in a sentence, or null. */
+  myCareerLine?: string | null;
   /** The wall, once it has been read. Null while the request is in flight. */
   graves: GraveShape[] | null;
   slotCanvasRef: RefObject<HTMLCanvasElement | null>;
@@ -727,6 +736,90 @@ function Board({ board, onClose, onPage }: { board: BoardShape; onClose: () => v
   );
 }
 
+/** A row of the fighters board, which is its own board for a reason. */
+export interface FighterBoardRow {
+  handle: string;
+  name: string;
+  face: string;
+  rounds: number;
+  wins: number;
+  best: number;
+  kills: number;
+  streak: number;
+  longest: number;
+}
+
+export interface FighterBoardShape {
+  rows: FighterBoardRow[];
+  page: number;
+  pages: number;
+  total: number;
+  /** This viewer's own row, wherever it sits. */
+  you: FighterBoardRow | null;
+}
+
+/**
+ * The fighters board.
+ *
+ * Separate from the one that scores calling a round right, because a fighter
+ * is one seat in twenty four with no decisions to make: its record is mostly
+ * luck, and the two boards together would make luck look like skill.
+ */
+function Fighters({ board, onClose, onPage }: { board: FighterBoardShape; onClose: () => void; onPage: (page: number) => void }) {
+  const { facesetPath } = useUiKit();
+  const rootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const rows = rootRef.current ? [...rootRef.current.querySelectorAll<HTMLElement>("[data-board-row]")] : [];
+    void staggerIn(rows, { delay: 40 });
+  }, [board.page]);
+
+  return (
+    <div ref={rootRef} className={styles.boardOver} data-anim="fighters">
+      <NinePatch sprite="panelAlt" scale={uiScale} className={styles.boardCard}>
+        <h2 className={styles.graveTitle}>The fighters</h2>
+        <p className={styles.sideNote}>
+          {board.total === 1 ? "1 fighter" : `${board.total} fighters`}. One seat in twenty four with nothing to decide, so a record here is mostly luck.
+        </p>
+        <ul className={styles.boardList}>
+          {board.rows.map((row, i) => (
+            <li key={row.handle} className={row.handle === board.you?.handle ? `${styles.boardRow} ${styles.boardYou}` : styles.boardRow} data-board-row="">
+              <span className={styles.boardRank}>{(board.page - 1) * 10 + i + 1}</span>
+              <img className={styles.faceset} src={facesetPath(row.face)} alt="" width={38} height={38} />
+              <span className={styles.boardHandle}>{row.name}</span>
+              <span className={styles.boardStat}>
+                {row.wins} of {row.rounds} won
+              </span>
+              <span className={styles.boardStat}>best {row.best === 0 ? "none" : row.best}</span>
+              <span className={styles.boardStat}>{row.kills === 1 ? "1 kill" : `${row.kills} kills`}</span>
+              <span className={styles.boardPoints}>{row.streak > 0 ? `${row.streak} up` : "no run"}</span>
+            </li>
+          ))}
+        </ul>
+        {board.total === 0 && <p className={styles.sideNote}>Nobody has claimed a fighter yet.</p>}
+        {board.you && !board.rows.some((row) => row.handle === board.you?.handle) && (
+          <p className={styles.sideNote}>
+            {board.you.name} has {board.you.wins} wins from {board.you.rounds} rounds.
+          </p>
+        )}
+        <div className={styles.restActions}>
+          <Button onClick={() => onPage(board.page - 1)} scale={2} disabled={board.page <= 1}>
+            Back a page
+          </Button>
+          <span className={styles.boardStat}>
+            Page {board.page} of {board.pages}
+          </span>
+          <Button onClick={() => onPage(board.page + 1)} scale={2} disabled={board.page >= board.pages}>
+            On a page
+          </Button>
+          <Button onClick={onClose} scale={2}>
+            Close
+          </Button>
+        </div>
+      </NinePatch>
+    </div>
+  );
+}
+
 function Lineup({
   plan,
   decided,
@@ -985,6 +1078,8 @@ function Resting({
   lever,
   handle,
   fighter,
+  careerLine,
+  onShowFighters,
   onShowGraveyard,
   onReplay,
   onShowBoard,
@@ -997,6 +1092,9 @@ function Resting({
   lever: LeverShape | null;
   handle: HandleShape | null;
   fighter: FighterShape | null;
+  /** This viewer's fighter's record, in a sentence, or null. */
+  careerLine: string | null;
+  onShowFighters?: () => void;
   onShowGraveyard: () => void;
   onReplay: () => void;
   onShowBoard: () => void;
@@ -1066,6 +1164,12 @@ function Resting({
           <div className={styles.restHandle} data-rest-row="">
             <HandlePanel handle={handle} label="Pick a handle" />
             {fighter && <FighterPanel fighter={fighter} />}
+            {careerLine && <p className={styles.handleNote}>{careerLine}</p>}
+            {onShowFighters && (
+              <Button onClick={onShowFighters} scale={2}>
+                The fighters
+              </Button>
+            )}
           </div>
         )}
         {/* The lever. Above the other actions because it is the one thing on
@@ -1285,7 +1389,20 @@ function Graveyard({ graves, error, onClose }: { graves: GraveShape[] | null; er
   );
 }
 
-function ResultScreen({ run, onPlayAgain, backing, watching }: { run: RunShape; onPlayAgain: () => void; backing: BackingShape | null; watching: WatchingShape | null }) {
+function ResultScreen({
+  run,
+  onPlayAgain,
+  backing,
+  watching,
+  mine,
+}: {
+  run: RunShape;
+  onPlayAgain: () => void;
+  backing: BackingShape | null;
+  watching: WatchingShape | null;
+  /** How this viewer's own fighter did, in a sentence, or null. */
+  mine: string | null;
+}) {
   const { facesetPath, ui } = useUiKit();
   const rootRef = useRef<HTMLDivElement>(null);
   const coinPathRef = useRef<SVGPathElement>(null);
@@ -1348,6 +1465,9 @@ function ResultScreen({ run, onPlayAgain, backing, watching }: { run: RunShape; 
         <img className={styles.winnerFace} src={facesetPath(winnerCharacter(run))} alt="" width={38 * 2} height={38 * 2} />
         <h2 className={`${styles.winnerName} ${styles.nameplate}`}>{winnerName}</h2>
         <p className={styles.winnerPot}>{chips(prize)} chips taken</p>
+        {/* How the viewer's own fighter did, under the winner rather than
+            beside it: it is their round, not the round. */}
+        {mine && <p className={styles.mineLine}>{mine}</p>}
         {/* What a winner owed comes off the top, before it is treated as
             keeping anything. Three figures rather than one net number,
             because a win that mostly went to the lender is a different
@@ -1569,6 +1689,8 @@ export function GameShell(props: GameShellProps) {
           lever={props.lever ?? null}
           handle={props.handle ?? null}
           fighter={props.fighter ?? null}
+          careerLine={props.myCareerLine ?? null}
+          onShowFighters={props.onShowFighters}
           onShowGraveyard={props.onShowGraveyard}
           onReplay={props.onReplay}
           onShowBoard={props.onShowBoard}
@@ -1577,9 +1699,14 @@ export function GameShell(props: GameShellProps) {
         />
       )}
       {props.board && <Board board={props.board} onClose={props.onCloseBoard} onPage={props.onBoardPage} />}
+      {props.fighterBoard && props.onCloseFighters && props.onFightersPage && (
+        <Fighters board={props.fighterBoard} onClose={props.onCloseFighters} onPage={props.onFightersPage} />
+      )}
       {props.onboarding && <Onboarding screens={props.onboarding} onClose={props.onCloseHow} />}
       {state.screen === "wreck" && run && <WreckScreen run={run} onContinue={props.onWreckSeen} />}
-      {state.screen === "result" && run && <ResultScreen run={run} onPlayAgain={props.onPlayAgain} backing={props.backing} watching={props.watching} />}
+      {state.screen === "result" && run && (
+        <ResultScreen run={run} onPlayAgain={props.onPlayAgain} backing={props.backing} watching={props.watching} mine={props.myRoundLine ?? null} />
+      )}
       </div>
     </main>
   );

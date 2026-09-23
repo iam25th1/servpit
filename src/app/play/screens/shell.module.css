@@ -1298,6 +1298,15 @@ a.transferHash {
   cursor: pointer;
 }
 
+/* How the viewer's own fighter did, on the result. Ink on the panel like the
+   rest of the card: it is their line, not a warning. */
+.mineLine {
+  font-size: var(--text-small);
+  color: var(--ink-dim, var(--ink));
+  margin: 0;
+  text-align: center;
+}
+
 /* Claiming a fighter: a name, a row of faces, and the button. */
 .fighterForm {
   display: flex;

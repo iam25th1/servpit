@@ -13,6 +13,18 @@ export interface FighterView {
   fighter: { handle: string; name: string; face: string; entrantId: string } | null;
   freeFaces: string[];
   message: string;
+  /** This fighter's record, or null before it has been in a round. */
+  career?: {
+    handle: string;
+    name: string;
+    face: string;
+    rounds: number;
+    wins: number;
+    best: number;
+    kills: number;
+    streak: number;
+    longest: number;
+  } | null;
 }
 
 /** The only thing a viewer is told when the pit cannot be reached. */

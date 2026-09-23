@@ -43,6 +43,9 @@ describe("what a first time visitor is told", () => {
     const lever = onboardingScreens(false).flatMap((s) => s.lines).join(" ");
     expect(arena).toMatch(/back one agent/i);
     expect(arena).toMatch(/watch the last one again/i);
+    // And the other thing a viewer can do, which nothing else announces.
+    expect(arena).toMatch(/claim a fighter of your own/i);
+    expect(lever).not.toMatch(/claim a fighter/i);
     // In lever mode the plan route hands out the seed, so a pick would be a
     // pick on a known result. Nothing here offers one.
     expect(lever).not.toMatch(/back one agent|points/i);
