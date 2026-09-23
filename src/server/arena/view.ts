@@ -72,6 +72,8 @@ export function roundView(round: ArenaRound | null): ArenaRoundView | null {
     refusals: round.refusals,
     bank: round.bank,
     entries: round.entries,
+    // The claimed seats in this round, by name and face.
+    ...(round.fighters ? { fighters: round.fighters } : {}),
     // Who asked for this round, and whether it was allowed to reason.
     // Neither is an outcome: both are true from the moment it starts.
     ...(round.pulledBy ? { pulledBy: round.pulledBy } : {}),

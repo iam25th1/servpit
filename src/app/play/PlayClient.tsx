@@ -52,6 +52,7 @@ import { usePullFeed } from "./pullFeed";
 import { leverLines } from "./leverNote";
 import { backerHandle, backerToken, browserStore, type StorageLike } from "./backerId";
 import { useHandleClaim } from "./handleFeed";
+import { useFighterFeed } from "./fighterFeed";
 import { hasSeenOnboarding, markOnboardingSeen, onboardingScreens } from "./onboarding";
 import type { BoardShape } from "./screens/GameShell";
 import type { GraveShape } from "./screens/graveyardRows";
@@ -220,6 +221,9 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
   // left open whenever the answer is no.
   const handleClaim = useHandleClaim(backerStore, deviceToken, storedHandle);
   const handle = handleClaim.handle;
+  // A fighter of your own: asked for when there is a handle, and again when
+  // a claim lands. Nothing here is on a clock.
+  const fighterFeed = useFighterFeed(arenaMode, handle, deviceToken);
 
   // Never during a replay: a recording has no window to back into, and a pick
   // on a finished round would be a pick on a known result.
@@ -873,6 +877,18 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
                 // pit's refusal is the authority, so the field comes back.
                 if (error && /another browser/.test(error)) handleClaim.refused(error);
               })
+            }
+            fighter={
+              arenaMode
+                ? {
+                    mine: fighterFeed.view?.fighter ?? null,
+                    freeFaces: fighterFeed.view?.freeFaces ?? [],
+                    error: fighterFeed.error,
+                    claiming: fighterFeed.claiming,
+                    ready: handle !== null,
+                    onClaim: (name, face) => void fighterFeed.claim(name, face),
+                  }
+                : null
             }
             handle={
               arenaMode

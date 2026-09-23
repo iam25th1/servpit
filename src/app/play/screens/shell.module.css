@@ -1298,6 +1298,46 @@ a.transferHash {
   cursor: pointer;
 }
 
+/* Claiming a fighter: a name, a row of faces, and the button. */
+.fighterForm {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-tight);
+  width: 100%;
+}
+
+.faceRow {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-tight);
+}
+
+/* A face is the control. The frame says which one is chosen, because a tint
+   over pixel art reads as a different character rather than a selection. */
+.facePick {
+  background: none;
+  border: 2px solid transparent;
+  padding: 0;
+  line-height: 0;
+  cursor: pointer;
+}
+
+.facePicked {
+  border-color: var(--amber);
+}
+
+/* The fighter itself, once there is one. */
+.fighterMine {
+  display: flex;
+  align-items: center;
+  gap: var(--space-tight);
+  font-size: var(--text-small);
+  color: var(--ink-dim, var(--ink));
+  margin: 0;
+}
+
 /* The lever, on the quiet screen. A column so the control leads and the two
    lines under it read as its terms rather than as a caption on the card. */
 .lever {

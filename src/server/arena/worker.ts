@@ -358,6 +358,9 @@ export async function playArenaRound(ctx: ServerContext, store: ArenaStore, next
     {
       roundId: plan.roundId,
       bots: plan.bots.length,
+      // The claimed seats, by name and face. A name is not an outcome: it is
+      // true from the moment the round starts.
+      fighters: fightersOf(plan),
       stakeChips: toChips(plan.stakeWei),
       // From the plan, which is what actually settles, rather than from the
       // stream above: a late line must not leave a row the round did not use.
@@ -517,5 +520,10 @@ function entrantNamesOf(plan: RoundPlan): Record<string, string> {
     names[e.entrantId] = plan.decisions.find((d) => d.agentId === e.agentId)?.name ?? e.agentId;
   }
   return names;
+}
+
+/** The claimed seats in a round, as the arena publishes them. */
+function fightersOf(plan: RoundPlan): Array<{ handle: string; name: string; face: string; entrantId: string }> {
+  return (plan.fighters ?? []).map((f) => ({ handle: f.handle, name: f.name, face: f.face, entrantId: f.entrantId }));
 }
 

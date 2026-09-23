@@ -208,6 +208,27 @@ export interface HandleShape {
   onChange: () => void;
 }
 
+/**
+ * A fighter of your own, as the shell draws it.
+ *
+ * Null where a fighter is not something to claim, which is the lever flow.
+ * The claim form is on screen until this browser has one, and after that the
+ * panel is the fighter itself.
+ */
+export interface FighterShape {
+  /** This browser's fighter, or null while there is none. */
+  mine: { handle: string; name: string; face: string; entrantId: string } | null;
+  /** Faces nobody is using. */
+  freeFaces: string[];
+  /** What the pit said about the last attempt, or null. */
+  error: string | null;
+  /** True between asking and being answered. */
+  claiming: boolean;
+  /** False until a handle exists, because a claim is bound to one. */
+  ready: boolean;
+  onClaim: (name: string, face: string) => void;
+}
+
 /** The lever, as the shell draws it. Every sentence is worked out in leverNote.ts. */
 export interface LeverShape {
   /** The label on the control. */
@@ -274,6 +295,8 @@ export interface GameShellProps {
   lever?: LeverShape | null;
   /** Choosing a handle, in arena mode. Null in the lever flow. */
   handle?: HandleShape | null;
+  /** Claiming a fighter, in arena mode. Null in the lever flow. */
+  fighter?: FighterShape | null;
   /** The wall, once it has been read. Null while the request is in flight. */
   graves: GraveShape[] | null;
   slotCanvasRef: RefObject<HTMLCanvasElement | null>;
@@ -509,6 +532,80 @@ function HandlePanel({ handle, label }: { handle: HandleShape; label: string }) 
             </Button>
           ))}
         </div>
+      )}
+    </form>
+  );
+}
+
+/**
+ * Claiming a fighter, and the fighter once it is claimed.
+ *
+ * A name and a face, which is everything a seat needs: it costs nothing, it
+ * stakes nothing and it decides nothing, so there is nothing else to ask.
+ * The faces are the ones nobody is using, drawn rather than named, because a
+ * face is what a viewer will look for in the pit.
+ */
+function FighterPanel({ fighter }: { fighter: FighterShape }) {
+  const { facesetPath } = useUiKit();
+  const [name, setName] = useState("");
+  const [face, setFace] = useState<string | null>(null);
+
+  if (fighter.mine) {
+    return (
+      <p className={styles.fighterMine}>
+        <img className={styles.faceset} src={facesetPath(fighter.mine.face)} alt="" width={38} height={38} />
+        {fighter.mine.name} is yours, and enters every round.
+      </p>
+    );
+  }
+
+  if (!fighter.ready) {
+    return <p className={styles.handleNote}>Pick a handle first, then claim a fighter of your own.</p>;
+  }
+
+  const chosen = face ?? fighter.freeFaces[0] ?? null;
+  return (
+    <form
+      className={styles.fighterForm}
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (chosen) fighter.onClaim(name, chosen);
+      }}
+    >
+      <label className={styles.handleLabel} htmlFor="fighter-name">
+        Claim a fighter and follow its career
+      </label>
+      <input
+        id="fighter-name"
+        className={styles.handleInput}
+        value={name}
+        onChange={(event) => setName(event.target.value)}
+        maxLength={10}
+        autoComplete="off"
+        spellCheck={false}
+        placeholder="Name"
+      />
+      <div className={styles.faceRow} role="radiogroup" aria-label="Pick a face">
+        {fighter.freeFaces.slice(0, 8).map((option) => (
+          <button
+            key={option}
+            type="button"
+            className={option === chosen ? `${styles.facePick} ${styles.facePicked}` : styles.facePick}
+            aria-pressed={option === chosen}
+            aria-label={option}
+            onClick={() => setFace(option)}
+          >
+            <img className={styles.faceset} src={facesetPath(option)} alt="" width={38} height={38} />
+          </button>
+        ))}
+      </div>
+      <Button onClick={() => chosen && fighter.onClaim(name, chosen)} scale={2} disabled={fighter.claiming || chosen === null}>
+        {fighter.claiming ? "Claiming" : "Claim this fighter"}
+      </Button>
+      {fighter.error && (
+        <p className={styles.handleNote} role="status">
+          {fighter.error}
+        </p>
       )}
     </form>
   );
@@ -887,6 +984,7 @@ function Resting({
   bank,
   lever,
   handle,
+  fighter,
   onShowGraveyard,
   onReplay,
   onShowBoard,
@@ -898,6 +996,7 @@ function Resting({
   bank: BankShape | null;
   lever: LeverShape | null;
   handle: HandleShape | null;
+  fighter: FighterShape | null;
   onShowGraveyard: () => void;
   onReplay: () => void;
   onShowBoard: () => void;
@@ -966,6 +1065,7 @@ function Resting({
         {handle && (
           <div className={styles.restHandle} data-rest-row="">
             <HandlePanel handle={handle} label="Pick a handle" />
+            {fighter && <FighterPanel fighter={fighter} />}
           </div>
         )}
         {/* The lever. Above the other actions because it is the one thing on
@@ -1468,6 +1568,7 @@ export function GameShell(props: GameShellProps) {
           bank={plan?.bank ?? null}
           lever={props.lever ?? null}
           handle={props.handle ?? null}
+          fighter={props.fighter ?? null}
           onShowGraveyard={props.onShowGraveyard}
           onReplay={props.onReplay}
           onShowBoard={props.onShowBoard}

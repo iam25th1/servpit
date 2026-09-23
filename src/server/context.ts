@@ -5,6 +5,8 @@ import { BankrollCache } from "./bankroll";
 import { TransferLedger } from "./ledger";
 import { DEFAULT_SERV, SERV_OFF_FILE, SERV_SCHEDULED_FILE } from "@/config/serv";
 import { pullSettingsFile } from "@/config/pulls";
+import { fighterFile } from "@/config/fighters";
+import { FighterStore } from "./fighters/log";
 import { CostMeter, ServClient } from "./serv/client";
 import { createServTransport } from "./serv/transport";
 import { RoundStore } from "./round/store";
@@ -64,7 +66,11 @@ async function build(): Promise<ServerContext> {
   const servConfig = { ...DEFAULT_SERV, model: env.serv?.model ?? DEFAULT_SERV.model };
   const serv = env.serv ? new ServClient(servConfig, createServTransport(env.serv.apiKey, servConfig)) : undefined;
   log.info("serv backend", { configured: Boolean(serv), model: serv ? servConfig.model : null });
-  const flow: FlowContext = { chain, wallets, ledger, store, bankroll, meter, serv, plans, rollover, debts, wreckStore, settleLockFile: join(env.dataDir, `settle-${chain.network}.lock`), servSwitchFile: join(env.dataDir, SERV_OFF_FILE), servScheduledFile: join(env.dataDir, SERV_SCHEDULED_FILE), pullSettingsFile: pullSettingsFile(env.dataDir), entrants: 24 };
+  // The claimed seats, read at the start of every round rather than captured
+  // here: claims land between rounds, and a list from process start would be
+  // the claims of an hour ago.
+  const fighterStore = new FighterStore(fighterFile(env.dataDir, chain.network), chain.network);
+  const flow: FlowContext = { chain, wallets, ledger, store, bankroll, meter, serv, plans, rollover, debts, wreckStore, fighters: () => fighterStore.all().map((f) => ({ handle: f.handle, name: f.name, face: f.face, entrantId: f.entrantId })), settleLockFile: join(env.dataDir, `settle-${chain.network}.lock`), servSwitchFile: join(env.dataDir, SERV_OFF_FILE), servScheduledFile: join(env.dataDir, SERV_SCHEDULED_FILE), pullSettingsFile: pullSettingsFile(env.dataDir), entrants: 24 };
   return { env, chain, registry, wallets, bankroll, flow };
 }
 
