@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ArenaPhase, ArenaRound, ArenaState } from "../arena/state";
 import { RateLimiter } from "./limit";
+import { tokenHash } from "./identity";
 import { PickStore } from "./picks";
 import { backingView, submitPick } from "./service";
 
@@ -159,5 +160,28 @@ describe("what a viewer is told between picks", () => {
     expect(after.open).toBe(false);
     expect(after.counts).toEqual({ atlas: 1 });
     expect(after.pick).toBe("atlas");
+  });
+});
+
+describe("one handle, one browser, across both logs", () => {
+  it("refuses a pick under a handle claimed by pulling the lever", () => {
+    // The two logs each kept their own claims and each checked only its own,
+    // so a name claimed at the lever could still be picked under here.
+    const answer = submitPick(
+      state("backing"),
+      { handle: "ash", token: TOKEN, agentId: "atlas" },
+      { ...deps(), otherOwner: () => "another-browsers-hash" },
+    );
+    expect(answer).toMatchObject({ ok: false, status: 409 });
+    if (!answer.ok) expect(answer.message).toMatch(/another browser/);
+  });
+
+  it("lets the browser that made that claim pick under it", () => {
+    const answer = submitPick(
+      state("backing"),
+      { handle: "ash", token: TOKEN, agentId: "atlas" },
+      { ...deps(), otherOwner: () => tokenHash(TOKEN) },
+    );
+    expect(answer.ok).toBe(true);
   });
 });

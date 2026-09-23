@@ -188,6 +188,26 @@ export interface BoardShape {
 }
 
 /** The spectator's view of a pit that runs itself. */
+/**
+ * Choosing a handle, as the shell draws it.
+ *
+ * Null where a handle is not something to choose, which is the lever flow.
+ * The field is on screen whenever there is no handle, and a refused name
+ * leaves it there with the pit's own sentence and names that are free.
+ */
+export interface HandleShape {
+  /** The handle in use, or null while one is being chosen. */
+  value: string | null;
+  /** What the pit said about the last attempt, or null. */
+  message: string | null;
+  /** Free names to take instead. */
+  suggestions: string[];
+  /** True between asking and being answered. */
+  checking: boolean;
+  onClaim: (raw: string) => void;
+  onChange: () => void;
+}
+
 /** The lever, as the shell draws it. Every sentence is worked out in leverNote.ts. */
 export interface LeverShape {
   /** The label on the control. */
@@ -252,6 +272,8 @@ export interface GameShellProps {
   watching: WatchingShape | null;
   /** The lever, in arena mode, or null where a round is not something to ask for. */
   lever?: LeverShape | null;
+  /** Choosing a handle, in arena mode. Null in the lever flow. */
+  handle?: HandleShape | null;
   /** The wall, once it has been read. Null while the request is in flight. */
   graves: GraveShape[] | null;
   slotCanvasRef: RefObject<HTMLCanvasElement | null>;
@@ -421,10 +443,80 @@ function Failure({ error, onRetry }: { error: string; onRetry: () => void }) {
  * where a viewer reads it rather than only in the README.
  */
 
-function Backing({ backing, onBack, onHandle }: { backing: BackingShape; onBack: (agentId: string) => void; onHandle: (handle: string) => void }) {
+/**
+ * The handle field, wherever a handle is needed.
+ *
+ * One component rather than two, because the same choice is made in the
+ * backing panel and on the quiet screen, and a visitor refused in one of them
+ * must be able to recover in either. The field stays on screen until a name
+ * is actually this browser's: a refusal leaves it exactly where it was, with
+ * what the pit said above it and free names beside it.
+ */
+function HandlePanel({ handle, label }: { handle: HandleShape; label: string }) {
+  const [draft, setDraft] = useState("");
+
+  if (handle.value !== null) {
+    return (
+      <p className={styles.sideNote}>
+        You are {handle.value}.{" "}
+        <button type="button" className={styles.linkish} onClick={handle.onChange}>
+          Use another handle
+        </button>
+      </p>
+    );
+  }
+
+  return (
+    <form
+      className={styles.handleRow}
+      onSubmit={(event) => {
+        event.preventDefault();
+        handle.onClaim(draft);
+      }}
+    >
+      <label className={styles.handleLabel} htmlFor="handle-field">
+        {label}
+      </label>
+      <input
+        id="handle-field"
+        className={styles.handleInput}
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        maxLength={16}
+        autoComplete="off"
+        spellCheck={false}
+      />
+      <Button onClick={() => handle.onClaim(draft)} scale={2} disabled={handle.checking}>
+        {handle.checking ? "Checking" : "Use this handle"}
+      </Button>
+      {handle.message && (
+        <p className={styles.handleNote} role="status">
+          {handle.message}
+        </p>
+      )}
+      {handle.suggestions.length > 0 && (
+        <div className={styles.handleOffers}>
+          {handle.suggestions.map((suggestion) => (
+            <Button
+              key={suggestion}
+              scale={2}
+              onClick={() => {
+                setDraft(suggestion);
+                handle.onClaim(suggestion);
+              }}
+            >
+              {suggestion}
+            </Button>
+          ))}
+        </div>
+      )}
+    </form>
+  );
+}
+
+function Backing({ backing, handle, onBack }: { backing: BackingShape; handle: HandleShape | null; onBack: (agentId: string) => void }) {
   const { facesetPath } = useUiKit();
   const listRef = useRef<HTMLUListElement>(null);
-  const [draft, setDraft] = useState("");
   useEffect(() => {
     const rows = listRef.current ? [...listRef.current.querySelectorAll<HTMLElement>("li")] : [];
     void staggerIn(rows, { delay: 60 });
@@ -445,31 +537,8 @@ function Backing({ backing, onBack, onHandle }: { backing: BackingShape; onBack:
           "Picks are closed for this round."
         )}
       </p>
-      {backing.handle === null ? (
-        <form
-          className={styles.handleRow}
-          onSubmit={(event) => {
-            event.preventDefault();
-            onHandle(draft);
-          }}
-        >
-          <label className={styles.handleLabel} htmlFor="backing-handle">
-            Pick a handle to back under
-          </label>
-          <input
-            id="backing-handle"
-            className={styles.handleInput}
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            maxLength={16}
-            autoComplete="off"
-            spellCheck={false}
-          />
-          <Button onClick={() => onHandle(draft)} scale={2}>
-            Use this handle
-          </Button>
-        </form>
-      ) : (
+      {handle && <HandlePanel handle={handle} label="Pick a handle to back under" />}
+      {backing.handle !== null && (
         <p className={styles.sideNote}>
           Backing as {backing.handle}. {backing.backers === 1 ? "1 viewer has" : `${backing.backers} viewers have`} picked so far.
         </p>
@@ -817,6 +886,7 @@ function Resting({
   run,
   bank,
   lever,
+  handle,
   onShowGraveyard,
   onReplay,
   onShowBoard,
@@ -827,6 +897,7 @@ function Resting({
   run: RunShape | null;
   bank: BankShape | null;
   lever: LeverShape | null;
+  handle: HandleShape | null;
   onShowGraveyard: () => void;
   onReplay: () => void;
   onShowBoard: () => void;
@@ -888,6 +959,14 @@ function Resting({
           <p className={styles.restLast} data-rest-row="">
             Backing opens after the draw, once the next round is under way.
           </p>
+        )}
+        {/* The handle, here as well as in the backing panel, because a
+            window is open for a few seconds a round and a visitor should not
+            have to wait for one to say who they are. */}
+        {handle && (
+          <div className={styles.restHandle} data-rest-row="">
+            <HandlePanel handle={handle} label="Pick a handle" />
+          </div>
         )}
         {/* The lever. Above the other actions because it is the one thing on
             this screen that changes what the pit does, and it says what it
@@ -1376,7 +1455,7 @@ export function GameShell(props: GameShellProps) {
           ) : props.backing?.window ? (
             /* The pick interface stands where the lineup does, because it is
                the lineup with what each agent drew and who is behind it. */
-            <Backing backing={props.backing} onBack={props.onBack} onHandle={props.onHandle} />
+            <Backing backing={props.backing} handle={props.handle ?? null} onBack={props.onBack} />
           ) : (
             <Lineup plan={plan} decided={decided} occupants={occupants} error={state.error} onRetry={props.onRetry} />
           )}
@@ -1388,6 +1467,7 @@ export function GameShell(props: GameShellProps) {
           run={run}
           bank={plan?.bank ?? null}
           lever={props.lever ?? null}
+          handle={props.handle ?? null}
           onShowGraveyard={props.onShowGraveyard}
           onReplay={props.onReplay}
           onShowBoard={props.onShowBoard}

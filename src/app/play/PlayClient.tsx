@@ -50,7 +50,8 @@ import { backOptions, pickOutcome } from "./backing";
 import { useBackingFeed } from "./backingFeed";
 import { usePullFeed } from "./pullFeed";
 import { leverLines } from "./leverNote";
-import { backerHandle, backerToken, browserStore, setBackerHandle, type StorageLike } from "./backerId";
+import { backerHandle, backerToken, browserStore, type StorageLike } from "./backerId";
+import { useHandleClaim } from "./handleFeed";
 import { hasSeenOnboarding, markOnboardingSeen, onboardingScreens } from "./onboarding";
 import type { BoardShape } from "./screens/GameShell";
 import type { GraveShape } from "./screens/graveyardRows";
@@ -213,8 +214,12 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
   // on it, because the pick interface only exists once the feed says a window
   // is open, which is after the page is live.
   const [backerStore] = useState<StorageLike>(() => browserStore());
-  const [handle, setHandle] = useState<string | null>(() => backerHandle(browserStore()));
+  const [storedHandle] = useState<string | null>(() => backerHandle(browserStore()));
   const [deviceToken] = useState<string>(() => backerToken(browserStore()));
+  // Choosing a handle, with the pit asked before it is kept and the field
+  // left open whenever the answer is no.
+  const handleClaim = useHandleClaim(backerStore, deviceToken, storedHandle);
+  const handle = handleClaim.handle;
 
   // Never during a replay: a recording has no window to back into, and a pick
   // on a finished round would be a pick on a known result.
@@ -804,7 +809,10 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
                       watch.resting &&
                       (pullFeed.view?.left === null || (pullFeed.view?.left ?? 1) > 0),
                     onPull: () => {
-                      if (handle) void pullFeed.pull(handle, deviceToken);
+                      if (!handle) return;
+                      void pullFeed.pull(handle, deviceToken).then((error) => {
+                        if (error && /another browser/.test(error)) handleClaim.refused(error);
+                      });
                     },
                   }
                 : null
@@ -859,11 +867,26 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
                 : null
             }
             board={board}
-            onBack={(agentId) => void backingFeed.pick(handle ?? "", deviceToken, agentId)}
-            onHandle={(raw) => {
-              const kept = setBackerHandle(backerStore, raw);
-              if (kept) setHandle(kept);
-            }}
+            onBack={(agentId) =>
+              void backingFeed.pick(handle ?? "", deviceToken, agentId).then((error) => {
+                // A handle can be taken between the check and the write. The
+                // pit's refusal is the authority, so the field comes back.
+                if (error && /another browser/.test(error)) handleClaim.refused(error);
+              })
+            }
+            handle={
+              arenaMode
+                ? {
+                    value: handleClaim.handle,
+                    message: handleClaim.message,
+                    suggestions: handleClaim.suggestions,
+                    checking: handleClaim.checking,
+                    onClaim: (raw) => void handleClaim.claim(raw),
+                    onChange: handleClaim.change,
+                  }
+                : null
+            }
+            onHandle={(raw) => void handleClaim.claim(raw)}
             onboarding={howOpen ? onboardingScreens(arenaMode) : null}
             probeSymbol={(x, y) => {
               const engine = engineRef.current;

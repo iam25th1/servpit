@@ -12,6 +12,7 @@ import { arenaMode } from "@/config/arena";
 import { arenaReader } from "@/server/arena/read";
 import { pickReader } from "@/server/backing/read";
 import { backingView, pickLimiter, submitPick } from "@/server/backing/service";
+import { pullReader } from "@/server/pulls/read";
 import { log } from "@/server/log";
 import { internalDetail, publicError } from "@/server/publicError";
 
@@ -44,7 +45,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
     const { handle, token, agentId } = (input ?? {}) as { handle?: unknown; token?: unknown; agentId?: unknown };
 
-    const answer = submitPick(arenaReader().state(), { handle, token, agentId }, { store: pickReader(), limiter: pickLimiter, arenaMode: arenaMode() });
+    const answer = submitPick(
+      arenaReader().state(),
+      { handle, token, agentId },
+      { store: pickReader(), limiter: pickLimiter, arenaMode: arenaMode(), otherOwner: (name) => pullReader().owner(name) },
+    );
     if (!answer.ok) return NextResponse.json({ error: answer.message }, { status: answer.status });
     return NextResponse.json(answer.view);
   } catch (e) {

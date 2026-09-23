@@ -1259,6 +1259,45 @@ a.transferHash {
   margin: 0;
 }
 
+/* The handle, on the quiet screen. Its own row so the field and its answer
+   sit together rather than reading as part of the lever below it. */
+.restHandle {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-tight);
+  width: 100%;
+}
+
+/* What the pit said about a name, under the field that produced it. */
+.handleNote {
+  font-size: var(--text-small);
+  color: var(--ink-dim, var(--ink));
+  margin: 0;
+  text-align: center;
+}
+
+/* The free names offered instead, side by side and wrapping on a phone. */
+.handleOffers {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-tight);
+}
+
+/* A button that reads as a link, for the way back to the field. Underlined
+   rather than coloured, because a colour here would be a second accent. */
+.linkish {
+  font-family: var(--font-ui);
+  font-size: var(--text-small);
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 /* The lever, on the quiet screen. A column so the control leads and the two
    lines under it read as its terms rather than as a caption on the card. */
 .lever {
