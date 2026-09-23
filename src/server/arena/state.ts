@@ -133,6 +133,14 @@ export interface ArenaRound {
    */
   pulledBy?: string | null;
   /**
+   * Whether this round was allowed to reason, before the operator switch.
+   *
+   * True for a round somebody pulled, and for a scheduled round only when an
+   * operator has turned scheduled reasoning on. What each agent actually did
+   * is on the decision, in its source.
+   */
+  reasoning?: boolean;
+  /**
    * What each entrant drew, from the reels phase onwards.
    *
    * Not a spoiler and deliberately allowed early: the reels pick a fighter's

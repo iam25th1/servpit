@@ -82,6 +82,37 @@ describe("planRound", () => {
     expect(plan.decisions.every((d) => d.source === "heuristic")).toBe(true);
   });
 
+  it("spends nothing on a round that did not ask to reason", async () => {
+    // What the arena worker passes for a round the interval started. The
+    // transport is the only place a call can happen, so counting it is the
+    // measurement.
+    const transport = enterTransport();
+    const { ctx } = await harness({ transport });
+    const plan = await planRound(ctx, "demo", undefined, undefined, { reasoning: false });
+    expect((transport.create as unknown as { mock: { calls: unknown[] } }).mock.calls).toHaveLength(0);
+    expect(plan.decisions.every((d) => d.source === "heuristic")).toBe(true);
+    expect(plan.servCalls).toBe(0);
+  });
+
+  it("reasons for a round that asked to, which is a round somebody pulled", async () => {
+    const transport = enterTransport();
+    const { ctx } = await harness({ transport });
+    const plan = await planRound(ctx, "demo", undefined, undefined, { reasoning: true });
+    expect(plan.decisions.every((d) => d.source === "serv")).toBe(true);
+  });
+
+  it("keeps the operator switch as the master, whatever the round asked for", async () => {
+    // A pulled round asks to reason. With reasoning off it still does not,
+    // and it costs nothing to refuse.
+    const transport = enterTransport();
+    const { ctx } = await harness({ transport });
+    const switchFile = join(dir, "serv-off");
+    setServReasoning(switchFile, false);
+    const plan = await planRound({ ...ctx, servSwitchFile: switchFile }, "demo", undefined, undefined, { reasoning: true });
+    expect((transport.create as unknown as { mock: { calls: unknown[] } }).mock.calls).toHaveLength(0);
+    expect(plan.decisions.every((d) => d.source === "heuristic")).toBe(true);
+  });
+
   it("asks serv again the moment the switch is back on, with no restart", async () => {
     const transport = enterTransport();
     const { ctx } = await harness({ transport });

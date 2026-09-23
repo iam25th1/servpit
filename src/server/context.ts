@@ -3,7 +3,7 @@
 import { join } from "node:path";
 import { BankrollCache } from "./bankroll";
 import { TransferLedger } from "./ledger";
-import { DEFAULT_SERV, SERV_OFF_FILE } from "@/config/serv";
+import { DEFAULT_SERV, SERV_OFF_FILE, SERV_SCHEDULED_FILE } from "@/config/serv";
 import { CostMeter, ServClient } from "./serv/client";
 import { createServTransport } from "./serv/transport";
 import { RoundStore } from "./round/store";
@@ -63,7 +63,7 @@ async function build(): Promise<ServerContext> {
   const servConfig = { ...DEFAULT_SERV, model: env.serv?.model ?? DEFAULT_SERV.model };
   const serv = env.serv ? new ServClient(servConfig, createServTransport(env.serv.apiKey, servConfig)) : undefined;
   log.info("serv backend", { configured: Boolean(serv), model: serv ? servConfig.model : null });
-  const flow: FlowContext = { chain, wallets, ledger, store, bankroll, meter, serv, plans, rollover, debts, wreckStore, settleLockFile: join(env.dataDir, `settle-${chain.network}.lock`), servSwitchFile: join(env.dataDir, SERV_OFF_FILE), entrants: 24 };
+  const flow: FlowContext = { chain, wallets, ledger, store, bankroll, meter, serv, plans, rollover, debts, wreckStore, settleLockFile: join(env.dataDir, `settle-${chain.network}.lock`), servSwitchFile: join(env.dataDir, SERV_OFF_FILE), servScheduledFile: join(env.dataDir, SERV_SCHEDULED_FILE), entrants: 24 };
   return { env, chain, registry, wallets, bankroll, flow };
 }
 

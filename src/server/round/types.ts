@@ -71,6 +71,13 @@ export interface FlowContext {
    * context without one keeps whatever client it was given.
    */
   servSwitchFile?: string;
+  /**
+   * The file whose presence lets a round the interval started reason.
+   *
+   * Read per round like the switch above. A round somebody pulled does not
+   * consult it: it reasons whenever the master switch allows it.
+   */
+  servScheduledFile?: string;
   entrants: number;
 }
 

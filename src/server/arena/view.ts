@@ -68,8 +68,10 @@ export function roundView(round: ArenaRound | null): ArenaRoundView | null {
     refusals: round.refusals,
     bank: round.bank,
     entries: round.entries,
-    // Who asked for this round. A handle, not an outcome.
+    // Who asked for this round, and whether it was allowed to reason.
+    // Neither is an outcome: both are true from the moment it starts.
     ...(round.pulledBy ? { pulledBy: round.pulledBy } : {}),
+    ...(round.reasoning === undefined ? {} : { reasoning: round.reasoning }),
     // The draw, which does not decide the fight: the resolver runs the same
     // way whoever is in it. Everything that does decide it is left out above.
     ...(round.reels ? { reels: round.reels } : {}),

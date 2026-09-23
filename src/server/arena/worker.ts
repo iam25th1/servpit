@@ -18,6 +18,7 @@ import type { ServerContext } from "../context";
 import { log } from "../log";
 import { basescanTx } from "../money";
 import { planRound, runRound, type RoundPlan } from "../round/flow";
+import { scheduledReasoningOn } from "../serv/switch";
 import { settleBackingQuietly } from "../backing/settle";
 import { ArenaStore, type ArenaPhase, type ArenaRound, type ArenaState, type PhaseMark } from "./state";
 
@@ -225,6 +226,11 @@ function failed(store: ArenaStore, reason: string, nextAt: number): void {
 export async function playArenaRound(ctx: ServerContext, store: ArenaStore, nextAt: number, pulledBy: string | null = null): Promise<ArenaOutcome> {
   const flow = ctx.flow;
   const seed = `arena-${Date.now().toString(36)}`;
+  // A round somebody asked for reasons. A round the clock asked for does not,
+  // unless an operator has said it should: the pit plays itself all day, and
+  // a day of reasoning is a day of credit nobody was there to read. Either
+  // way the operator switch is still the master, inside planRound.
+  const reasoning = pulledBy !== null || scheduledReasoningOn(flow.servScheduledFile);
   const link = (hash: string | null | undefined): string | null => (ctx.chain.settles && hash ? basescanTx(ctx.chain.network, hash) : null);
 
   let round: ArenaRound = {
@@ -244,6 +250,7 @@ export async function playArenaRound(ctx: ServerContext, store: ArenaStore, next
     bank: null,
     entries: [],
     pulledBy,
+    reasoning,
   };
   const publish = (next: Partial<ArenaRound>, phase?: ArenaPhase, mark?: Omit<PhaseMark, "phase" | "at">): void => {
     round = { ...round, ...next };
@@ -298,6 +305,7 @@ export async function playArenaRound(ctx: ServerContext, store: ArenaStore, next
         "banking",
       );
     },
+    { reasoning },
   );
 
   publish(

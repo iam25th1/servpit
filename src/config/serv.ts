@@ -33,6 +33,22 @@
  */
 export const SERV_OFF_FILE = "serv-off";
 
+/**
+ * The file whose presence lets a scheduled round reason, in the data
+ * directory.
+ *
+ * The other way round from the switch above, and deliberately so. Reasoning
+ * costs money per round, and a pit playing itself round the clock spends it
+ * whether or not anybody is watching. So a round the interval started runs on
+ * instinct unless an operator has said otherwise, and a round somebody asked
+ * for reasons, because somebody is there to read it.
+ *
+ * Absent means off, which is the default, and the switch above stays the
+ * master: with reasoning off, nothing reasons, including a round somebody
+ * pulled.
+ */
+export const SERV_SCHEDULED_FILE = "serv-scheduled";
+
 export interface ServFeatures {
   promptGuard: boolean;
   shadowAgent: boolean;

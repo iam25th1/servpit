@@ -58,11 +58,26 @@ export function seatOccupants(ctx: FlowContext): Array<{ agentId: string; name: 
   });
 }
 
+/** What the caller knows about this round that the plan cannot work out. */
+export interface PlanOptions {
+  /**
+   * Whether this round may reason at all, before the operator switch is
+   * consulted.
+   *
+   * The lever and the tests leave it out, which means yes, exactly as it has
+   * always been. The arena worker passes false for a round the interval
+   * started unless an operator has turned scheduled reasoning on, and true
+   * for a round somebody pulled.
+   */
+  reasoning?: boolean;
+}
+
 export async function planRound(
   ctx: FlowContext,
   seed: string,
   onDecided?: (decision: AgentDecision) => void,
   onLoan?: (decision: BankDecision, name: string, bank: BankSnapshot) => void,
+  options: PlanOptions = {},
 ): Promise<RoundPlan> {
   if (!SEED.test(seed)) throw new RangeError(`seed must match ${SEED}`);
   // A share of a funded wallet rather than a flat amount, so an agent can
@@ -78,7 +93,10 @@ export async function planRound(
   // Undefined rather than the client is the whole mechanism: decideForAgent
   // and decideLoan already answer deterministically when there is nobody to
   // ask, which is the same path a pit with no key has always taken.
-  const serv = servReasoningOn(ctx.servSwitchFile) ? ctx.serv : undefined;
+  // Two gates, in this order: what this round is for, then what the operator
+  // allows. A pulled round asks to reason and a scheduled one does not, but
+  // neither reaches the model with the switch off.
+  const serv = options.reasoning !== false && servReasoningOn(ctx.servSwitchFile) ? ctx.serv : undefined;
 
   ctx.bankroll.invalidate();
   // Every balance in one chain request. It used to be one request per agent,
