@@ -17,7 +17,7 @@ export interface PlanDecision {
   enter: boolean;
   stake: number;
   reason: string;
-  source: "serv" | "heuristic";
+  source: "serv" | "learned" | "heuristic";
   rejection: string | null;
   model: string | null;
   latencyMs: number | null;

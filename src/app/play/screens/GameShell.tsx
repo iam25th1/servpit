@@ -24,6 +24,7 @@ import type { OnboardingScreen } from "../onboarding";
 import { useUiKit } from "@/ui/UiKit";
 import { ninePatchStyle } from "@/ui/ninePatchGeometry";
 import { uiScale } from "@/ui/tokens";
+import { sourceLabel } from "./sourceLabel";
 import { staggerIn } from "@/ui/transitions";
 import type { FlowState } from "../machine";
 import type { ArenaStanding } from "./arenaHud";
@@ -106,7 +107,7 @@ interface PlanDecision {
   enter: boolean;
   stake: number;
   reason: string;
-  source: "serv" | "heuristic";
+  source: "serv" | "learned" | "heuristic";
   balanceWei: string;
 }
 
@@ -619,8 +620,8 @@ function Lineup({
                   {/* Where the answer came from, in the two words that say
                       it: a line the fallback wrote must never read as
                       though an agent reasoned its way to it. */}
-                  {row.state === "decided" && row.decision.source && (
-                    <span className={row.decision.source === "serv" ? styles.reasoned : styles.instinct}>{row.decision.source === "serv" ? "reasoned" : "on instinct"}</span>
+                  {row.state === "decided" && sourceLabel(row.decision.source) && (
+                    <span className={styles[sourceLabel(row.decision.source)!.tone]}>{sourceLabel(row.decision.source)!.text}</span>
                   )}
                 </span>
                 {/* What it holds and what it owes, kept apart. A balance and

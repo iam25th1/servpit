@@ -1,6 +1,7 @@
 // Round history: what each agent decided, why, and what its balance did.
 // Feeds the reasoning surface and the next round's recent outcomes.
 
+import type { Situation } from "../decisions/situation";
 import { StoreFile, UNKNOWN_NETWORK } from "../store/file";
 
 export interface StoredAgentRound {
@@ -11,7 +12,15 @@ export interface StoredAgentRound {
   entered: boolean;
   stake: number;
   reason: string;
-  source: "serv" | "heuristic";
+  source: "serv" | "learned" | "heuristic";
+  /**
+   * The spot this agent was in when it decided.
+   *
+   * Absent on every round stored before the pit started recording it, which
+   * is most of them: those rounds cannot be learned from, and the learner
+   * skips them rather than guessing what the numbers were.
+   */
+  situation?: Situation;
   rejection?: string;
   model?: string;
   balanceBeforeWei: string;

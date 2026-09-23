@@ -34,7 +34,7 @@ export interface DecidedShape {
    * an agent reasoned its way to it. Absent on a decision streamed before
    * this was carried.
    */
-  source?: "serv" | "heuristic";
+  source?: "serv" | "learned" | "heuristic";
 }
 
 export type LineupRow =

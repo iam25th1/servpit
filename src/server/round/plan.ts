@@ -196,7 +196,11 @@ export async function planRound(
   const tappedIds = new Set(tapped.map((s) => s.profile.id));
   const asked = snapshots.filter((s) => !tappedIds.has(s.profile.id));
 
-  const run = await decideForAgents({ client: serv, meter: ctx.meter }, asked, context, onDecided);
+  // The record, for the rounds that are not reasoning. Read here rather than
+  // inside the loop so every agent in one round learns from the same history,
+  // and passed rather than reached for so a context without a store keeps the
+  // fixed rule.
+  const run = await decideForAgents({ client: serv, meter: ctx.meter, history: serv ? undefined : ctx.store.all() }, asked, context, onDecided);
 
   const tappedDecisions: AgentDecision[] = tapped.map((s) => ({
     agentId: s.profile.id,

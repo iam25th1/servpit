@@ -17,6 +17,37 @@ const snapshot = (patch: Partial<AgentSnapshot> = {}): AgentSnapshot => ({
 
 const round = { roundId: "round-1", participants: 24, poolWei: 240_000_000_000_000n, stakeWei: 10_000_000_000_000n };
 
+/** Reasoned rounds in the same spot the round above puts an agent in. */
+const pastRounds = (count: number, agent: { entered: boolean; stake: number }) =>
+  Array.from({ length: count }, (_, i) => ({
+    roundId: `r-${i}`,
+    seed: "seed",
+    createdAt: "2026-09-22T00:00:00.000Z",
+    network: "fake",
+    entrants: 24,
+    winner: "bot-01",
+    potWei: "0",
+    rakeWei: "0",
+    reconciled: true,
+    servCalls: 6,
+    servMicroCents: 1_000,
+    agents: [
+      {
+        agentId: NAMED_AGENTS[0]!.id,
+        name: NAMED_AGENTS[0]!.name,
+        strategy: NAMED_AGENTS[0]!.strategy,
+        address: "0x" + "1".repeat(40),
+        entered: agent.entered,
+        stake: agent.stake,
+        reason: "because",
+        source: "serv" as const,
+        situation: { balanceChips: 100, debtChips: 0, potChips: 240, field: 24, recentEntered: 0, recentAhead: 0 },
+        balanceBeforeWei: "0",
+        balanceAfterWei: "0",
+      },
+    ],
+  }));
+
 const transportReturning = (content: string) =>
   ({
     create: vi.fn().mockResolvedValue({
@@ -186,6 +217,46 @@ describe("decideForAgents", () => {
     const out = await decideForAgents({ client: undefined, meter: new CostMeter(DEFAULT_SERV.pricing) }, snaps, round);
     expect(out.decisions.every((d) => d.source === "heuristic")).toBe(true);
     expect(out.decisions[0].rejection).toMatch(/not configured/i);
+  });
+
+  it("draws from the record when it is not reasoning, and labels it learned", async () => {
+    // The fallback used to be the fixed rule and nothing else. With enough
+    // reasoned rounds in the same spot behind it, the pit repeats what it was
+    // shown, and says that is what it is doing.
+    const history = pastRounds(6, { entered: true, stake: 10 });
+    const out = await decideForAgents({ client: undefined, meter: new CostMeter(DEFAULT_SERV.pricing), history }, [snaps[0]!], round);
+    const decision = out.decisions[0]!;
+    expect(decision.source).toBe("learned");
+    expect(decision.decision.enter).toBe(true);
+    expect(decision.decision.reason).toMatch(/learned: in 6 reasoned rounds/);
+    expect(decision.evidence).toMatchObject({ matches: 6, entered: 6 });
+    // And it cost nothing: no client, no call, no meter.
+    expect(out.servCalls).toBe(0);
+  });
+
+  it("falls back to the fixed rule below the minimum, and says so", async () => {
+    const history = pastRounds(3, { entered: true, stake: 10 });
+    const out = await decideForAgents({ client: undefined, meter: new CostMeter(DEFAULT_SERV.pricing), history }, [snaps[0]!], round);
+    expect(out.decisions[0]!.source).toBe("heuristic");
+    expect(out.decisions[0]!.rejection).toMatch(/not configured/i);
+  });
+
+  it("puts a learned stake through the same validator as any other", async () => {
+    // The record says this agent usually staked far more than it can cover.
+    // The validator reads the balance from the chain, refuses it, and the
+    // fixed rule answers, exactly as it does for a model that overreaches.
+    const history = pastRounds(6, { entered: true, stake: 9_999 });
+    const out = await decideForAgents({ client: undefined, meter: new CostMeter(DEFAULT_SERV.pricing), history }, [snaps[0]!], round);
+    expect(out.decisions[0]!.source).toBe("heuristic");
+  });
+
+  it("records the spot on every decision, whatever answered it", async () => {
+    const transport = transportReturning('{"enter":true,"stake":10,"reason":"Fine by me."}');
+    const reasoned = await decideForAgents({ client: new ServClient({ ...DEFAULT_SERV, backoffMs: 0 }, transport), meter: new CostMeter(DEFAULT_SERV.pricing) }, [snaps[0]!], round);
+    expect(reasoned.decisions[0]!.situation).toEqual({ balanceChips: 100, debtChips: 0, potChips: 240, field: 24, recentEntered: 0, recentAhead: 0 });
+
+    const fixed = await decideForAgents({ client: undefined, meter: new CostMeter(DEFAULT_SERV.pricing) }, [snaps[0]!], round);
+    expect(fixed.decisions[0]!.situation).toEqual(reasoned.decisions[0]!.situation);
   });
 
   it("marks a prompt guard refusal distinctly and still falls back", async () => {

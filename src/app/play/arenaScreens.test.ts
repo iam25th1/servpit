@@ -216,3 +216,38 @@ describe("pulledLine", () => {
     expect(pulledLine(null, false)).toBeNull();
   });
 });
+
+describe("reasoningLine with three sources", () => {
+  const decided = (sources: string[]): ArenaFeedRound =>
+    ({
+      roundId: "r-1",
+      startedAt: "",
+      phase: "deciding",
+      phases: [],
+      network: "fake",
+      backend: "fake",
+      entrants: 24,
+      bots: 20,
+      stakeChips: 10,
+      weiPerChip: "1",
+      decisions: sources.map((source, i) => ({ agentId: `a${i}`, name: `A${i}`, face: null, enter: true, stake: 10, reason: "r", source, balance: 100, debt: 0 })),
+      loans: [],
+      refusals: [],
+      bank: null,
+      entries: [],
+    }) as ArenaFeedRound;
+
+  it("says the pit played from what it learned, rather than calling it instinct", () => {
+    expect(reasoningLine(decided(["learned", "learned", "learned"]), true)).toBe("Agents played from what they learned last round.");
+    expect(reasoningLine(decided(["learned", "learned", "learned"]), false)).toBe("Agents are playing from what they learned this round.");
+  });
+
+  it("counts a mixed round without calling any of it reasoned that was not", () => {
+    expect(reasoningLine(decided(["learned", "learned", "heuristic"]), true)).toBe("2 of 3 agents played from what they learned last round.");
+    expect(reasoningLine(decided(["serv", "learned", "heuristic"]), true)).toBe("1 of 3 agents reasoned with SERV last round.");
+  });
+
+  it("still says instinct when that is what it was", () => {
+    expect(reasoningLine(decided(["heuristic", "heuristic"]), true)).toBe("Agents ran on instinct last round.");
+  });
+});

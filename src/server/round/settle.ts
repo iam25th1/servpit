@@ -411,6 +411,9 @@ async function settleRound(ctx: FlowContext, plan: RoundPlan, progress: RunProgr
       stake: d.decision.stake,
       reason: d.decision.reason,
       source: d.source,
+      // Recorded on every decision, so the next round that does not reason
+      // has something to read. Absent on rounds stored before this.
+      ...(d.situation ? { situation: d.situation } : {}),
       rejection: d.rejection,
       model: d.model,
       balanceBeforeWei: (before[d.address] ?? 0n).toString(),

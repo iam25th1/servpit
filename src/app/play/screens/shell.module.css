@@ -1123,6 +1123,7 @@ a.transferHash {
    never share a colour: a fallback that reads like reasoning is the thing
    this is here to stop. */
 .reasoned,
+.learned,
 .instinct {
   font-size: var(--text-micro);
   margin-left: var(--space-tight);
@@ -1130,6 +1131,13 @@ a.transferHash {
 
 .reasoned {
   color: var(--good);
+}
+
+/* Drawn from what a model decided before, which is neither the pit thinking
+   nor the fixed rule. Amber, the one accent, because it is the middle case
+   and must not read as either of the other two. */
+.learned {
+  color: var(--amber);
 }
 
 .instinct {

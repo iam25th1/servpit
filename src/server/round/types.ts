@@ -110,7 +110,7 @@ export interface PlannedLoan {
   principalWei: bigint;
   rateBps: number;
   reason: string;
-  source: "serv" | "heuristic";
+  source: "serv" | "learned" | "heuristic";
   rejection?: string;
   model?: string;
   latencyMs?: number;

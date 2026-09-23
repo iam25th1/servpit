@@ -137,9 +137,13 @@ export function reasoningLine(round: ArenaFeedRound | null, resting: boolean): s
   if (!round || round.decisions.length === 0) return null;
   const total = round.decisions.length;
   const reasoned = round.decisions.filter((d) => d.source === "serv").length;
+  const learned = round.decisions.filter((d) => d.source === "learned").length;
+  const tense = resting ? "last" : "this";
   if (reasoned === total) return resting ? "Agents reasoned with SERV last round." : "Agents are reasoning with SERV this round.";
-  if (reasoned === 0) return resting ? "Agents ran on instinct last round." : "Agents are running on instinct this round.";
-  return `${reasoned} of ${total} agents reasoned with SERV ${resting ? "last" : "this"} round.`;
+  if (learned === total) return resting ? "Agents played from what they learned last round." : "Agents are playing from what they learned this round.";
+  if (reasoned === 0 && learned === 0) return resting ? "Agents ran on instinct last round." : "Agents are running on instinct this round.";
+  if (reasoned === 0) return `${learned} of ${total} agents played from what they learned ${tense} round.`;
+  return `${reasoned} of ${total} agents reasoned with SERV ${tense} round.`;
 }
 
 /**

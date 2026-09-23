@@ -14,7 +14,10 @@
 
 import { toChips } from "@/config/stake";
 import { log } from "../log";
+import type { StoredRound } from "../round/store";
 import type { CostMeter, ServClient } from "../serv/client";
+import { learnedDecision } from "./learn";
+import { situationOf } from "./situation";
 import type { AgentDecision, AgentSnapshot, Decision, RoundContext } from "./types";
 
 /**
@@ -253,6 +256,13 @@ export { heuristicDecision };
 export interface DecisionDeps {
   client?: ServClient;
   meter: CostMeter;
+  /**
+   * What the pit has already decided, for the rounds that are not reasoning.
+   *
+   * Optional: a context without it, which is most tests and the settle path,
+   * falls back to the fixed rule exactly as it always has.
+   */
+  history?: readonly StoredRound[];
 }
 
 export interface DecisionRun {
@@ -268,15 +278,36 @@ export interface DecisionRun {
  * a failure in one has never been allowed to affect another.
  */
 async function decideForAgent(deps: DecisionDeps, snapshot: AgentSnapshot, round: RoundContext): Promise<DecidedAgent> {
+  // The spot this agent is in, recorded on every decision whatever answers
+  // it, so a later round can learn from this one.
+  const situation = situationOf(snapshot, round);
   const base = {
     agentId: snapshot.profile.id,
     name: snapshot.profile.name,
     strategy: snapshot.profile.strategy,
     address: snapshot.address,
     balanceWei: snapshot.balanceWei,
+    situation,
   };
 
   if (!deps.client) {
+    // Not reasoning. Before the fixed rule, what this agent's own reasoned
+    // rounds did in a spot like this, if there are enough of them. The
+    // answer goes through the same validator a model's would, against the
+    // balance read from the chain, so a learned stake is bounded the same
+    // way and a learned answer that fails falls to the fixed rule.
+    const learned = deps.history ? learnedDecision(snapshot.profile.id, situation, toChips(snapshot.stakeWei), deps.history) : null;
+    if (learned) {
+      const checked = validateDecision(JSON.stringify(learned.decision), snapshot);
+      if (checked.ok) {
+        return {
+          decision: { ...base, decision: checked.decision, source: "learned", evidence: learned.evidence },
+          servCall: false,
+          guardRefusal: false,
+        };
+      }
+      log.warn("learned decision rejected, using the fixed rule", { agentId: snapshot.profile.id, reason: checked.reason });
+    }
     return {
       decision: { ...base, decision: heuristicDecision(snapshot, round), source: "heuristic", rejection: "SERV not configured, using the deterministic heuristic" },
       servCall: false,
