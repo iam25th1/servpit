@@ -29,6 +29,9 @@ export interface ClaimView {
   fighter: FighterView | null;
   /** Faces nobody is using, so the interface can offer them. */
   freeFaces: string[];
+  /** Seats claimed and seats there are, so a viewer can see the pit filling. */
+  claimed?: number;
+  seats?: number;
   /** One sentence a player can read. */
   message: string;
   /** This fighter's record, or null before it has been in a round. */
@@ -54,12 +57,19 @@ export interface FighterDeps {
   logs?: readonly HandleOwners[];
   /** This handle's record, when there is a board to read it from. */
   career?: (handle: string) => CareerRow | null;
+  /** How long a claim survives without a visit, in milliseconds. */
+  releaseMs?: number;
+  /** Seats the pit tries to keep free for somebody new. */
+  reserve?: number;
 }
 
 export const shown = (fighter: Fighter): FighterView => ({ handle: fighter.handle, name: fighter.name, face: fighter.face, entrantId: fighter.entrantId });
 
 /** This browser's fighter and what is left to take, without claiming anything. */
 export function fighterStatus(input: { handle: unknown; token: unknown }, deps: FighterDeps): ClaimView {
+  // Seats nobody has come back to go back in the pool first, so what a
+  // visitor is offered is what the pit actually has.
+  if (deps.releaseMs) deps.store.sweep(deps.releaseMs);
   const handle = normaliseHandle(input.handle);
   const token = validToken(input.token);
   const fighter = handle === null ? null : deps.store.fighterOf(handle);
@@ -71,6 +81,8 @@ export function fighterStatus(input: { handle: unknown; token: unknown }, deps: 
     freeFaces: deps.store.freeFaces(),
     message: mine ? `${mine.name} is yours, and enters every round.` : "Claim a fighter and it enters every round.",
     career: mine ? (deps.career?.(mine.handle) ?? null) : null,
+    claimed: deps.store.all().length,
+    seats: deps.cap ?? 0,
   };
 }
 
@@ -92,6 +104,10 @@ export function claimFighter(input: ClaimInput, deps: FighterDeps): ClaimAnswer 
   if (name === null) return { ok: false, status: 400, message: "A fighter's name is 2 to 10 letters, numbers, dashes or underscores." };
   const face = typeof input.face === "string" ? input.face.trim() : "";
   if (!CLAIMABLE_FACES.includes(face)) return { ok: false, status: 400, message: "Pick one of the faces the pit is offering." };
+
+  // The same sweep the status does, so a seat held by somebody who left is
+  // available to the person asking for it now.
+  if (deps.releaseMs) deps.store.sweep(deps.releaseMs);
 
   const hash = tokenHash(token);
   const elsewhere = firstOwner(handle, deps.logs ?? []);
@@ -115,6 +131,8 @@ export function claimFighter(input: ClaimInput, deps: FighterDeps): ClaimAnswer 
         answer.outcome === "already claimed"
           ? `${fighter.name} is already yours, and enters every round.`
           : `${fighter.name} is yours. It enters every round from the next one.`,
+      claimed: deps.store.all().length,
+      seats: deps.cap ?? 0,
     },
   };
 }

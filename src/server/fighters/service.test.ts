@@ -44,7 +44,8 @@ describe("claiming a fighter", () => {
   it("tells nobody anything about a round", () => {
     const answer = claimFighter({ handle: "ash", token: TOKEN, name: "Cinder", face: "Monk" }, deps(store()));
     expect(answer.ok).toBe(true);
-    if (answer.ok) expect(Object.keys(answer.view).sort()).toEqual(["fighter", "freeFaces", "message"]);
+    // Counts of seats, a fighter and a sentence. Nothing about a round.
+    if (answer.ok) expect(Object.keys(answer.view).sort()).toEqual(["claimed", "fighter", "freeFaces", "message", "seats"]);
   });
 
   it("gives one handle one fighter", () => {

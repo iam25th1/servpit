@@ -63,3 +63,36 @@ export function fighterFile(dataDir: string, network: string): string {
 
 /** How many claims one browser may make in a minute, before it is noise. */
 export const CLAIMS_PER_MINUTE = 5;
+
+/**
+ * Most seats that may be claimed at once.
+ *
+ * Eight of the twenty four, which leaves the six agents their seats and keeps
+ * a clear majority of the field as house bots: a pit where most of the
+ * fighters are somebody's pet is a different game from the one this is.
+ */
+export const DEFAULT_SEAT_CAP = 8;
+
+/**
+ * Seats the pit tries to keep free for somebody new.
+ *
+ * Held by releasing claims nobody has come back to rather than by refusing
+ * the last two to everybody: a seat reserved for a visitor who never arrives
+ * is a seat nobody has.
+ */
+export const DEFAULT_SEAT_RESERVE = 2;
+
+/**
+ * How long a claim survives without its owner visiting.
+ *
+ * Three days. Long enough that somebody who watches at the weekend keeps
+ * their fighter, short enough that a pit does not fill with seats nobody is
+ * watching. The record is kept when a seat goes back, so the same handle
+ * claiming again carries on the same career.
+ */
+export const DEFAULT_RELEASE_HOURS = 72;
+
+/** The operator settings file, in the data directory. */
+export function fighterSettingsFile(dataDir: string): string {
+  return `${dataDir}/fighter-settings.json`;
+}

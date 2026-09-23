@@ -10,7 +10,8 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { arenaMode } from "@/config/arena";
-import { CLAIMS_PER_MINUTE } from "@/config/fighters";
+import { CLAIMS_PER_MINUTE, fighterSettingsFile } from "@/config/fighters";
+import { readFighterSettings } from "@/server/fighters/settings";
 import { pickReader } from "@/server/backing/read";
 import { RateLimiter } from "@/server/backing/limit";
 import { arenaReader } from "@/server/arena/read";
@@ -40,12 +41,18 @@ function careerStore(): CareerStore {
 }
 
 function deps() {
+  // Read per request, like the pull limits: an operator changing the cap
+  // while visitors are claiming should be heard on the next claim.
+  const settings = readFighterSettings(fighterSettingsFile(readEnv().dataDir));
   return {
     store: fighterReader(),
     limiter: claimLimiter,
     arenaMode: arenaMode(),
     logs: [pickReader(), pullReader()],
     career: (handle: string) => careerStore().row(handle),
+    cap: settings.cap,
+    reserve: settings.reserve,
+    releaseMs: settings.releaseHours * 60 * 60_000,
   };
 }
 

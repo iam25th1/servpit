@@ -154,6 +154,26 @@ export class FighterStore {
     });
   }
 
+  /**
+   * Gives back the seats nobody has come back to.
+   *
+   * A claim is released when its owner has not been seen for the release
+   * period, and only then: a seat is never taken from somebody who is
+   * watching. The record behind it is kept under the handle, so the same
+   * visitor claiming again carries on the same career.
+   *
+   * Called before a claim and by the operator's status command rather than
+   * on a timer, because the only moments it matters are when somebody wants
+   * a seat and when an operator asks.
+   */
+  sweep(releaseMs: number): string[] {
+    this.reload();
+    const at = this.now();
+    const stale = [...this.claims.values()].filter((f) => at - f.seenAt >= releaseMs).map((f) => f.handle);
+    for (const handle of stale) this.release(handle);
+    return stale;
+  }
+
   /** Gives a seat back. The career behind it is kept in the round records. */
   release(handle: string): void {
     this.head();

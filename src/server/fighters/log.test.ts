@@ -107,3 +107,43 @@ describe("claiming a seat", () => {
     expect(log.fighterOf("ash")?.face).toBe("Monk");
   });
 });
+
+describe("seats nobody comes back to", () => {
+  it("goes back in the pool after the release period, and not before", () => {
+    let clock = Date.parse("2026-09-23T00:00:00.000Z");
+    const log = store("fake", () => clock);
+    claim(log, "ash", "Monk");
+    const day = 24 * 60 * 60_000;
+
+    clock += day;
+    expect(log.sweep(3 * day)).toEqual([]);
+    expect(log.fighterOf("ash")).not.toBeNull();
+
+    clock += 3 * day;
+    expect(log.sweep(3 * day)).toEqual(["ash"]);
+    expect(log.fighterOf("ash")).toBeNull();
+    expect(log.freeFaces()).toContain("Monk");
+  });
+
+  it("never takes a seat from somebody who is watching", () => {
+    let clock = Date.parse("2026-09-23T00:00:00.000Z");
+    const log = store("fake", () => clock);
+    claim(log, "ash", "Monk");
+    const day = 24 * 60 * 60_000;
+    for (let i = 0; i < 5; i += 1) {
+      clock += day;
+      log.seen("ash");
+      expect(log.sweep(2 * day)).toEqual([]);
+    }
+    expect(log.fighterOf("ash")).not.toBeNull();
+  });
+
+  it("lets the same handle claim again after a release", () => {
+    let clock = Date.parse("2026-09-23T00:00:00.000Z");
+    const log = store("fake", () => clock);
+    claim(log, "ash", "Monk");
+    clock += 10 * 24 * 60 * 60_000;
+    log.sweep(24 * 60 * 60_000);
+    expect(claim(log, "ash", "Monk").outcome).toBe("claimed");
+  });
+});
