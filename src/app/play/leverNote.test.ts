@@ -54,7 +54,9 @@ describe("what the lever says", () => {
     const at = new Date(NOW + 60 * 60_000).toISOString();
     expect(leverLines(state({ view: view({ left: 0, resetsAt: at }) })).blocked).toBe("No pulls left, the next in 1 hour.");
     expect(leverLines(state({ busy: true })).blocked).toMatch(/round is running/);
-    expect(leverLines(state({ handle: null })).blocked).toMatch(/handle/);
+    // Nothing in words for a missing handle: the field is on the same card
+    // and the control is already dead.
+    expect(leverLines(state({ handle: null })).blocked).toBeNull();
     expect(leverLines(state({ error: "Somebody just pulled it. That round is starting now." })).blocked).toMatch(/just pulled it/);
   });
 

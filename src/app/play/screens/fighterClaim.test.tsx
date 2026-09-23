@@ -89,6 +89,17 @@ const mount = (props: GameShellProps) =>
     </UiKitProvider>,
   );
 
+/** The board open, which is where a visitor claims. */
+const board = (extra: Partial<GameShellProps> = {}) =>
+  mount(
+    shell({
+      fighterBoard: { rows: [], page: 1, pages: 1, total: 0, you: null },
+      onCloseFighters: () => {},
+      onFightersPage: () => {},
+      ...extra,
+    }),
+  );
+
 beforeEach(() => {
   Object.defineProperty(window, "matchMedia", {
     writable: true,
@@ -100,7 +111,7 @@ afterEach(() => cleanup());
 
 describe("claiming a fighter", () => {
   it("asks for a name and a face", () => {
-    mount(shell({ fighter: fighter() }));
+    board({ fighter: fighter() });
     expect(screen.getByLabelText("Claim a fighter and follow its career")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Monk" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Bear" })).toBeTruthy();
@@ -108,7 +119,7 @@ describe("claiming a fighter", () => {
 
   it("claims the name and the face that were chosen", () => {
     const onClaim = vi.fn();
-    mount(shell({ fighter: fighter({ onClaim }) }));
+    board({ fighter: fighter({ onClaim }) });
     fireEvent.change(screen.getByLabelText("Claim a fighter and follow its career"), { target: { value: "Cinder" } });
     fireEvent.click(screen.getByRole("button", { name: "Bear" }));
     fireEvent.click(screen.getByRole("button", { name: "Claim this fighter" }));
@@ -117,14 +128,14 @@ describe("claiming a fighter", () => {
 
   it("takes the first free face when nobody picks one", () => {
     const onClaim = vi.fn();
-    mount(shell({ fighter: fighter({ onClaim }) }));
+    board({ fighter: fighter({ onClaim }) });
     fireEvent.change(screen.getByLabelText("Claim a fighter and follow its career"), { target: { value: "Cinder" } });
     fireEvent.click(screen.getByRole("button", { name: "Claim this fighter" }));
     expect(onClaim).toHaveBeenCalledWith("Cinder", "Monk");
   });
 
   it("asks for a handle first, because a claim is bound to one", () => {
-    mount(shell({ fighter: fighter({ ready: false }) }));
+    board({ fighter: fighter({ ready: false }) });
     expect(screen.queryByLabelText("Claim a fighter and follow its career")).toBeNull();
     expect(document.body.textContent).toContain("Pick a handle first");
   });
@@ -136,7 +147,7 @@ describe("claiming a fighter", () => {
   });
 
   it("says in the pit's own words when a claim is refused", () => {
-    mount(shell({ fighter: fighter({ error: "Somebody took that face first. Pick another one." }) }));
+    board({ fighter: fighter({ error: "Somebody took that face first. Pick another one." }) });
     expect(document.body.textContent).toContain("took that face first");
   });
 });

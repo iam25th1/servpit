@@ -765,7 +765,18 @@ export interface FighterBoardShape {
  * is one seat in twenty four with no decisions to make: its record is mostly
  * luck, and the two boards together would make luck look like skill.
  */
-function Fighters({ board, onClose, onPage }: { board: FighterBoardShape; onClose: () => void; onPage: (page: number) => void }) {
+function Fighters({
+  board,
+  fighter,
+  onClose,
+  onPage,
+}: {
+  board: FighterBoardShape;
+  /** The claim form, for a viewer who has no fighter yet. */
+  fighter: FighterShape | null;
+  onClose: () => void;
+  onPage: (page: number) => void;
+}) {
   const { facesetPath } = useUiKit();
   const rootRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -796,6 +807,10 @@ function Fighters({ board, onClose, onPage }: { board: FighterBoardShape; onClos
           ))}
         </ul>
         {board.total === 0 && <p className={styles.sideNote}>Nobody has claimed a fighter yet.</p>}
+        {/* Claiming lives here rather than on the card: this is where a
+            visitor is told what a fighter is, and the quiet screen has a
+            countdown and a lever on it already. */}
+        {fighter && !fighter.mine && <FighterPanel fighter={fighter} />}
         {board.you && !board.rows.some((row) => row.handle === board.you?.handle) && (
           <p className={styles.sideNote}>
             {board.you.name} has {board.you.wins} wins from {board.you.rounds} rounds.
@@ -1163,13 +1178,8 @@ function Resting({
         {handle && (
           <div className={styles.restHandle} data-rest-row="">
             <HandlePanel handle={handle} label="Pick a handle" />
-            {fighter && <FighterPanel fighter={fighter} />}
+            {fighter?.mine && <FighterPanel fighter={fighter} />}
             {careerLine && <p className={styles.handleNote}>{careerLine}</p>}
-            {onShowFighters && (
-              <Button onClick={onShowFighters} scale={2}>
-                The fighters
-              </Button>
-            )}
           </div>
         )}
         {/* The lever. Above the other actions because it is the one thing on
@@ -1191,6 +1201,14 @@ function Resting({
           </div>
         )}
         <div className={styles.restActions} data-rest-row="">
+          {/* With the other ways off this screen rather than on a row of its
+              own: the card is a countdown, a lever and the doors out, and
+              every extra row pushes the whole block off the stage. */}
+          {onShowFighters && (
+            <Button onClick={onShowFighters} scale={2}>
+              The fighters
+            </Button>
+          )}
           {watching.canReplay && (
             <Button onClick={onReplay} scale={2}>
               Watch the last round
@@ -1700,7 +1718,7 @@ export function GameShell(props: GameShellProps) {
       )}
       {props.board && <Board board={props.board} onClose={props.onCloseBoard} onPage={props.onBoardPage} />}
       {props.fighterBoard && props.onCloseFighters && props.onFightersPage && (
-        <Fighters board={props.fighterBoard} onClose={props.onCloseFighters} onPage={props.onFightersPage} />
+        <Fighters board={props.fighterBoard} fighter={props.fighter ?? null} onClose={props.onCloseFighters} onPage={props.onFightersPage} />
       )}
       {props.onboarding && <Onboarding screens={props.onboarding} onClose={props.onCloseHow} />}
       {state.screen === "wreck" && run && <WreckScreen run={run} onContinue={props.onWreckSeen} />}
