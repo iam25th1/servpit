@@ -709,6 +709,9 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
           decisions: watchDecisions(watchedRound) as unknown as PlanDecision[],
           bots: watchedRound.bots,
           entrants: watchedRound.entrants,
+          // The seat price, so a learned decision's evidence can say what a
+          // stake was in seats rather than only in chips.
+          stakeChips: watchedRound.stakeChips,
           bank: watchedRound.bank as PlanResponse["bank"],
           loans: watchedRound.loans as PlanResponse["loans"],
           refusals: watchedRound.refusals.map((r) => ({ ...r, tappedOut: false })) as PlanResponse["refusals"],
@@ -806,6 +809,9 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
                     // Who asked for it, when somebody did. The same tense
                     // rule as the reasoning line, for the same reason.
                     pulled: pulledLine(watch.round, watch.resting || replayRound !== null),
+                    // What the pit has to learn from, which is what a round
+                    // that is not reasoning plays from.
+                    reasonedRounds: feed.view?.pit.reasonedRounds,
                     replay: replayRound !== null,
                     canReplay: replayable !== null,
                     last: watch.round?.result ? (watch.round as unknown as { result: Record<string, unknown> }).result : null,

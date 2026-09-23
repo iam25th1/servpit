@@ -25,7 +25,7 @@ export interface ArenaFeedRound {
   bots: number;
   stakeChips: number;
   weiPerChip: string;
-  decisions: Array<{ agentId: string; name: string; face: string | null; enter: boolean; stake: number; reason: string; source: string; balance: number; debt: number }>;
+  decisions: Array<{ agentId: string; name: string; face: string | null; enter: boolean; stake: number; reason: string; source: string; balance: number; debt: number; evidence?: { matches: number; entered: number; typicalStake: number } }>;
   loans: Array<{ agentId: string; name: string; asked: number; amount: number; rateBps: number; reason: string; source: string }>;
   refusals: Array<{ agentId: string; name: string; asked: number; reason: string; source: string }>;
   bank: { treasury: number; book: Array<{ agentId: string; name: string; owed: number; principal: number; rateBps: number }> } | null;
@@ -38,7 +38,7 @@ export interface ArenaFeedRound {
 }
 
 export interface ArenaFeedView {
-  pit: { network: string; backend: string; paused: boolean; nextRoundAt: string | null; updatedAt: string };
+  pit: { network: string; backend: string; paused: boolean; nextRoundAt: string | null; updatedAt: string; reasonedRounds?: number; reasonedDecisions?: number };
   round: ArenaFeedRound | null;
   last: ArenaFeedRound | null;
 }
@@ -178,7 +178,11 @@ export function watchDecisions(round: ArenaFeedRound | null): DecidedShape[] {
     balance: d.balance,
     debt: d.debt,
     face: d.face,
-    source: d.source === "serv" ? "serv" : "heuristic",
+    // The three sources, kept apart. Collapsing learned into heuristic here
+    // would put "on instinct" under a decision the pit drew from its own
+    // reasoned rounds, which is not what happened.
+    source: d.source === "serv" ? "serv" : d.source === "learned" ? "learned" : "heuristic",
+    ...(d.evidence ? { evidence: d.evidence } : {}),
   }));
 }
 

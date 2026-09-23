@@ -7,6 +7,7 @@
 import { NextResponse } from "next/server";
 import { arenaReader } from "@/server/arena/read";
 import { arenaView } from "@/server/arena/view";
+import { reasonedOnFile, roundReader } from "@/server/round/read";
 import { log } from "@/server/log";
 import { internalDetail, publicError } from "@/server/publicError";
 
@@ -16,7 +17,8 @@ export const dynamic = "force-dynamic";
 export async function GET(): Promise<NextResponse> {
   try {
     const reader = arenaReader();
-    return NextResponse.json(arenaView(reader.state(), reader.chain));
+    const learned = reasonedOnFile(roundReader());
+    return NextResponse.json(arenaView(reader.state(), reader.chain, { reasonedRounds: learned.rounds, reasonedDecisions: learned.decisions }));
   } catch (e) {
     // Never the thrown error: a transport error quotes the endpoint url and a
     // keyed endpoint carries its credential in it.

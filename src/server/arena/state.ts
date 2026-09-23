@@ -45,10 +45,18 @@ export interface ArenaDecision {
   enter: boolean;
   stake: number;
   reason: string;
-  /** serv or heuristic: whether a model answered or the fallback did. */
+  /** serv, learned or heuristic: a model, the record, or the fixed rule. */
   source: string;
   balance: number;
   debt: number;
+  /**
+   * What a learned answer was drawn from. Only on a learned one.
+   *
+   * Counts of past reasoned decisions by this agent in the same band, and
+   * the stake it usually put up. Nothing about how any of those rounds
+   * ended: the learner does not read outcomes and neither does this.
+   */
+  evidence?: { matches: number; entered: number; typicalStake: number };
 }
 
 export interface ArenaLoan {

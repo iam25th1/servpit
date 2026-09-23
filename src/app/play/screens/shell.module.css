@@ -1122,6 +1122,14 @@ a.transferHash {
 /* Where a decision came from, beside the verdict. Two words, and the pair
    never share a colour: a fallback that reads like reasoning is the thing
    this is here to stop. */
+/* The working under a learned answer. Dimmer than the answer, because it is
+   the evidence rather than the claim. */
+.evidence {
+  font-size: var(--text-micro);
+  color: var(--on-surface-dim, var(--bone-dim));
+  margin: var(--space-tight) 0 0;
+}
+
 .reasoned,
 .learned,
 .instinct {

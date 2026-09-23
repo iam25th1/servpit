@@ -24,6 +24,7 @@ import type { OnboardingScreen } from "../onboarding";
 import { useUiKit } from "@/ui/UiKit";
 import { ninePatchStyle } from "@/ui/ninePatchGeometry";
 import { uiScale } from "@/ui/tokens";
+import { evidenceLine, recordLine } from "./evidenceLine";
 import { sourceLabel } from "./sourceLabel";
 import { staggerIn } from "@/ui/transitions";
 import type { FlowState } from "../machine";
@@ -123,6 +124,8 @@ interface PlanShape {
   tappedOut?: string[];
   costSummary: string;
   servCalls: number;
+  /** What a seat costs this round, in chips. Absent on an older payload. */
+  stakeChips?: number;
 }
 
 interface RunAgent {
@@ -215,6 +218,8 @@ export interface WatchingShape {
   reasoning: string | null;
   /** Who pulled the lever for this round, in one sentence, or null. */
   pulled?: string | null;
+  /** How many reasoned rounds the pit has to learn from. */
+  reasonedRounds?: number;
   /** True while what is on screen is a recording, not the pit. */
   replay: boolean;
   /** Whether there is a finished round to watch again. */
@@ -636,6 +641,11 @@ function Lineup({
                 )}
               </span>
               {row.state === "decided" ? <Dialog scale={2}>{row.decision.reason}</Dialog> : <div className={styles.thinkingBubble} aria-label="thinking" />}
+              {/* What a learned answer was drawn from. Under the answer
+                  itself, because it is the working rather than the claim. */}
+              {row.state === "decided" && evidenceLine(row.decision.evidence, plan?.stakeChips ?? 0) && (
+                <p className={styles.evidence}>{evidenceLine(row.decision.evidence, plan?.stakeChips ?? 0)}</p>
+              )}
             </div>
           </li>
         ))}
@@ -854,6 +864,13 @@ function Resting({
         {watching.restReason && (
           <p className={styles.restReason} data-rest-row="">
             {watching.restReason}
+          </p>
+        )}
+        {/* What the pit has behind a round that is not reasoning. One line,
+            and a count: nothing here says how any of those rounds ended. */}
+        {recordLine(watching.reasonedRounds) && (
+          <p className={styles.restReason} data-rest-row="">
+            {recordLine(watching.reasonedRounds)}
           </p>
         )}
         {winner && (
