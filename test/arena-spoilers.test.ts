@@ -170,15 +170,26 @@ describe("asking for a round", () => {
     const { join } = await import("node:path");
     const { PullStore } = await import("@/server/pulls/log");
     const { requestPull } = await import("@/server/pulls/service");
+    const { DEFAULT_PULL_SETTINGS } = await import("@/server/pulls/settings");
 
     const dir = mkdtempSync(join(tmpdir(), "servpit-spoiler-pull-"));
     try {
       const log = new PullStore(join(dir, "pulls-fake.ndjson"), "fake");
-      const answer = requestPull(state("resting"), { handle: "ash", token: "11111111-1111-4111-8111-111111111111" }, { store: log, arenaMode: true });
+      const answer = requestPull(
+        state("resting"),
+        { handle: "ash", token: "11111111-1111-4111-8111-111111111111" },
+        {
+          store: log,
+          arenaMode: true,
+          settings: DEFAULT_PULL_SETTINGS,
+          budget: { spentMicroCents: 0, budgetMicroCents: 25_000_000, withinBudget: true },
+          reasoningOn: true,
+        },
+      );
       expect(answer.ok).toBe(true);
       const body = JSON.stringify(answer);
       for (const marker of [SEED, WINNER, LOG_MARKER, PLACEMENT]) expect(body).not.toContain(marker);
-      if (answer.ok) expect(Object.keys(answer.view).sort()).toEqual(["message", "queued"]);
+      if (answer.ok) expect(Object.keys(answer.view).sort()).toEqual(["left", "message", "queued", "reasonBlocked", "resetsAt", "willReason"]);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

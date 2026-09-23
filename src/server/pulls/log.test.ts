@@ -55,8 +55,8 @@ describe("asking for a round", () => {
     // Someone asked, the worker was down, and they left. Playing that round
     // five minutes later is not what they asked for.
     let clock = 1_000;
-    const log = store();
-    (log as unknown as { now: () => number }).now = () => clock;
+    dir = mkdtempSync(join(tmpdir(), "servpit-pulls-"));
+    const log = new PullStore(join(dir, "pulls-fake.ndjson"), "fake", () => clock);
     log.request("ash", "hash-ash");
     clock += PULL_STALE_MS + 1;
     expect(log.pending()).toBeNull();

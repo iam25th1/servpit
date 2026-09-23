@@ -68,6 +68,18 @@ export class RoundStore {
     return this.rounds.slice(-limit).reverse();
   }
 
+  /**
+   * Every round the file holds, oldest first.
+   *
+   * For the daily reasoning budget, which sums what rounds actually spent and
+   * so cannot ask for a fixed number of them: a busy day is more rounds than
+   * a quiet one.
+   */
+  all(): StoredRound[] {
+    this.sync.read();
+    return [...this.rounds];
+  }
+
   /** Outcomes for one agent, oldest first. */
   outcomesFor(agentId: string, limit = 5): Array<{ roundId: string; entered: boolean; netWei: bigint }> {
     this.sync.read();

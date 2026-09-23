@@ -72,14 +72,13 @@ export class PullStore {
   private stamp: string | null = null;
   private claims = new Map<string, string>();
   private pulls = new Map<string, PullLine>();
-  private taken = new Set<string>();
+  private taken = new Map<string, number>();
   private started = new Map<string, StartedLine>();
-  /** Injected by tests that need to age a request without waiting. */
-  private now: () => number = Date.now;
-
   constructor(
     private readonly file: string,
     private readonly network: string,
+    /** Injected by tests that need to age a request without waiting. */
+    private readonly now: () => number = Date.now,
   ) {}
 
   /** The token hash a handle belongs to here, or null when nobody has claimed it. */
@@ -140,6 +139,50 @@ export class PullStore {
     });
   }
 
+  /**
+   * How many asks this browser has made since a moment.
+   *
+   * Counted from the log rather than from memory, because the limit has to
+   * hold across processes and across restarts: an in process counter is a
+   * limit on one site process, which is a limit on nothing.
+   */
+  asksSince(tokenHash: string, since: number): number {
+    this.reload();
+    let n = 0;
+    for (const line of this.pulls.values()) {
+      if (line.tokenHash !== tokenHash) continue;
+      const at = Date.parse(line.at);
+      if (Number.isFinite(at) && at >= since) n += 1;
+    }
+    return n;
+  }
+
+  /** When this browser's oldest ask inside the window was made, or null. */
+  oldestAskSince(tokenHash: string, since: number): number | null {
+    this.reload();
+    let oldest: number | null = null;
+    for (const line of this.pulls.values()) {
+      if (line.tokenHash !== tokenHash) continue;
+      const at = Date.parse(line.at);
+      if (!Number.isFinite(at) || at < since) continue;
+      if (oldest === null || at < oldest) oldest = at;
+    }
+    return oldest;
+  }
+
+  /**
+   * How many rounds the lever has started since a moment, across everybody.
+   *
+   * Counted at the moment the worker took the ask, which is when the round
+   * started, rather than when it was asked for.
+   */
+  takenSince(since: number): number {
+    this.reload();
+    let n = 0;
+    for (const at of this.taken.values()) if (Number.isFinite(at) && at >= since) n += 1;
+    return n;
+  }
+
   /** The handle that asked for this round, or null when the pit started it. */
   pulledBy(roundId: string): string | null {
     this.reload();
@@ -186,7 +229,7 @@ export class PullStore {
     this.stamp = stamp;
     this.claims = new Map();
     this.pulls = new Map();
-    this.taken = new Set();
+    this.taken = new Map();
     this.started = new Map();
     if (stamp === "") return;
 
@@ -207,7 +250,7 @@ export class PullStore {
       } else if (line.k === "pull") {
         this.pulls.set(line.id, line);
       } else if (line.k === "taken") {
-        this.taken.add(line.id);
+        this.taken.set(line.id, Date.parse(line.at));
       } else if (line.k === "started") {
         this.started.set(line.id, line);
       }

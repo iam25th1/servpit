@@ -19,6 +19,8 @@ import { log } from "../log";
 import { basescanTx } from "../money";
 import { planRound, runRound, type RoundPlan } from "../round/flow";
 import { scheduledReasoningOn } from "../serv/switch";
+import { budgetState } from "../pulls/budget";
+import { readPullSettings } from "../pulls/settings";
 import { settleBackingQuietly } from "../backing/settle";
 import { ArenaStore, type ArenaPhase, type ArenaRound, type ArenaState, type PhaseMark } from "./state";
 
@@ -230,7 +232,14 @@ export async function playArenaRound(ctx: ServerContext, store: ArenaStore, next
   // unless an operator has said it should: the pit plays itself all day, and
   // a day of reasoning is a day of credit nobody was there to read. Either
   // way the operator switch is still the master, inside planRound.
-  const reasoning = pulledBy !== null || scheduledReasoningOn(flow.servScheduledFile);
+  //
+  // The daily budget is enforced here rather than at the button, because the
+  // button is advice and this is the only writer. Over budget, the round
+  // still plays: it just plays on instinct, which costs nothing.
+  const wanted = pulledBy !== null || scheduledReasoningOn(flow.servScheduledFile);
+  const budget = budgetState(flow.store.all(), readPullSettings(flow.pullSettingsFile ?? "").dailyBudgetCents, Date.now());
+  const reasoning = wanted && budget.withinBudget;
+  if (wanted && !reasoning) log.info("arena round on instinct, the day's reasoning budget is spent", { spentMicroCents: budget.spentMicroCents, budgetMicroCents: budget.budgetMicroCents });
   const link = (hash: string | null | undefined): string | null => (ctx.chain.settles && hash ? basescanTx(ctx.chain.network, hash) : null);
 
   let round: ArenaRound = {

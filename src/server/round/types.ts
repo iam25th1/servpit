@@ -78,6 +78,8 @@ export interface FlowContext {
    * consult it: it reasons whenever the master switch allows it.
    */
   servScheduledFile?: string;
+  /** The operator's pull settings, including the daily reasoning budget. */
+  pullSettingsFile?: string;
   entrants: number;
 }
 

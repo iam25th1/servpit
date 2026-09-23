@@ -47,7 +47,7 @@ describe("the route inventory", () => {
       "src/app/api/graveyard/route.ts GET",
       "src/app/api/health/route.ts GET",
       "src/app/api/leaderboard/route.ts GET",
-      "src/app/api/pull/route.ts POST",
+      "src/app/api/pull/route.ts GET,POST",
       "src/app/api/round/plan/route.ts POST",
       "src/app/api/round/run/route.ts POST",
     ]);
