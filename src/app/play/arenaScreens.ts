@@ -26,8 +26,8 @@ export interface ArenaFeedRound {
   stakeChips: number;
   weiPerChip: string;
   decisions: Array<{ agentId: string; name: string; face: string | null; enter: boolean; stake: number; reason: string; source: string; balance: number; debt: number; evidence?: { matches: number; entered: number; typicalStake: number } }>;
-  loans: Array<{ agentId: string; name: string; asked: number; amount: number; rateBps: number; reason: string; source: string }>;
-  refusals: Array<{ agentId: string; name: string; asked: number; reason: string; source: string }>;
+  loans: Array<{ agentId: string; name: string; asked: number; amount: number; rateBps: number; reason: string; source: string; evidence?: { matches: number; approved: number; typicalAmount: number } }>;
+  refusals: Array<{ agentId: string; name: string; asked: number; reason: string; source: string; evidence?: { matches: number; approved: number; typicalAmount: number } }>;
   bank: { treasury: number; book: Array<{ agentId: string; name: string; owed: number; principal: number; rateBps: number }> } | null;
   entries: Array<{ agentId: string; amountWei: string; txHash: string | null; link: string | null }>;
   /** The handle that asked for this round, absent when the interval started it. */

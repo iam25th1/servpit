@@ -400,6 +400,14 @@ async function settleRound(ctx: FlowContext, plan: RoundPlan, progress: RunProgr
     log.error("reconciliation failed", { roundId: plan.roundId, checks: reconciliation.checks.filter((c) => !c.ok) });
   }
 
+  // What the lender answered, advances and refusals alike, with the spot each
+  // borrower was in. A lender that only recorded the times it said yes would
+  // learn to say yes.
+  const loanRecord = [
+    ...plan.loans.map((l) => ({ agentId: l.agentId, approve: true, amountChips: toChips(l.principalWei), rateBps: l.rateBps, source: l.source, ...(l.situation ? { situation: l.situation } : {}) })),
+    ...plan.refusals.map((r) => ({ agentId: r.agentId, approve: false, amountChips: 0, rateBps: 0, source: r.source, ...(r.situation ? { situation: r.situation } : {}) })),
+  ];
+
   const agents: StoredAgentRound[] = plan.decisions.map((d) => {
     const entry = entries.find((e) => e.agentId === d.agentId);
     return {
@@ -438,6 +446,7 @@ async function settleRound(ctx: FlowContext, plan: RoundPlan, progress: RunProgr
     reconciled: reconciliation.ok,
     servCalls: plan.servCalls,
     servMicroCents: ctx.meter.estimatedMicroCents,
+    ...(loanRecord.length > 0 ? { loans: loanRecord } : {}),
   });
 
   log.info("round complete", {

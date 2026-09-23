@@ -31,6 +31,7 @@ export interface LoanShape {
   rateBps: number;
   reason: string;
   source: string;
+  evidence?: LoanEvidence;
 }
 
 export interface RefusalShape {
@@ -39,6 +40,31 @@ export interface RefusalShape {
   asked: number;
   tappedOut: boolean;
   reason: string;
+  /** Where the answer came from. A refusal is a decision like any other. */
+  source?: string;
+  evidence?: LoanEvidence;
+}
+
+/** What a learned lending answer was drawn from. Counts, never outcomes. */
+export interface LoanEvidence {
+  matches: number;
+  approved: number;
+  typicalAmount: number;
+}
+
+/**
+ * The working under a learned lending answer, or null.
+ *
+ * The same shape as an agent's evidence and under the same rule: how many
+ * reasoned answers to a borrower like this one, and how many of them Marrow
+ * backed. Nothing about how those loans ended, because the lender's learner
+ * does not read that either.
+ */
+export function loanEvidenceLine(source: string | undefined, evidence: LoanEvidence | undefined): string | null {
+  if (source !== "learned" || !evidence || evidence.matches <= 0) return null;
+  const answers = `${evidence.matches} reasoned answer${evidence.matches === 1 ? "" : "s"} to borrowers like this`;
+  if (evidence.approved === 0) return `Learned from ${answers}. Marrow backed none of them.`;
+  return `Learned from ${answers}. Marrow backed ${evidence.approved}, usually for ${evidence.typicalAmount} chips.`;
 }
 
 /** One line of the exchange between an agent and the lender. */
@@ -48,6 +74,8 @@ export interface Beat {
   kind: "ask" | "lend" | "refuse";
   line: string;
   aside: string | null;
+  /** What a learned answer was drawn from, when it was learned. */
+  evidence?: string | null;
 }
 
 /**
@@ -66,7 +94,13 @@ export function loanBeats(loans: LoanShape[], refusals: RefusalShape[]): Beat[] 
       line: l.tappedOut ? `${l.name} is tapped out and asks Marrow for ${l.asked} chips.` : `${l.name} wants to go big and asks Marrow for ${l.asked} chips.`,
       aside: null,
     });
-    beats.push({ key: `lend-${l.agentId}`, kind: "lend", line: `Marrow lends ${l.amount} at ${ratePercent(l.rateBps)} percent a round.`, aside: l.reason });
+    beats.push({
+      key: `lend-${l.agentId}`,
+      kind: "lend",
+      line: `Marrow lends ${l.amount} at ${ratePercent(l.rateBps)} percent a round.`,
+      aside: l.reason,
+      evidence: loanEvidenceLine(l.source, l.evidence),
+    });
   }
   for (const r of refusals) {
     beats.push({
@@ -75,7 +109,13 @@ export function loanBeats(loans: LoanShape[], refusals: RefusalShape[]): Beat[] 
       line: r.tappedOut ? `${r.name} is tapped out and asks Marrow for ${r.asked} chips.` : `${r.name} wants to go big and asks Marrow for ${r.asked} chips.`,
       aside: null,
     });
-    beats.push({ key: `refuse-${r.agentId}`, kind: "refuse", line: `Marrow turns ${r.name} down.`, aside: r.reason });
+    beats.push({
+      key: `refuse-${r.agentId}`,
+      kind: "refuse",
+      line: `Marrow turns ${r.name} down.`,
+      aside: r.reason,
+      evidence: loanEvidenceLine(r.source, r.evidence),
+    });
   }
   return beats;
 }
@@ -144,6 +184,9 @@ export function BankPanel({ bank, loans, refusals }: { bank: BankShape; loans: L
           {beats.map((beat) => (
             <li key={beat.key} className={styles.ruling} data-beat={beat.kind}>
               <span className={styles.rulingLine}>{beat.line}</span>
+              {/* What a learned answer was drawn from, under the answer,
+                  because it is the working rather than the ruling. */}
+              {beat.evidence && <span className={styles.rulingEvidence}>{beat.evidence}</span>}
             </li>
           ))}
         </ul>

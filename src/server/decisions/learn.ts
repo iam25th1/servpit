@@ -23,7 +23,7 @@
 // Arithmetic only. Nothing here reaches a model, a wallet or a network.
 
 import type { StoredRound } from "../round/store";
-import { bandOf, type Situation } from "./situation";
+import { bandOf, borrowerBandOf, type BorrowerSituation, type Situation } from "./situation";
 import type { Decision } from "./types";
 
 /**
@@ -118,6 +118,79 @@ export function learnedDecision(
       stake: Math.max(stakeChips, typicalStake),
       reason: `learned: in ${matches.length} reasoned rounds like this one it entered ${entered.length}, usually for ${Math.max(stakeChips, typicalStake)} chips`,
     },
+    evidence,
+  };
+}
+
+/** What a learned lending answer was drawn from. */
+export interface LearnedLoanEvidence {
+  /** Reasoned answers to a borrower in this band. */
+  matches: number;
+  /** How many of them Marrow approved. */
+  approved: number;
+  /** What it usually advanced when it did, in chips. */
+  typicalAmount: number;
+  /** The band itself, so a reader can see what counted as similar. */
+  band: string;
+}
+
+export interface LearnedLoan {
+  approve: boolean;
+  amountChips: number;
+  rateBps: number;
+  reason: string;
+  evidence: LearnedLoanEvidence;
+}
+
+/**
+ * What Marrow's reasoned answers say about a borrower like this one.
+ *
+ * The same three rules as the agents' learner and the same minimum: it reads
+ * decisions and never outcomes, it says nothing below MIN_MATCHES, and it is
+ * deterministic. The amount it names is bounded elsewhere, by the same
+ * validator every other lending answer goes through.
+ */
+export function learnedLoan(
+  situation: BorrowerSituation,
+  stakeChips: number,
+  rounds: readonly StoredRound[],
+  minMatches: number = MIN_MATCHES,
+): LearnedLoan | null {
+  const band = borrowerBandOf(situation, stakeChips);
+  const matches: Array<{ approve: boolean; amountChips: number; rateBps: number }> = [];
+  for (const round of rounds) {
+    for (const loan of round.loans ?? []) {
+      if (loan.source !== "serv" || !loan.situation) continue;
+      if (borrowerBandOf(loan.situation, stakeChips) !== band) continue;
+      matches.push({ approve: loan.approve, amountChips: loan.amountChips, rateBps: loan.rateBps });
+    }
+  }
+
+  if (matches.length < minMatches) return null;
+
+  const approved = matches.filter((m) => m.approve);
+  // A tie refuses. Lending spends the treasury and refusing spends nothing,
+  // so the even case takes the cheaper mistake, the same way a tie holds for
+  // an agent.
+  const approve = approved.length > matches.length / 2;
+  const typicalAmount = median(approved.map((m) => m.amountChips));
+  const typicalRate = median(approved.map((m) => m.rateBps));
+  const evidence: LearnedLoanEvidence = { matches: matches.length, approved: approved.length, typicalAmount, band };
+
+  if (!approve) {
+    return {
+      approve: false,
+      amountChips: 0,
+      rateBps: typicalRate,
+      reason: `Learned: of ${matches.length} like you, I backed ${approved.length}. Not this time.`,
+      evidence,
+    };
+  }
+  return {
+    approve: true,
+    amountChips: typicalAmount,
+    rateBps: typicalRate,
+    reason: `Learned: of ${matches.length} like you, I backed ${approved.length}, usually for ${typicalAmount}.`,
     evidence,
   };
 }

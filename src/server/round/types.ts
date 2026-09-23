@@ -6,6 +6,8 @@
 
 import { createHash } from "node:crypto";
 import type { BankrollCache } from "../bankroll";
+import type { LearnedLoanEvidence } from "../decisions/learn";
+import type { BorrowerSituation } from "../decisions/situation";
 import type { AgentDecision, AgentSnapshot } from "../decisions/types";
 import type { TransferLedger } from "../ledger";
 import type { PlanStore } from "./planStore";
@@ -114,6 +116,10 @@ export interface PlannedLoan {
   rejection?: string;
   model?: string;
   latencyMs?: number;
+  /** The borrower's spot, recorded so a later round can learn from it. */
+  situation?: BorrowerSituation;
+  /** What a learned answer was drawn from. Only on a learned one. */
+  evidence?: LearnedLoanEvidence;
 }
 
 export interface RoundPlan {
@@ -131,7 +137,17 @@ export interface RoundPlan {
   /** Loans the bank agreed to this round. Empty when the bank is off. */
   loans: PlannedLoan[];
   /** Requests the bank turned down, for the panel and the log. */
-  refusals: Array<{ agentId: string; name: string; reason: string; askedWei: bigint; tappedOut: boolean }>;
+  refusals: Array<{
+    agentId: string;
+    name: string;
+    reason: string;
+    askedWei: bigint;
+    tappedOut: boolean;
+    /** Where the refusal came from. A refusal is a decision like any other. */
+    source: "serv" | "learned" | "heuristic";
+    situation?: BorrowerSituation;
+    evidence?: LearnedLoanEvidence;
+  }>;
   /**
    * The lender's state as the round was planned. Null when the bank is off,
    * which is what tells the client there is no lender to draw.

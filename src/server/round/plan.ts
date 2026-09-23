@@ -242,7 +242,7 @@ export async function planRound(
       }));
   const rates = bankRateBounds();
   const loans: PlannedLoan[] = [];
-  const refusals: Array<{ agentId: string; name: string; reason: string; askedWei: bigint; tappedOut: boolean }> = [];
+  const refusals: RoundPlan["refusals"] = [];
   const borrowed = new Map<string, { principalWei: bigint; rateBps: number }>();
   // Agents that could not cover a seat and were turned down. They are out,
   // and the settle path is what ends them.
@@ -310,10 +310,13 @@ export async function planRound(
         // asked to pretend otherwise.
         const tappedOutHere = tappedIds.has(snapshot.profile.id);
         if (lendableChips(request, bounds) <= 0) {
-          refusals.push({ agentId: snapshot.profile.id, name: snapshot.profile.name, reason: "Nothing left to lend against that record.", askedWei: shortfallWei, tappedOut: tappedOutHere });
+          // Nothing was asked of the lender at all here: there is nothing to
+          // lend, so this is the pit's own arithmetic rather than a decision
+          // anybody made.
+          refusals.push({ agentId: snapshot.profile.id, name: snapshot.profile.name, reason: "Nothing left to lend against that record.", askedWei: shortfallWei, tappedOut: tappedOutHere, source: "heuristic" });
           if (tappedIds.has(snapshot.profile.id)) deniedCredit.push(snapshot.profile.id);
         } else {
-          const answer = await decideLoan({ client: serv, meter: ctx.meter }, request, bounds);
+          const answer = await decideLoan({ client: serv, meter: ctx.meter, history: serv ? undefined : ctx.store.all() }, request, bounds);
           // With the answer, what the lender is holding as it gives it. The
           // panel is drawn from this, and without it a viewer watching the
           // banking phase sees the answers with nobody giving them.
@@ -335,9 +338,24 @@ export async function planRound(
               rejection: answer.rejection,
               model: answer.model,
               latencyMs: answer.latencyMs,
+              situation: answer.situation,
+              evidence: answer.evidence,
             });
           } else {
-            refusals.push({ agentId: snapshot.profile.id, name: snapshot.profile.name, reason: answer.decision.reason, askedWei: shortfallWei, tappedOut: tappedOutHere });
+            // A refusal is a decision, so it carries where it came from and
+            // the spot it was made in, exactly as an advance does. Without
+            // the source, a refusal written by the fixed lender was published
+            // as though Marrow had reasoned its way to it.
+            refusals.push({
+              agentId: snapshot.profile.id,
+              name: snapshot.profile.name,
+              reason: answer.decision.reason,
+              askedWei: shortfallWei,
+              tappedOut: tappedOutHere,
+              source: answer.source,
+              situation: answer.situation,
+              evidence: answer.evidence,
+            });
             if (tappedIds.has(snapshot.profile.id)) deniedCredit.push(snapshot.profile.id);
           }
         }

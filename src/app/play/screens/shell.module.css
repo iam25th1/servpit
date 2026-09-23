@@ -812,6 +812,14 @@ a.transferHash {
   font-size: var(--text-micro);
 }
 
+/* The working under a learned ruling. Dim, like the ask, because it is
+   evidence rather than the answer. */
+.rulingEvidence {
+  font-size: var(--text-micro);
+  color: var(--on-surface-dim, var(--bone-dim));
+  display: block;
+}
+
 .ruling[data-beat="ask"] .rulingLine {
   color: var(--on-surface-dim, var(--bone-dim));
 }

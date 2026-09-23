@@ -77,3 +77,43 @@ export function bandOf(situation: Situation, stakeChips: number): string {
 
   return [balance, debt, pot, field, `in${situation.recentEntered}`, `up${situation.recentAhead}`].join("/");
 }
+
+/** The spot a borrower was in when the lender answered, as numbers. */
+export interface BorrowerSituation {
+  /** What the borrower held, in chips. */
+  balanceChips: number;
+  /** What it already owed, in chips. */
+  debtChips: number;
+  /** What it could not cover, which is the most that could be lent. */
+  shortfallChips: number;
+  /** What the lender was holding, in chips. */
+  treasuryChips: number;
+  /** Rounds it has played, and how many it won. */
+  roundsPlayed: number;
+  wins: number;
+}
+
+/**
+ * The bands a borrower's spot is matched on.
+ *
+ * The same reasoning as an agent's bands: the same kind of borrower, not the
+ * same borrower to the chip. What a lender's answer turns on is whether the
+ * borrower can cover anything itself, what it already owes, how much it is
+ * asking for against the seat price, whether the till is deep enough to care,
+ * and whether it has ever won anything.
+ */
+export function borrowerBandOf(situation: BorrowerSituation, stakeChips: number): string {
+  const seats = stakeChips > 0 ? situation.balanceChips / stakeChips : 0;
+  const balance = seats < 0.5 ? "empty" : seats < 1 ? "short" : seats < 3 ? "thin" : "steady";
+
+  const debt = situation.debtChips === 0 ? "clear" : situation.debtChips < stakeChips ? "owing" : "sunk";
+
+  const asked = stakeChips > 0 ? situation.shortfallChips / stakeChips : 0;
+  const ask = asked <= 1 ? "small" : asked <= 3 ? "ordinary" : "large";
+
+  const till = stakeChips > 0 && situation.treasuryChips < stakeChips * 5 ? "tight" : "deep";
+
+  const record = situation.wins > 0 ? "winner" : situation.roundsPlayed >= 5 ? "tried" : "new";
+
+  return [balance, debt, ask, till, record].join("/");
+}

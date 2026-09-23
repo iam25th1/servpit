@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { StoredRound } from "../round/store";
-import { MIN_MATCHES, learnedDecision } from "./learn";
-import { bandOf, situationOf, type Situation } from "./situation";
+import { MIN_MATCHES, learnedDecision, learnedLoan } from "./learn";
+import { bandOf, situationOf, type BorrowerSituation, type Situation } from "./situation";
 import type { AgentSnapshot, RoundContext } from "./types";
 
 const STAKE_CHIPS = 10;
@@ -173,5 +173,70 @@ describe("the spot an agent was in", () => {
     expect(bandOf(situation({ balanceChips: 5 }), STAKE_CHIPS)).not.toBe(bandOf(situation({ balanceChips: 400 }), STAKE_CHIPS));
     expect(bandOf(situation({ debtChips: 0 }), STAKE_CHIPS)).not.toBe(bandOf(situation({ debtChips: 80 }), STAKE_CHIPS));
     expect(bandOf(situation({ field: 8 }), STAKE_CHIPS)).not.toBe(bandOf(situation({ field: 24 }), STAKE_CHIPS));
+  });
+});
+
+describe("what the lender draws from its own answers", () => {
+  const borrower = (over: Partial<BorrowerSituation> = {}): BorrowerSituation => ({
+    balanceChips: 2,
+    debtChips: 0,
+    shortfallChips: 8,
+    treasuryChips: 500,
+    roundsPlayed: 6,
+    wins: 0,
+    ...over,
+  });
+
+  const lending = (count: number, over: { approve?: boolean; amountChips?: number; rateBps?: number; source?: "serv" | "learned" | "heuristic"; situation?: BorrowerSituation | undefined } = {}): StoredRound[] =>
+    Array.from({ length: count }, () =>
+      ({
+        ...round(),
+        loans: [
+          {
+            agentId: "atlas",
+            approve: over.approve ?? true,
+            amountChips: over.amountChips ?? 8,
+            rateBps: over.rateBps ?? 500,
+            source: over.source ?? "serv",
+            ...(over.situation === undefined ? {} : { situation: over.situation }),
+          },
+        ],
+      }) as StoredRound,
+    );
+
+  it("says nothing below the minimum, so the fixed lender answers", () => {
+    expect(learnedLoan(borrower(), STAKE_CHIPS, lending(MIN_MATCHES - 1, { situation: borrower() }))).toBeNull();
+  });
+
+  it("backs a borrower like the ones it backed, for what it usually advanced", () => {
+    const learned = learnedLoan(borrower(), STAKE_CHIPS, lending(6, { situation: borrower(), amountChips: 8 }));
+    expect(learned).not.toBeNull();
+    expect(learned!.approve).toBe(true);
+    expect(learned!.amountChips).toBe(8);
+    expect(learned!.evidence).toMatchObject({ matches: 6, approved: 6, typicalAmount: 8 });
+  });
+
+  it("refuses when it mostly refused, and on a tie", () => {
+    const mostly = [...lending(4, { situation: borrower(), approve: false, amountChips: 0 }), ...lending(2, { situation: borrower() })];
+    expect(learnedLoan(borrower(), STAKE_CHIPS, mostly)!.approve).toBe(false);
+    const tied = [...lending(3, { situation: borrower(), approve: false, amountChips: 0 }), ...lending(3, { situation: borrower() })];
+    expect(learnedLoan(borrower(), STAKE_CHIPS, tied)!.approve).toBe(false);
+  });
+
+  it("reads only reasoned answers, and only ones with the spot recorded", () => {
+    expect(learnedLoan(borrower(), STAKE_CHIPS, lending(9, { situation: borrower(), source: "learned" }))).toBeNull();
+    expect(learnedLoan(borrower(), STAKE_CHIPS, lending(9, { situation: undefined }))).toBeNull();
+  });
+
+  it("keeps a different kind of borrower apart", () => {
+    const clean = lending(9, { situation: borrower({ debtChips: 0 }) });
+    expect(learnedLoan(borrower({ debtChips: 40 }), STAKE_CHIPS, clean)).toBeNull();
+  });
+
+  it("gives the same answer twice, in either reading order", () => {
+    const rounds = [...lending(4, { situation: borrower() }), ...lending(2, { situation: borrower(), approve: false, amountChips: 0 })];
+    const first = learnedLoan(borrower(), STAKE_CHIPS, rounds);
+    expect(learnedLoan(borrower(), STAKE_CHIPS, rounds)).toEqual(first);
+    expect(learnedLoan(borrower(), STAKE_CHIPS, [...rounds].reverse())).toEqual(first);
   });
 });

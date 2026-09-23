@@ -1,7 +1,7 @@
 // Round history: what each agent decided, why, and what its balance did.
 // Feeds the reasoning surface and the next round's recent outcomes.
 
-import type { Situation } from "../decisions/situation";
+import type { BorrowerSituation, Situation } from "../decisions/situation";
 import { StoreFile, UNKNOWN_NETWORK } from "../store/file";
 
 export interface StoredAgentRound {
@@ -31,6 +31,22 @@ export interface StoredAgentRound {
   payoutLink?: string | null;
 }
 
+/**
+ * One answer from the lender, with the spot the borrower was in.
+ *
+ * Refusals as well as advances, because a refusal is a decision and a lender
+ * that only recorded the times it said yes would learn to say yes.
+ */
+export interface StoredLoanDecision {
+  agentId: string;
+  approve: boolean;
+  amountChips: number;
+  rateBps: number;
+  source: "serv" | "learned" | "heuristic";
+  /** Absent on rounds stored before the pit recorded the spot. */
+  situation?: BorrowerSituation;
+}
+
 export interface StoredRound {
   roundId: string;
   seed: string;
@@ -44,6 +60,8 @@ export interface StoredRound {
   reconciled: boolean;
   servCalls: number;
   servMicroCents: number;
+  /** What the lender answered this round. Absent when the bank is off. */
+  loans?: StoredLoanDecision[];
 }
 
 const MAX_ROUNDS = 200;

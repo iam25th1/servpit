@@ -439,6 +439,14 @@ because entering spends a seat and holding spends nothing.
 learned, on instinct. A learned stake goes through the same independent validator against the
 chain balance as a model's answer, and a learned answer that fails it falls to the fixed rule.
 
+**Marrow learns the same way.** The lender records every answer it gives, advances and
+refusals alike, with the borrower's spot: what it held, what it owed, what it could not cover,
+what was in the till and whether it has ever won. When the pit is not reasoning, Marrow's
+answer is drawn from its own reasoned answers to borrowers in the same band, with the same
+minimum of five, the same tie rule (a tie refuses, because lending spends the treasury and
+refusing spends nothing), the same validator against the real treasury, and the same evidence
+on screen.
+
 Rounds stored before the pit started recording the spot carry no situation and are skipped, so
 learning starts from the rounds played after this change rather than pretending about the ones
 before it.

@@ -14,8 +14,11 @@
 // limits is not a limit.
 
 import { log } from "../log";
+import type { StoredRound } from "../round/store";
 import type { CostMeter, ServClient } from "../serv/client";
 import { plainPunctuation, reasonFault } from "./decide";
+import { learnedLoan, type LearnedLoanEvidence } from "./learn";
+import type { BorrowerSituation } from "./situation";
 import type { DecisionSource } from "./types";
 
 /** What the lender is called, and how it talks. */
@@ -76,6 +79,10 @@ export interface BankDecision {
   agentId: string;
   decision: LoanDecision;
   source: DecisionSource;
+  /** The spot the borrower was in, recorded so a later round can learn from it. */
+  situation?: BorrowerSituation;
+  /** What a learned answer was drawn from. Only on a learned one. */
+  evidence?: LearnedLoanEvidence;
   /** Why the model's answer was not used, when it was not. */
   rejection?: string;
   model?: string;
@@ -225,6 +232,23 @@ export function heuristicLoan(request: LoanRequest, bounds: LoanBounds): LoanDec
 export interface BankDeps {
   client?: ServClient;
   meter: CostMeter;
+  /**
+   * What the lender has already answered, for the rounds that are not
+   * reasoning. Optional: without it the fixed lender answers as before.
+   */
+  history?: readonly StoredRound[];
+}
+
+/** The borrower's spot, as the record keeps it. */
+export function borrowerSituationOf(request: LoanRequest, bounds: LoanBounds): BorrowerSituation {
+  return {
+    balanceChips: request.record.balanceChips,
+    debtChips: request.record.debtChips,
+    shortfallChips: request.shortfallChips,
+    treasuryChips: bounds.treasuryChips,
+    roundsPlayed: request.record.roundsPlayed,
+    wins: request.record.wins,
+  };
 }
 
 /**
@@ -235,9 +259,26 @@ export interface BankDeps {
  * reason logged. There is no second call.
  */
 export async function decideLoan(deps: BankDeps, request: LoanRequest, bounds: LoanBounds): Promise<BankDecision> {
-  const base = { agentId: request.record.agentId };
+  // The borrower's spot, recorded on every answer whatever gives it, so a
+  // later round can learn from this one.
+  const situation = borrowerSituationOf(request, bounds);
+  const base = { agentId: request.record.agentId, situation };
 
   if (!deps.client) {
+    // Not reasoning. Before the fixed lender, what Marrow decided about
+    // borrowers like this one, if it has answered enough of them. The answer
+    // goes through the same validator a model's would, against the treasury
+    // this process read from the chain.
+    const learned = deps.history ? learnedLoan(situation, request.stakeChips, deps.history) : null;
+    if (learned) {
+      const checked = validateLoanDecision(
+        JSON.stringify({ approve: learned.approve, amount: learned.amountChips, rateBps: learned.rateBps, reason: learned.reason }),
+        request,
+        bounds,
+      );
+      if (checked.ok) return { ...base, decision: checked.decision, source: "learned", evidence: learned.evidence };
+      log.warn("learned lending answer rejected, using the fixed lender", { agentId: request.record.agentId, reason: checked.reason });
+    }
     return { ...base, decision: heuristicLoan(request, bounds), source: "heuristic", rejection: "SERV not configured, using the deterministic lender" };
   }
 

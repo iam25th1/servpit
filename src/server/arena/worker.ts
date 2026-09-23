@@ -302,7 +302,14 @@ export async function playArenaRound(ctx: ServerContext, store: ArenaStore, next
       );
     },
     (answer, name, bank) => {
-      const entry = { agentId: answer.agentId, name, asked: 0, reason: answer.decision.reason, source: answer.source };
+      const entry = {
+        agentId: answer.agentId,
+        name,
+        asked: 0,
+        reason: answer.decision.reason,
+        source: answer.source,
+        ...(answer.evidence ? { evidence: { matches: answer.evidence.matches, approved: answer.evidence.approved, typicalAmount: answer.evidence.typicalAmount } } : {}),
+      };
       // The lender itself, alongside its answer. Until this the banking phase
       // published the answers and nothing that draws them, so a viewer
       // watching a round where everybody had to borrow saw the tapped out
@@ -337,8 +344,11 @@ export async function playArenaRound(ctx: ServerContext, store: ArenaStore, next
         debt: toChips(d.debtWei ?? 0n),
         ...(d.evidence ? { evidence: { matches: d.evidence.matches, entered: d.evidence.entered, typicalStake: d.evidence.typicalStake } } : {}),
       })),
-      loans: plan.loans.map((l) => ({ agentId: l.agentId, name: l.name, asked: toChips(l.askedWei), amount: toChips(l.principalWei), rateBps: l.rateBps, reason: l.reason, source: l.source })),
-      refusals: plan.refusals.map((r) => ({ agentId: r.agentId, name: r.name, asked: toChips(r.askedWei), reason: r.reason, source: "serv" })),
+      loans: plan.loans.map((l) => ({ agentId: l.agentId, name: l.name, asked: toChips(l.askedWei), amount: toChips(l.principalWei), rateBps: l.rateBps, reason: l.reason, source: l.source, ...(l.evidence ? { evidence: { matches: l.evidence.matches, approved: l.evidence.approved, typicalAmount: l.evidence.typicalAmount } } : {}) })),
+      // The refusal's own source, which used to be published as serv
+      // whatever answered: a refusal written by the fixed lender read as
+      // though Marrow had reasoned its way to it.
+      refusals: plan.refusals.map((r) => ({ agentId: r.agentId, name: r.name, asked: toChips(r.askedWei), reason: r.reason, source: r.source, ...(r.evidence ? { evidence: { matches: r.evidence.matches, approved: r.evidence.approved, typicalAmount: r.evidence.typicalAmount } } : {}) })),
       bank: plan.bank ? { treasury: toChips(plan.bank.treasuryWei), book: plan.bank.book.map((b) => ({ agentId: b.agentId, name: b.name, owed: toChips(b.principalWei + b.interestWei), principal: toChips(b.principalWei), rateBps: b.rateBps })) } : null,
     },
     "settling",

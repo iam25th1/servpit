@@ -67,6 +67,8 @@ export interface ArenaLoan {
   rateBps: number;
   reason: string;
   source: string;
+  /** What a learned answer was drawn from. Counts, never outcomes. */
+  evidence?: { matches: number; approved: number; typicalAmount: number };
 }
 
 export interface ArenaRefusal {
@@ -75,6 +77,8 @@ export interface ArenaRefusal {
   asked: number;
   reason: string;
   source: string;
+  /** What a learned answer was drawn from. Counts, never outcomes. */
+  evidence?: { matches: number; approved: number; typicalAmount: number };
 }
 
 /**
