@@ -50,7 +50,10 @@ import { backOptions, pickOutcome } from "./backing";
 import { useBackingFeed } from "./backingFeed";
 import { usePullFeed } from "./pullFeed";
 import { leverLines } from "./leverNote";
-import { backerHandle, backerToken, browserStore, setBackerHandle, type StorageLike } from "./backerId";
+import { backerHandle, backerToken, browserStore, type StorageLike } from "./backerId";
+import { useHandleClaim } from "./handleFeed";
+import { useFighterFeed } from "./fighterFeed";
+import { careerLine, myRound, myRoundLine, plateNames, type ClaimedSeat } from "./myFighter";
 import { hasSeenOnboarding, markOnboardingSeen, onboardingScreens } from "./onboarding";
 import type { BoardShape } from "./screens/GameShell";
 import type { GraveShape } from "./screens/graveyardRows";
@@ -213,8 +216,23 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
   // on it, because the pick interface only exists once the feed says a window
   // is open, which is after the page is live.
   const [backerStore] = useState<StorageLike>(() => browserStore());
-  const [handle, setHandle] = useState<string | null>(() => backerHandle(browserStore()));
+  const [storedHandle] = useState<string | null>(() => backerHandle(browserStore()));
   const [deviceToken] = useState<string>(() => backerToken(browserStore()));
+  // Choosing a handle, with the pit asked before it is kept and the field
+  // left open whenever the answer is no.
+  const handleClaim = useHandleClaim(backerStore, deviceToken, storedHandle);
+  const handle = handleClaim.handle;
+  // A fighter of your own: asked for when there is a handle, and again when
+  // a claim lands. Nothing here is on a clock.
+  const fighterFeed = useFighterFeed(arenaMode, handle, deviceToken);
+  const myFighter: ClaimedSeat | null = fighterFeed.view?.fighter ?? null;
+  // Read by the effect that builds the timeline, which runs on a phase rather
+  // than on this value: a ref keeps it current without rebuilding the fight,
+  // and it is written in an effect rather than during a render.
+  const myFighterRef = useRef<ClaimedSeat | null>(null);
+  useEffect(() => {
+    myFighterRef.current = myFighter;
+  }, [myFighter]);
 
   // Never during a replay: a recording has no window to back into, and a pick
   // on a finished round would be a pick on a known result.
@@ -236,6 +254,21 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
   const closeHow = (): void => {
     markOnboardingSeen(backerStore);
     setHowOpen(false);
+  };
+
+  // The fighters board, fetched when it is asked for. Its own board because a
+  // fighter's record is mostly luck, which the README says out loud.
+  const [fighterBoard, setFighterBoard] = useState<Record<string, unknown> | null>(null);
+  const showFighters = async (page: number): Promise<void> => {
+    try {
+      const query = handle ? `&handle=${encodeURIComponent(handle)}` : "";
+      const response = await fetch(`/api/fighters?page=${page}${query}`, { cache: "no-store" });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      setFighterBoard((await response.json()) as Record<string, unknown>);
+    } catch {
+      // An empty board says the same thing a failed one would.
+      setFighterBoard({ rows: [], page: 1, pages: 1, total: 0, you: null });
+    }
   };
 
   const [board, setBoard] = useState<BoardShape | null>(null);
@@ -693,7 +726,14 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
 
     if (round.phase === "fight" && round.fight) {
       engine.arenaRenderer.floorSeed = round.roundId;
-      engine.timeline = new Timeline({ characters: round.fight.characters, log: round.fight.log, placements: round.fight.placements, names: round.fight.names } as never);
+      engine.timeline = new Timeline({
+        characters: round.fight.characters,
+        log: round.fight.log,
+        placements: round.fight.placements,
+        // The agents, which the round names, and this viewer's own fighter.
+        // Nobody else's: twenty four plates is noise rather than a pit.
+        names: plateNames(round, myFighterRef.current),
+      } as never);
       engine.timeline.onBatch((batch, silent) => engine.juice.onBatch(batch, silent, (id) => engine.timeline!.actor(id)));
       setArena(arenaStanding(engine.timeline.actors()));
       engine.timeline.onBatch(() => setArena(arenaStanding(engine.timeline!.actors())));
@@ -804,7 +844,10 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
                       watch.resting &&
                       (pullFeed.view?.left === null || (pullFeed.view?.left ?? 1) > 0),
                     onPull: () => {
-                      if (handle) void pullFeed.pull(handle, deviceToken);
+                      if (!handle) return;
+                      void pullFeed.pull(handle, deviceToken).then((error) => {
+                        if (error && /another browser/.test(error)) handleClaim.refused(error);
+                      });
                     },
                   }
                 : null
@@ -859,11 +902,38 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
                 : null
             }
             board={board}
-            onBack={(agentId) => void backingFeed.pick(handle ?? "", deviceToken, agentId)}
-            onHandle={(raw) => {
-              const kept = setBackerHandle(backerStore, raw);
-              if (kept) setHandle(kept);
-            }}
+            onBack={(agentId) =>
+              void backingFeed.pick(handle ?? "", deviceToken, agentId).then((error) => {
+                // A handle can be taken between the check and the write. The
+                // pit's refusal is the authority, so the field comes back.
+                if (error && /another browser/.test(error)) handleClaim.refused(error);
+              })
+            }
+            fighter={
+              arenaMode
+                ? {
+                    mine: fighterFeed.view?.fighter ?? null,
+                    freeFaces: fighterFeed.view?.freeFaces ?? [],
+                    error: fighterFeed.error,
+                    claiming: fighterFeed.claiming,
+                    ready: handle !== null,
+                    onClaim: (name, face) => void fighterFeed.claim(name, face),
+                  }
+                : null
+            }
+            handle={
+              arenaMode
+                ? {
+                    value: handleClaim.handle,
+                    message: handleClaim.message,
+                    suggestions: handleClaim.suggestions,
+                    checking: handleClaim.checking,
+                    onClaim: (raw) => void handleClaim.claim(raw),
+                    onChange: handleClaim.change,
+                  }
+                : null
+            }
+            onHandle={(raw) => void handleClaim.claim(raw)}
             onboarding={howOpen ? onboardingScreens(arenaMode) : null}
             probeSymbol={(x, y) => {
               const engine = engineRef.current;
@@ -873,6 +943,12 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
             }}
             onShowHow={showHow}
             onCloseHow={closeHow}
+            fighterBoard={fighterBoard as never}
+            onShowFighters={() => void showFighters(1)}
+            onCloseFighters={() => setFighterBoard(null)}
+            onFightersPage={(page) => void showFighters(page)}
+            myRoundLine={myRoundLine(myFighter?.name ?? "", myRound(watch.round, myFighter), fighterFeed.view?.career?.streak ?? null)}
+            myCareerLine={careerLine(fighterFeed.view?.career ?? null)}
             onShowBoard={() => void showBoard(1)}
             onCloseBoard={() => setBoard(null)}
             onBoardPage={(page) => void showBoard(page)}

@@ -22,6 +22,7 @@ import { scheduledReasoningOn, servReasoningOn } from "../serv/switch";
 import { budgetState } from "../pulls/budget";
 import { readPullSettings } from "../pulls/settings";
 import { settleBackingQuietly } from "../backing/settle";
+import { settleFightersQuietly } from "../fighters/settle";
 import { ArenaStore, type ArenaPhase, type ArenaRound, type ArenaState, type PhaseMark } from "./state";
 
 const sleepMs = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
@@ -358,6 +359,9 @@ export async function playArenaRound(ctx: ServerContext, store: ArenaStore, next
     {
       roundId: plan.roundId,
       bots: plan.bots.length,
+      // The claimed seats, by name and face. A name is not an outcome: it is
+      // true from the moment the round starts.
+      fighters: fightersOf(plan),
       stakeChips: toChips(plan.stakeWei),
       // From the plan, which is what actually settles, rather than from the
       // stream above: a late line must not leave a row the round did not use.
@@ -499,6 +503,17 @@ export async function playArenaRound(ctx: ServerContext, store: ArenaStore, next
   // winner the round already has. Never money, and never a reason for a
   // finished round to be recorded as failed.
   settleBackingQuietly(ctx.env.dataDir, ctx.chain.network, plan.roundId, run.round.placements[0]!);
+  // And the fighters' own records, from the placements and the event log this
+  // round already recorded. No new mechanism: a kill is a death whose killer
+  // was that fighter, which is what the log says.
+  settleFightersQuietly({
+    dataDir: ctx.env.dataDir,
+    network: ctx.chain.network,
+    roundId: plan.roundId,
+    fighters: fightersOf(plan),
+    placements: run.round.placements,
+    log: run.round.log as ReadonlyArray<{ type: string; actor: string; target: string | null }>,
+  });
   log.info("arena round complete", { roundId: plan.roundId, winner: run.round.placements[0], reconciled: run.reconciliation.ok, durationMs });
 
   // The figures stand for a moment, then the pit is plainly waiting. A
@@ -517,5 +532,10 @@ function entrantNamesOf(plan: RoundPlan): Record<string, string> {
     names[e.entrantId] = plan.decisions.find((d) => d.agentId === e.agentId)?.name ?? e.agentId;
   }
   return names;
+}
+
+/** The claimed seats in a round, as the arena publishes them. */
+function fightersOf(plan: RoundPlan): Array<{ handle: string; name: string; face: string; entrantId: string }> {
+  return (plan.fighters ?? []).map((f) => ({ handle: f.handle, name: f.name, face: f.face, entrantId: f.entrantId }));
 }
 

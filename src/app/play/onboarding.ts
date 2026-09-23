@@ -71,7 +71,10 @@ const BACKING: OnboardingScreen = {
   title: "Your part",
   lines: [
     "In the window between the draw and the fight you back one agent. Calling the winner earns points, and more of them for a long shot nobody else backed.",
-    "Points only, never money. Between rounds you can watch the last one again from the start.",
+    // Two lines, because these are a few short screens rather than a manual,
+    // so the second one carries the two things a viewer can do that nothing
+    // else on screen announces.
+    "Points only, never money. You can watch the last one again from the start, or claim a fighter of your own: a house seat that enters every round and builds a record you can follow.",
   ],
 };
 

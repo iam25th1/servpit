@@ -188,6 +188,47 @@ export interface BoardShape {
 }
 
 /** The spectator's view of a pit that runs itself. */
+/**
+ * Choosing a handle, as the shell draws it.
+ *
+ * Null where a handle is not something to choose, which is the lever flow.
+ * The field is on screen whenever there is no handle, and a refused name
+ * leaves it there with the pit's own sentence and names that are free.
+ */
+export interface HandleShape {
+  /** The handle in use, or null while one is being chosen. */
+  value: string | null;
+  /** What the pit said about the last attempt, or null. */
+  message: string | null;
+  /** Free names to take instead. */
+  suggestions: string[];
+  /** True between asking and being answered. */
+  checking: boolean;
+  onClaim: (raw: string) => void;
+  onChange: () => void;
+}
+
+/**
+ * A fighter of your own, as the shell draws it.
+ *
+ * Null where a fighter is not something to claim, which is the lever flow.
+ * The claim form is on screen until this browser has one, and after that the
+ * panel is the fighter itself.
+ */
+export interface FighterShape {
+  /** This browser's fighter, or null while there is none. */
+  mine: { handle: string; name: string; face: string; entrantId: string } | null;
+  /** Faces nobody is using. */
+  freeFaces: string[];
+  /** What the pit said about the last attempt, or null. */
+  error: string | null;
+  /** True between asking and being answered. */
+  claiming: boolean;
+  /** False until a handle exists, because a claim is bound to one. */
+  ready: boolean;
+  onClaim: (name: string, face: string) => void;
+}
+
 /** The lever, as the shell draws it. Every sentence is worked out in leverNote.ts. */
 export interface LeverShape {
   /** The label on the control. */
@@ -252,6 +293,19 @@ export interface GameShellProps {
   watching: WatchingShape | null;
   /** The lever, in arena mode, or null where a round is not something to ask for. */
   lever?: LeverShape | null;
+  /** Choosing a handle, in arena mode. Null in the lever flow. */
+  handle?: HandleShape | null;
+  /** Claiming a fighter, in arena mode. Null in the lever flow. */
+  fighter?: FighterShape | null;
+  /** The fighters board, when it is open. */
+  fighterBoard?: FighterBoardShape | null;
+  onShowFighters?: () => void;
+  onCloseFighters?: () => void;
+  onFightersPage?: (page: number) => void;
+  /** How this viewer's own fighter did in the round on screen, or null. */
+  myRoundLine?: string | null;
+  /** This viewer's fighter's record, in a sentence, or null. */
+  myCareerLine?: string | null;
   /** The wall, once it has been read. Null while the request is in flight. */
   graves: GraveShape[] | null;
   slotCanvasRef: RefObject<HTMLCanvasElement | null>;
@@ -421,10 +475,154 @@ function Failure({ error, onRetry }: { error: string; onRetry: () => void }) {
  * where a viewer reads it rather than only in the README.
  */
 
-function Backing({ backing, onBack, onHandle }: { backing: BackingShape; onBack: (agentId: string) => void; onHandle: (handle: string) => void }) {
+/**
+ * The handle field, wherever a handle is needed.
+ *
+ * One component rather than two, because the same choice is made in the
+ * backing panel and on the quiet screen, and a visitor refused in one of them
+ * must be able to recover in either. The field stays on screen until a name
+ * is actually this browser's: a refusal leaves it exactly where it was, with
+ * what the pit said above it and free names beside it.
+ */
+function HandlePanel({ handle, label }: { handle: HandleShape; label: string }) {
+  const [draft, setDraft] = useState("");
+
+  if (handle.value !== null) {
+    return (
+      <p className={styles.sideNote}>
+        You are {handle.value}.{" "}
+        <button type="button" className={styles.linkish} onClick={handle.onChange}>
+          Use another handle
+        </button>
+      </p>
+    );
+  }
+
+  return (
+    <form
+      className={styles.handleRow}
+      onSubmit={(event) => {
+        event.preventDefault();
+        handle.onClaim(draft);
+      }}
+    >
+      <label className={styles.handleLabel} htmlFor="handle-field">
+        {label}
+      </label>
+      <input
+        id="handle-field"
+        className={styles.handleInput}
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        maxLength={16}
+        autoComplete="off"
+        spellCheck={false}
+      />
+      <Button onClick={() => handle.onClaim(draft)} scale={2} disabled={handle.checking}>
+        {handle.checking ? "Checking" : "Use this handle"}
+      </Button>
+      {handle.message && (
+        <p className={styles.handleNote} role="status">
+          {handle.message}
+        </p>
+      )}
+      {handle.suggestions.length > 0 && (
+        <div className={styles.handleOffers}>
+          {handle.suggestions.map((suggestion) => (
+            <Button
+              key={suggestion}
+              scale={2}
+              onClick={() => {
+                setDraft(suggestion);
+                handle.onClaim(suggestion);
+              }}
+            >
+              {suggestion}
+            </Button>
+          ))}
+        </div>
+      )}
+    </form>
+  );
+}
+
+/**
+ * Claiming a fighter, and the fighter once it is claimed.
+ *
+ * A name and a face, which is everything a seat needs: it costs nothing, it
+ * stakes nothing and it decides nothing, so there is nothing else to ask.
+ * The faces are the ones nobody is using, drawn rather than named, because a
+ * face is what a viewer will look for in the pit.
+ */
+function FighterPanel({ fighter }: { fighter: FighterShape }) {
+  const { facesetPath } = useUiKit();
+  const [name, setName] = useState("");
+  const [face, setFace] = useState<string | null>(null);
+
+  if (fighter.mine) {
+    return (
+      <p className={styles.fighterMine}>
+        <img className={styles.faceset} src={facesetPath(fighter.mine.face)} alt="" width={38} height={38} />
+        {fighter.mine.name} is yours, and enters every round.
+      </p>
+    );
+  }
+
+  if (!fighter.ready) {
+    return <p className={styles.handleNote}>Pick a handle first, then claim a fighter of your own.</p>;
+  }
+
+  const chosen = face ?? fighter.freeFaces[0] ?? null;
+  return (
+    <form
+      className={styles.fighterForm}
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (chosen) fighter.onClaim(name, chosen);
+      }}
+    >
+      <label className={styles.handleLabel} htmlFor="fighter-name">
+        Claim a fighter and follow its career
+      </label>
+      <input
+        id="fighter-name"
+        className={styles.handleInput}
+        value={name}
+        onChange={(event) => setName(event.target.value)}
+        maxLength={10}
+        autoComplete="off"
+        spellCheck={false}
+        placeholder="Name"
+      />
+      <div className={styles.faceRow} role="radiogroup" aria-label="Pick a face">
+        {fighter.freeFaces.slice(0, 8).map((option) => (
+          <button
+            key={option}
+            type="button"
+            className={option === chosen ? `${styles.facePick} ${styles.facePicked}` : styles.facePick}
+            aria-pressed={option === chosen}
+            aria-label={option}
+            onClick={() => setFace(option)}
+          >
+            <img className={styles.faceset} src={facesetPath(option)} alt="" width={38} height={38} />
+          </button>
+        ))}
+      </div>
+      <Button onClick={() => chosen && fighter.onClaim(name, chosen)} scale={2} disabled={fighter.claiming || chosen === null}>
+        {fighter.claiming ? "Claiming" : "Claim this fighter"}
+      </Button>
+      {fighter.error && (
+        <p className={styles.handleNote} role="status">
+          {fighter.error}
+        </p>
+      )}
+    </form>
+  );
+}
+
+function Backing({ backing, handle, onBack }: { backing: BackingShape; handle: HandleShape | null; onBack: (agentId: string) => void }) {
   const { facesetPath } = useUiKit();
   const listRef = useRef<HTMLUListElement>(null);
-  const [draft, setDraft] = useState("");
   useEffect(() => {
     const rows = listRef.current ? [...listRef.current.querySelectorAll<HTMLElement>("li")] : [];
     void staggerIn(rows, { delay: 60 });
@@ -445,31 +643,8 @@ function Backing({ backing, onBack, onHandle }: { backing: BackingShape; onBack:
           "Picks are closed for this round."
         )}
       </p>
-      {backing.handle === null ? (
-        <form
-          className={styles.handleRow}
-          onSubmit={(event) => {
-            event.preventDefault();
-            onHandle(draft);
-          }}
-        >
-          <label className={styles.handleLabel} htmlFor="backing-handle">
-            Pick a handle to back under
-          </label>
-          <input
-            id="backing-handle"
-            className={styles.handleInput}
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            maxLength={16}
-            autoComplete="off"
-            spellCheck={false}
-          />
-          <Button onClick={() => onHandle(draft)} scale={2}>
-            Use this handle
-          </Button>
-        </form>
-      ) : (
+      {handle && <HandlePanel handle={handle} label="Pick a handle to back under" />}
+      {backing.handle !== null && (
         <p className={styles.sideNote}>
           Backing as {backing.handle}. {backing.backers === 1 ? "1 viewer has" : `${backing.backers} viewers have`} picked so far.
         </p>
@@ -540,6 +715,105 @@ function Board({ board, onClose, onPage }: { board: BoardShape; onClose: () => v
         {board.you && !board.rows.some((row) => row.handle === board.you?.handle) && (
           <p className={styles.sideNote}>
             You have {board.you.points} points from {board.you.picks} picks.
+          </p>
+        )}
+        <div className={styles.restActions}>
+          <Button onClick={() => onPage(board.page - 1)} scale={2} disabled={board.page <= 1}>
+            Back a page
+          </Button>
+          <span className={styles.boardStat}>
+            Page {board.page} of {board.pages}
+          </span>
+          <Button onClick={() => onPage(board.page + 1)} scale={2} disabled={board.page >= board.pages}>
+            On a page
+          </Button>
+          <Button onClick={onClose} scale={2}>
+            Close
+          </Button>
+        </div>
+      </NinePatch>
+    </div>
+  );
+}
+
+/** A row of the fighters board, which is its own board for a reason. */
+export interface FighterBoardRow {
+  handle: string;
+  name: string;
+  face: string;
+  rounds: number;
+  wins: number;
+  best: number;
+  kills: number;
+  streak: number;
+  longest: number;
+}
+
+export interface FighterBoardShape {
+  rows: FighterBoardRow[];
+  page: number;
+  pages: number;
+  total: number;
+  /** This viewer's own row, wherever it sits. */
+  you: FighterBoardRow | null;
+}
+
+/**
+ * The fighters board.
+ *
+ * Separate from the one that scores calling a round right, because a fighter
+ * is one seat in twenty four with no decisions to make: its record is mostly
+ * luck, and the two boards together would make luck look like skill.
+ */
+function Fighters({
+  board,
+  fighter,
+  onClose,
+  onPage,
+}: {
+  board: FighterBoardShape;
+  /** The claim form, for a viewer who has no fighter yet. */
+  fighter: FighterShape | null;
+  onClose: () => void;
+  onPage: (page: number) => void;
+}) {
+  const { facesetPath } = useUiKit();
+  const rootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const rows = rootRef.current ? [...rootRef.current.querySelectorAll<HTMLElement>("[data-board-row]")] : [];
+    void staggerIn(rows, { delay: 40 });
+  }, [board.page]);
+
+  return (
+    <div ref={rootRef} className={styles.boardOver} data-anim="fighters">
+      <NinePatch sprite="panelAlt" scale={uiScale} className={styles.boardCard}>
+        <h2 className={styles.graveTitle}>The fighters</h2>
+        <p className={styles.sideNote}>
+          {board.total === 1 ? "1 fighter" : `${board.total} fighters`}. One seat in twenty four with nothing to decide, so a record here is mostly luck.
+        </p>
+        <ul className={styles.boardList}>
+          {board.rows.map((row, i) => (
+            <li key={row.handle} className={row.handle === board.you?.handle ? `${styles.boardRow} ${styles.boardYou}` : styles.boardRow} data-board-row="">
+              <span className={styles.boardRank}>{(board.page - 1) * 10 + i + 1}</span>
+              <img className={styles.faceset} src={facesetPath(row.face)} alt="" width={38} height={38} />
+              <span className={styles.boardHandle}>{row.name}</span>
+              <span className={styles.boardStat}>
+                {row.wins} of {row.rounds} won
+              </span>
+              <span className={styles.boardStat}>best {row.best === 0 ? "none" : row.best}</span>
+              <span className={styles.boardStat}>{row.kills === 1 ? "1 kill" : `${row.kills} kills`}</span>
+              <span className={styles.boardPoints}>{row.streak > 0 ? `${row.streak} up` : "no run"}</span>
+            </li>
+          ))}
+        </ul>
+        {board.total === 0 && <p className={styles.sideNote}>Nobody has claimed a fighter yet.</p>}
+        {/* Claiming lives here rather than on the card: this is where a
+            visitor is told what a fighter is, and the quiet screen has a
+            countdown and a lever on it already. */}
+        {fighter && !fighter.mine && <FighterPanel fighter={fighter} />}
+        {board.you && !board.rows.some((row) => row.handle === board.you?.handle) && (
+          <p className={styles.sideNote}>
+            {board.you.name} has {board.you.wins} wins from {board.you.rounds} rounds.
           </p>
         )}
         <div className={styles.restActions}>
@@ -817,6 +1091,10 @@ function Resting({
   run,
   bank,
   lever,
+  handle,
+  fighter,
+  careerLine,
+  onShowFighters,
   onShowGraveyard,
   onReplay,
   onShowBoard,
@@ -827,6 +1105,11 @@ function Resting({
   run: RunShape | null;
   bank: BankShape | null;
   lever: LeverShape | null;
+  handle: HandleShape | null;
+  fighter: FighterShape | null;
+  /** This viewer's fighter's record, in a sentence, or null. */
+  careerLine: string | null;
+  onShowFighters?: () => void;
   onShowGraveyard: () => void;
   onReplay: () => void;
   onShowBoard: () => void;
@@ -889,6 +1172,16 @@ function Resting({
             Backing opens after the draw, once the next round is under way.
           </p>
         )}
+        {/* The handle, here as well as in the backing panel, because a
+            window is open for a few seconds a round and a visitor should not
+            have to wait for one to say who they are. */}
+        {handle && (
+          <div className={styles.restHandle} data-rest-row="">
+            <HandlePanel handle={handle} label="Pick a handle" />
+            {fighter?.mine && <FighterPanel fighter={fighter} />}
+            {careerLine && <p className={styles.handleNote}>{careerLine}</p>}
+          </div>
+        )}
         {/* The lever. Above the other actions because it is the one thing on
             this screen that changes what the pit does, and it says what it
             will cost in pulls and whether the round reasons before it is
@@ -908,6 +1201,14 @@ function Resting({
           </div>
         )}
         <div className={styles.restActions} data-rest-row="">
+          {/* With the other ways off this screen rather than on a row of its
+              own: the card is a countdown, a lever and the doors out, and
+              every extra row pushes the whole block off the stage. */}
+          {onShowFighters && (
+            <Button onClick={onShowFighters} scale={2}>
+              The fighters
+            </Button>
+          )}
           {watching.canReplay && (
             <Button onClick={onReplay} scale={2}>
               Watch the last round
@@ -1106,7 +1407,20 @@ function Graveyard({ graves, error, onClose }: { graves: GraveShape[] | null; er
   );
 }
 
-function ResultScreen({ run, onPlayAgain, backing, watching }: { run: RunShape; onPlayAgain: () => void; backing: BackingShape | null; watching: WatchingShape | null }) {
+function ResultScreen({
+  run,
+  onPlayAgain,
+  backing,
+  watching,
+  mine,
+}: {
+  run: RunShape;
+  onPlayAgain: () => void;
+  backing: BackingShape | null;
+  watching: WatchingShape | null;
+  /** How this viewer's own fighter did, in a sentence, or null. */
+  mine: string | null;
+}) {
   const { facesetPath, ui } = useUiKit();
   const rootRef = useRef<HTMLDivElement>(null);
   const coinPathRef = useRef<SVGPathElement>(null);
@@ -1169,6 +1483,9 @@ function ResultScreen({ run, onPlayAgain, backing, watching }: { run: RunShape; 
         <img className={styles.winnerFace} src={facesetPath(winnerCharacter(run))} alt="" width={38 * 2} height={38 * 2} />
         <h2 className={`${styles.winnerName} ${styles.nameplate}`}>{winnerName}</h2>
         <p className={styles.winnerPot}>{chips(prize)} chips taken</p>
+        {/* How the viewer's own fighter did, under the winner rather than
+            beside it: it is their round, not the round. */}
+        {mine && <p className={styles.mineLine}>{mine}</p>}
         {/* What a winner owed comes off the top, before it is treated as
             keeping anything. Three figures rather than one net number,
             because a win that mostly went to the lender is a different
@@ -1376,7 +1693,7 @@ export function GameShell(props: GameShellProps) {
           ) : props.backing?.window ? (
             /* The pick interface stands where the lineup does, because it is
                the lineup with what each agent drew and who is behind it. */
-            <Backing backing={props.backing} onBack={props.onBack} onHandle={props.onHandle} />
+            <Backing backing={props.backing} handle={props.handle ?? null} onBack={props.onBack} />
           ) : (
             <Lineup plan={plan} decided={decided} occupants={occupants} error={state.error} onRetry={props.onRetry} />
           )}
@@ -1388,6 +1705,10 @@ export function GameShell(props: GameShellProps) {
           run={run}
           bank={plan?.bank ?? null}
           lever={props.lever ?? null}
+          handle={props.handle ?? null}
+          fighter={props.fighter ?? null}
+          careerLine={props.myCareerLine ?? null}
+          onShowFighters={props.onShowFighters}
           onShowGraveyard={props.onShowGraveyard}
           onReplay={props.onReplay}
           onShowBoard={props.onShowBoard}
@@ -1396,9 +1717,14 @@ export function GameShell(props: GameShellProps) {
         />
       )}
       {props.board && <Board board={props.board} onClose={props.onCloseBoard} onPage={props.onBoardPage} />}
+      {props.fighterBoard && props.onCloseFighters && props.onFightersPage && (
+        <Fighters board={props.fighterBoard} fighter={props.fighter ?? null} onClose={props.onCloseFighters} onPage={props.onFightersPage} />
+      )}
       {props.onboarding && <Onboarding screens={props.onboarding} onClose={props.onCloseHow} />}
       {state.screen === "wreck" && run && <WreckScreen run={run} onContinue={props.onWreckSeen} />}
-      {state.screen === "result" && run && <ResultScreen run={run} onPlayAgain={props.onPlayAgain} backing={props.backing} watching={props.watching} />}
+      {state.screen === "result" && run && (
+        <ResultScreen run={run} onPlayAgain={props.onPlayAgain} backing={props.backing} watching={props.watching} mine={props.myRoundLine ?? null} />
+      )}
       </div>
     </main>
   );

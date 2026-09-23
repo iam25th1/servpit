@@ -69,8 +69,11 @@ export function leverLines(state: LeverState): LeverLines {
   const blocked =
     state.error !== null
       ? state.error
+      // A visitor with no handle has the field for one on the same card, an
+      // inch above this line, and the control is already dead. Saying it in
+      // words as well is a line the card cannot spare.
       : state.handle === null
-        ? "Choose a handle first, the same one you back under."
+        ? null
         : state.busy
           ? "A round is running. The lever comes back when it ends."
           : left !== null && left <= 0

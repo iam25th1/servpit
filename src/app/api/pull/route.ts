@@ -17,6 +17,8 @@ import { arenaReader } from "@/server/arena/read";
 import { pickReader } from "@/server/backing/read";
 import { log } from "@/server/log";
 import { internalDetail, publicError } from "@/server/publicError";
+import { fighterReader } from "@/server/fighters/read";
+import { ownerAcross } from "@/server/identity/service";
 import { pullEnvironment } from "@/server/pulls/deps";
 import { pullReader } from "@/server/pulls/read";
 import { pullStatus, requestPull } from "@/server/pulls/service";
@@ -32,7 +34,7 @@ function deps() {
   return {
     store: pullReader(),
     arenaMode: arenaMode(),
-    backingOwner: (name: string) => pickReader().owner(name),
+    backingOwner: ownerAcross([pickReader(), fighterReader()]),
     ...environment,
   };
 }

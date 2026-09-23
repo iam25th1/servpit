@@ -403,9 +403,17 @@ export async function planRound(
     }
   }
 
-  const botCount = Math.max(0, ctx.entrants - entering.length);
+  // Claimed seats sit between the agents and the house bots. They cost
+  // nothing, pay nothing and decide nothing: they are house seats with a
+  // name on them, and the fight resolves exactly as it did.
+  const fighters = (ctx.fighters?.() ?? []).slice(0, Math.max(0, ctx.entrants - entering.length));
+  const botCount = Math.max(0, ctx.entrants - entering.length - fighters.length);
   const bots = Array.from({ length: botCount }, (_, i) => `bot-${String(i).padStart(2, "0")}`);
-  const entrants: Entrant[] = [...entering.map((e) => ({ id: e.entrantId })), ...bots.map((id) => ({ id }))];
+  const entrants: Entrant[] = [
+    ...entering.map((e) => ({ id: e.entrantId })),
+    ...fighters.map((f) => ({ id: f.entrantId })),
+    ...bots.map((id) => ({ id })),
+  ];
 
   // The lender's books as this round starts, for the panel. Read rather than
   // recomputed: the treasury is the figure every loan was bounded against,
@@ -417,7 +425,7 @@ export async function planRound(
   const order = new Map(NAMED_AGENTS.map((p, i) => [p.id, i]));
   decisions.sort((a, b) => (order.get(a.agentId) ?? 0) - (order.get(b.agentId) ?? 0));
 
-  return { roundId, seed, stakeWei, decisions, snapshots, entering, bots, entrants, servCalls: run.servCalls + loans.length + refusals.length, guardRefusals: run.guardRefusals, rejections: run.rejections, loans, refusals, deniedCredit, bank };
+  return { roundId, seed, stakeWei, decisions, snapshots, entering, bots, fighters, entrants, servCalls: run.servCalls + loans.length + refusals.length, guardRefusals: run.guardRefusals, rejections: run.rejections, loans, refusals, deniedCredit, bank };
 }
 
 /** Told as each entry confirms on chain, so a caller can show it landing. */

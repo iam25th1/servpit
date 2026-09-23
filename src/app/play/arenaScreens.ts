@@ -30,6 +30,8 @@ export interface ArenaFeedRound {
   refusals: Array<{ agentId: string; name: string; asked: number; reason: string; source: string; evidence?: { matches: number; approved: number; typicalAmount: number } }>;
   bank: { treasury: number; book: Array<{ agentId: string; name: string; owed: number; principal: number; rateBps: number }> } | null;
   entries: Array<{ agentId: string; amountWei: string; txHash: string | null; link: string | null }>;
+  /** The seats visitors have claimed in this round, by name and face. */
+  fighters?: Array<{ handle: string; name: string; face: string; entrantId: string }>;
   /** The handle that asked for this round, absent when the interval started it. */
   pulledBy?: string | null;
   reels?: Array<{ entrantId: string; symbols: string[]; characterId: string; tier: string; combo: string; bonusPct: number }>;

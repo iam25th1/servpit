@@ -42,6 +42,15 @@ export interface PickDeps {
   store: PickStore;
   limiter: RateLimiter;
   arenaMode: boolean;
+  /**
+   * The handle's owner outside this log.
+   *
+   * One handle is one browser everywhere, and a handle claimed by pulling the
+   * lever lives in the pull log rather than this one. Without this, a name
+   * claimed there could still be picked under by somebody else, which is the
+   * hole the handle flow was hiding.
+   */
+  otherOwner?: (handle: string) => string | null;
   now?: () => number;
 }
 
@@ -102,6 +111,10 @@ export function submitPick(state: ArenaState, input: PickInput, deps: PickDeps):
   if (!entered(state).has(agentId)) return { ok: false, status: 400, message: "Back one of the agents that bought into this round." };
 
   const hash = tokenHash(token);
+  const elsewhere = deps.otherOwner?.(handle) ?? null;
+  if (elsewhere !== null && elsewhere !== hash) {
+    return { ok: false, status: 409, message: "That handle belongs to another browser. Pick another one." };
+  }
   if (!deps.limiter.allow(hash)) return { ok: false, status: 429, message: "That is a lot of picks. Give it a moment." };
 
   const outcome = deps.store.record(open.roundId, handle, hash, agentId);

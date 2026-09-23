@@ -82,6 +82,30 @@ describe("planRound", () => {
     expect(plan.decisions.every((d) => d.source === "heuristic")).toBe(true);
   });
 
+  it("seats a claimed fighter, at no cost to anybody", async () => {
+    // A claimed seat is a house seat with a name on it: it is in the field,
+    // it pays nothing, it decides nothing, and the field is still 24.
+    const { ctx } = await harness({ transport: enterTransport() });
+    const fighters = [{ handle: "ash", name: "Cinder", face: "Monk", entrantId: "fighter-ash" }];
+    const plan = await planRound({ ...ctx, fighters: () => fighters }, "demo");
+    expect(plan.entrants).toHaveLength(24);
+    expect(plan.entrants.some((e) => e.id === "fighter-ash")).toBe(true);
+    expect(plan.fighters).toEqual(fighters);
+    // Not an entry, so no stake, no transfer and nothing to settle.
+    expect(plan.entering.some((e) => e.entrantId === "fighter-ash")).toBe(false);
+    expect(plan.decisions.some((d) => d.agentId === "ash")).toBe(false);
+    // The bots give up the seats the fighters take, rather than the field growing.
+    expect(plan.bots).toHaveLength(24 - plan.entering.length - 1);
+  });
+
+  it("seats no more fighters than there are seats left", async () => {
+    const { ctx } = await harness({ transport: enterTransport() });
+    const crowd = Array.from({ length: 40 }, (_, i) => ({ handle: `h${i}`, name: `F${i}`, face: "Monk", entrantId: `fighter-h${i}` }));
+    const plan = await planRound({ ...ctx, fighters: () => crowd }, "demo");
+    expect(plan.entrants).toHaveLength(24);
+    expect(new Set(plan.entrants.map((e) => e.id)).size).toBe(24);
+  });
+
   it("spends nothing on a round that did not ask to reason", async () => {
     // What the arena worker passes for a round the interval started. The
     // transport is the only place a call can happen, so counting it is the

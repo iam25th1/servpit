@@ -82,6 +82,14 @@ export interface FlowContext {
   servScheduledFile?: string;
   /** The operator's pull settings, including the daily reasoning budget. */
   pullSettingsFile?: string;
+  /**
+   * The seats visitors have claimed, read at the start of every round.
+   *
+   * A function rather than a list, because claims land between rounds and a
+   * list captured when the process started would be the claims of an hour
+   * ago. Optional: a context without it plays the field it always played.
+   */
+  fighters?: () => readonly ClaimedFighter[];
   entrants: number;
 }
 
@@ -101,6 +109,14 @@ export interface EnteringAgent {
  * Persisted like every other decision, so the settle path disburses what was
  * displayed and cannot work out its own answer.
  */
+/** A seat somebody claimed: a name and a face on a house seat. */
+export interface ClaimedFighter {
+  handle: string;
+  name: string;
+  face: string;
+  entrantId: string;
+}
+
 export interface PlannedLoan {
   agentId: string;
   name: string;
@@ -130,6 +146,8 @@ export interface RoundPlan {
   snapshots: AgentSnapshot[];
   entering: EnteringAgent[];
   bots: string[];
+  /** The claimed seats in this round, in the order they were seated. Absent on a plan quoted before seats could be claimed. */
+  fighters?: readonly ClaimedFighter[];
   entrants: Entrant[];
   servCalls: number;
   guardRefusals: number;

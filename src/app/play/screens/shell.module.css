@@ -1259,6 +1259,94 @@ a.transferHash {
   margin: 0;
 }
 
+/* The handle, on the quiet screen. Its own row so the field and its answer
+   sit together rather than reading as part of the lever below it. */
+.restHandle {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-tight);
+  width: 100%;
+}
+
+/* What the pit said about a name, under the field that produced it. */
+.handleNote {
+  font-size: var(--text-small);
+  color: var(--ink-dim, var(--ink));
+  margin: 0;
+  text-align: center;
+}
+
+/* The free names offered instead, side by side and wrapping on a phone. */
+.handleOffers {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-tight);
+}
+
+/* A button that reads as a link, for the way back to the field. Underlined
+   rather than coloured, because a colour here would be a second accent. */
+.linkish {
+  font-family: var(--font-ui);
+  font-size: var(--text-small);
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* How the viewer's own fighter did, on the result. Ink on the panel like the
+   rest of the card: it is their line, not a warning. */
+.mineLine {
+  font-size: var(--text-small);
+  color: var(--ink-dim, var(--ink));
+  margin: 0;
+  text-align: center;
+}
+
+/* Claiming a fighter: a name, a row of faces, and the button. */
+.fighterForm {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-tight);
+  width: 100%;
+}
+
+.faceRow {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-tight);
+}
+
+/* A face is the control. The frame says which one is chosen, because a tint
+   over pixel art reads as a different character rather than a selection. */
+.facePick {
+  background: none;
+  border: 2px solid transparent;
+  padding: 0;
+  line-height: 0;
+  cursor: pointer;
+}
+
+.facePicked {
+  border-color: var(--amber);
+}
+
+/* The fighter itself, once there is one. */
+.fighterMine {
+  display: flex;
+  align-items: center;
+  gap: var(--space-tight);
+  font-size: var(--text-small);
+  color: var(--ink-dim, var(--ink));
+  margin: 0;
+}
+
 /* The lever, on the quiet screen. A column so the control leads and the two
    lines under it read as its terms rather than as a caption on the card. */
 .lever {

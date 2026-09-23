@@ -138,6 +138,14 @@ export interface ArenaRound {
   bank: { treasury: number; book: Array<{ agentId: string; name: string; owed: number; principal: number; rateBps: number }> } | null;
   entries: Array<{ agentId: string; amountWei: string; txHash: string | null; link: string | null }>;
   /**
+   * The seats visitors have claimed in this round.
+   *
+   * Names and faces, which are true from the first phase and say nothing
+   * about how the round ends. The client draws a nameplate for the viewer's
+   * own fighter from this and for nobody else's.
+   */
+  fighters?: Array<{ handle: string; name: string; face: string; entrantId: string }>;
+  /**
    * The handle that asked for this round, or null when the interval did.
    *
    * A name, not an outcome: it says who pulled the lever, which is true from

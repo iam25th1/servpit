@@ -608,6 +608,25 @@ construction, which seemed worth closing on a project about agents holding their
 
 ---
 
+## Fighters, which are luck and nothing else
+
+A visitor with a handle can claim one house seat as their own fighter: a name and a face from
+the roster. It enters every round from the next one. It pays no stake, holds no wallet,
+borrows nothing and decides nothing, and it never reaches a model: a claimed seat is one of
+the house seats the pit already fills its field with, so the fight resolves exactly as it did
+and a fighter that wins rolls the prize over the way a house bot does.
+
+The record it builds is rounds entered, wins, best placement, kills, and a streak. Kills are
+read off the event log the replay is drawn from: a death names who died and who killed them,
+so a kill is a death whose killer was that fighter. The streak counts outlasting the field,
+which means finishing in the top half of it, because everybody but the winner dies and a
+streak of survivals would be a streak of wins under another name.
+
+**The fighters board is its own board, and that is the point.** A fighter is one seat in
+twenty four with no decisions to make: its record is mostly luck. The backing board scores
+calling a round right, which is at least a judgement. Mixing them would make luck look like
+skill, so they are kept apart.
+
 ## Backing, which is points and nothing else
 
 In arena mode the pit opens a backing window between the draw and the fight, forty five
