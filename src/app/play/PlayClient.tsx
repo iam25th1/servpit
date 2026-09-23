@@ -19,6 +19,7 @@ import { Juice } from "@/render/juice";
 import { startLoop } from "@/render/loop";
 import { parseManifest, type Manifest } from "@/render/manifest";
 import { SlotAudio } from "@/render/slot/audio";
+import { Music, sceneForPhase } from "@/render/slot/music";
 import { SlotRenderer } from "@/render/slot/draw";
 import { SLOT_LAYOUT, paylineY, reelX } from "@/render/slot/layout";
 import { Lever } from "@/render/slot/lever";
@@ -43,10 +44,12 @@ import { runRequestFor } from "./roundRequest";
 import { arenaStanding, type ArenaStanding } from "./screens/arenaHud";
 import { useArenaFeed } from "./arenaFeed";
 import { readNow, useWallClock } from "./arenaClock";
-import { fightOffsetMs, reasoningLine, watchDecisions, watchEntries, watchOccupants, watchState } from "./arenaScreens";
+import { fightOffsetMs, pulledLine, reasoningLine, watchDecisions, watchEntries, watchOccupants, watchState } from "./arenaScreens";
 import { replayFrame, replayableRound } from "./arenaReplay";
 import { backOptions, pickOutcome } from "./backing";
 import { useBackingFeed } from "./backingFeed";
+import { usePullFeed } from "./pullFeed";
+import { leverLines } from "./leverNote";
 import { backerHandle, backerToken, browserStore, setBackerHandle, type StorageLike } from "./backerId";
 import { hasSeenOnboarding, markOnboardingSeen, onboardingScreens } from "./onboarding";
 import type { BoardShape } from "./screens/GameShell";
@@ -62,7 +65,7 @@ interface PlanDecision {
   enter: boolean;
   stake: number;
   reason: string;
-  source: "serv" | "heuristic";
+  source: "serv" | "learned" | "heuristic";
   balanceWei: string;
 }
 
@@ -168,6 +171,8 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
   const [manifest, setManifest] = useState<Manifest | null>(null);
   const [assetError, setAssetError] = useState<string | null>(null);
   const [muted, setMuted] = useState(true);
+  const musicRef = useRef<Music | null>(null);
+  const [musicOn, setMusicOn] = useState(false);
   // Whether the canvas engine exists yet. A spectator can arrive in the
   // middle of a fight, and the phase to act on is usually known before the
   // sprites have finished loading, so the effect below waits for this
@@ -218,6 +223,10 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
   const counts = backingFeed.view?.counts ?? {};
   const myPick = backingFeed.view?.pick ?? null;
 
+  // The lever. Only where a round is something to ask for: in arena mode, and
+  // not over a recording, which has no round to start.
+  const pullFeed = usePullFeed(arenaMode && replayRound === null, handle, deviceToken);
+
   // How it works: open by itself the first time, and whenever it is asked for
   // after that. Read from storage in the initialiser for the same reason the
   // handle is: the server has no localStorage, and nothing rendered during
@@ -244,6 +253,13 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
   };
   // The screen on show: the pit's phase while it runs itself, the machine's
   // own screen otherwise. Boot and the title belong to the machine either way.
+  // The bed follows the pit rather than the screen: the phase is what says
+  // whether a fight is happening, and a phase that does not change the scene
+  // leaves the loop alone.
+  useEffect(() => {
+    musicRef.current?.setScene(sceneForPhase(watch.round?.phase ?? null));
+  }, [watch.round?.phase]);
+
   const watchingNow = arenaMode && state.screen !== "boot" && state.screen !== "title";
   const shownScreen: Screen = watchingNow ? watch.screen : state.screen;
   const watchedPhaseRef = useRef<string>("");
@@ -319,6 +335,10 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
         const fxRng = createRng("slot-vfx");
         const emitter = new ParticleEmitter(() => fxRng.nextU32() / 0x1_0000_0000);
         const audio = new SlotAudio(manifest.audio, sink, { storage: window.localStorage });
+        // The bed, on the same sink and its own switch. Silent until somebody
+        // asks for it, like everything else that makes a sound here.
+        const music = new Music(manifest.audio, sink, { storage: window.localStorage });
+        musicRef.current = music;
 
         const engine: Engine = {
           store,
@@ -339,6 +359,7 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
         engineRef.current = engine;
         setEngineReady(true);
         setMuted(audio.muted);
+        setMusicOn(music.enabled);
 
         // Reel stops: click, ring, and a tiered burst on the last one.
         engine.reels.onStop((index) => {
@@ -703,6 +724,9 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
           decisions: watchDecisions(watchedRound) as unknown as PlanDecision[],
           bots: watchedRound.bots,
           entrants: watchedRound.entrants,
+          // The seat price, so a learned decision's evidence can say what a
+          // stake was in seats rather than only in chips.
+          stakeChips: watchedRound.stakeChips,
           bank: watchedRound.bank as PlanResponse["bank"],
           loans: watchedRound.loans as PlanResponse["loans"],
           refusals: watchedRound.refusals.map((r) => ({ ...r, tappedOut: false })) as PlanResponse["refusals"],
@@ -760,6 +784,31 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
             decided={arenaMode ? watchDecisions(watchedRound) : (state.decided as DecidedShape[])}
             occupants={arenaMode ? watchOccupants(watchedRound) : (state.occupants as OccupantShape[])}
             entries={arenaMode ? watchEntries(watchedRound) : (state.entries as EntryShape[])}
+            lever={
+              arenaMode && replayRound === null
+                ? {
+                    ...leverLines({
+                      view: pullFeed.view,
+                      error: pullFeed.error,
+                      pulling: pullFeed.pulling,
+                      busy: watch.round !== null && !watch.resting,
+                      handle,
+                      // Read once per render rather than on a clock: the two
+                      // figures it phrases move in minutes, and the card must
+                      // not be rebuilt every second to say so.
+                      now: readNow(),
+                    }),
+                    canPull:
+                      handle !== null &&
+                      !pullFeed.pulling &&
+                      watch.resting &&
+                      (pullFeed.view?.left === null || (pullFeed.view?.left ?? 1) > 0),
+                    onPull: () => {
+                      if (handle) void pullFeed.pull(handle, deviceToken);
+                    },
+                  }
+                : null
+            }
             watching={
               arenaMode
                 ? {
@@ -772,6 +821,12 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
                     // A replay is showing the last round, so the line reads
                     // in the past tense exactly as the resting card does.
                     reasoning: reasoningLine(watch.round, watch.resting || replayRound !== null),
+                    // Who asked for it, when somebody did. The same tense
+                    // rule as the reasoning line, for the same reason.
+                    pulled: pulledLine(watch.round, watch.resting || replayRound !== null),
+                    // What the pit has to learn from, which is what a round
+                    // that is not reasoning plays from.
+                    reasonedRounds: feed.view?.pit.reasonedRounds,
                     replay: replayRound !== null,
                     canReplay: replayable !== null,
                     last: watch.round?.result ? (watch.round as unknown as { result: Record<string, unknown> }).result : null,
@@ -825,6 +880,14 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
             onPull={() => void pullLever()}
             onPlayAgain={playAgain}
             onToggleMute={toggleMute}
+            musicOn={musicOn}
+            onToggleMusic={() => {
+              const music = musicRef.current;
+              if (!music) return;
+              engineRef.current?.audio.unlock();
+              music.toggle();
+              setMusicOn(music.enabled);
+            }}
           />
         </div>
       </div>

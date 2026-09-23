@@ -1,6 +1,7 @@
 // Round history: what each agent decided, why, and what its balance did.
 // Feeds the reasoning surface and the next round's recent outcomes.
 
+import type { BorrowerSituation, Situation } from "../decisions/situation";
 import { StoreFile, UNKNOWN_NETWORK } from "../store/file";
 
 export interface StoredAgentRound {
@@ -11,7 +12,15 @@ export interface StoredAgentRound {
   entered: boolean;
   stake: number;
   reason: string;
-  source: "serv" | "heuristic";
+  source: "serv" | "learned" | "heuristic";
+  /**
+   * The spot this agent was in when it decided.
+   *
+   * Absent on every round stored before the pit started recording it, which
+   * is most of them: those rounds cannot be learned from, and the learner
+   * skips them rather than guessing what the numbers were.
+   */
+  situation?: Situation;
   rejection?: string;
   model?: string;
   balanceBeforeWei: string;
@@ -20,6 +29,22 @@ export interface StoredAgentRound {
   entryLink?: string | null;
   payoutTxHash?: string;
   payoutLink?: string | null;
+}
+
+/**
+ * One answer from the lender, with the spot the borrower was in.
+ *
+ * Refusals as well as advances, because a refusal is a decision and a lender
+ * that only recorded the times it said yes would learn to say yes.
+ */
+export interface StoredLoanDecision {
+  agentId: string;
+  approve: boolean;
+  amountChips: number;
+  rateBps: number;
+  source: "serv" | "learned" | "heuristic";
+  /** Absent on rounds stored before the pit recorded the spot. */
+  situation?: BorrowerSituation;
 }
 
 export interface StoredRound {
@@ -35,6 +60,8 @@ export interface StoredRound {
   reconciled: boolean;
   servCalls: number;
   servMicroCents: number;
+  /** What the lender answered this round. Absent when the bank is off. */
+  loans?: StoredLoanDecision[];
 }
 
 const MAX_ROUNDS = 200;
@@ -66,6 +93,18 @@ export class RoundStore {
   recent(limit = 20): StoredRound[] {
     this.sync.read();
     return this.rounds.slice(-limit).reverse();
+  }
+
+  /**
+   * Every round the file holds, oldest first.
+   *
+   * For the daily reasoning budget, which sums what rounds actually spent and
+   * so cannot ask for a fixed number of them: a busy day is more rounds than
+   * a quiet one.
+   */
+  all(): StoredRound[] {
+    this.sync.read();
+    return [...this.rounds];
   }
 
   /** Outcomes for one agent, oldest first. */

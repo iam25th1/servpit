@@ -256,8 +256,11 @@ function buildAudio(staging: string, packRoot: string): AudioEntry[] {
   return AUDIO_SOURCES.map((sound) => {
     const src = join(staging, packRoot, sound.source);
     if (!existsSync(src)) throw new Error(`audio ${sound.id}: ${sound.source} missing in pack`);
-    copyFileSync(src, join(audioDir, `${sound.id}.wav`));
-    return { id: sound.id, source: sound.source, path: `/assets/audio/${sound.id}.wav`, loop: sound.loop, bytes: statSync(src).size };
+    // The pack's own extension, because the music is ogg and a three minute
+    // loop as wav is tens of megabytes served to every visitor.
+    const ext = sound.ext ?? "wav";
+    copyFileSync(src, join(audioDir, `${sound.id}.${ext}`));
+    return { id: sound.id, source: sound.source, path: `/assets/audio/${sound.id}.${ext}`, loop: sound.loop, bytes: statSync(src).size };
   });
 }
 

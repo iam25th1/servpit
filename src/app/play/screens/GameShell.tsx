@@ -24,6 +24,8 @@ import type { OnboardingScreen } from "../onboarding";
 import { useUiKit } from "@/ui/UiKit";
 import { ninePatchStyle } from "@/ui/ninePatchGeometry";
 import { uiScale } from "@/ui/tokens";
+import { evidenceLine, recordLine } from "./evidenceLine";
+import { sourceLabel } from "./sourceLabel";
 import { staggerIn } from "@/ui/transitions";
 import type { FlowState } from "../machine";
 import type { ArenaStanding } from "./arenaHud";
@@ -106,7 +108,7 @@ interface PlanDecision {
   enter: boolean;
   stake: number;
   reason: string;
-  source: "serv" | "heuristic";
+  source: "serv" | "learned" | "heuristic";
   balanceWei: string;
 }
 
@@ -122,6 +124,8 @@ interface PlanShape {
   tappedOut?: string[];
   costSummary: string;
   servCalls: number;
+  /** What a seat costs this round, in chips. Absent on an older payload. */
+  stakeChips?: number;
 }
 
 interface RunAgent {
@@ -184,6 +188,23 @@ export interface BoardShape {
 }
 
 /** The spectator's view of a pit that runs itself. */
+/** The lever, as the shell draws it. Every sentence is worked out in leverNote.ts. */
+export interface LeverShape {
+  /** The label on the control. */
+  action: string;
+  /** Pulls left and when more arrive, or null when there is no limit. */
+  pulls: string | null;
+  /** Whether a round pulled now would reason. */
+  reasoning: string;
+  /** Why it will not work right now, or null when it will. */
+  blocked: string | null;
+  /** What the pit said when it took the ask, until the round starts. */
+  said: string | null;
+  /** False while a pull would be refused, so the control says so rather than trying. */
+  canPull: boolean;
+  onPull: () => void;
+}
+
 export interface WatchingShape {
   /** True while the phase stream is connected. */
   live: boolean;
@@ -195,6 +216,10 @@ export interface WatchingShape {
   nextRoundAt: string | null;
   /** Whether this round's agents reasoned, in one sentence, or null. */
   reasoning: string | null;
+  /** Who pulled the lever for this round, in one sentence, or null. */
+  pulled?: string | null;
+  /** How many reasoned rounds the pit has to learn from. */
+  reasonedRounds?: number;
   /** True while what is on screen is a recording, not the pit. */
   replay: boolean;
   /** Whether there is a finished round to watch again. */
@@ -225,6 +250,8 @@ export interface GameShellProps {
    * quiet between them to fill.
    */
   watching: WatchingShape | null;
+  /** The lever, in arena mode, or null where a round is not something to ask for. */
+  lever?: LeverShape | null;
   /** The wall, once it has been read. Null while the request is in flight. */
   graves: GraveShape[] | null;
   slotCanvasRef: RefObject<HTMLCanvasElement | null>;
@@ -260,6 +287,9 @@ export interface GameShellProps {
   probeSymbol: (x: number, y: number) => string | null;
   onPlayAgain: () => void;
   onToggleMute: () => void;
+  /** The bed, which has its own switch: some people want the cues and not the loop. */
+  musicOn?: boolean;
+  onToggleMusic?: () => void;
 }
 
 
@@ -598,8 +628,8 @@ function Lineup({
                   {/* Where the answer came from, in the two words that say
                       it: a line the fallback wrote must never read as
                       though an agent reasoned its way to it. */}
-                  {row.state === "decided" && row.decision.source && (
-                    <span className={row.decision.source === "serv" ? styles.reasoned : styles.instinct}>{row.decision.source === "serv" ? "reasoned" : "on instinct"}</span>
+                  {row.state === "decided" && sourceLabel(row.decision.source) && (
+                    <span className={styles[sourceLabel(row.decision.source)!.tone]}>{sourceLabel(row.decision.source)!.text}</span>
                   )}
                 </span>
                 {/* What it holds and what it owes, kept apart. A balance and
@@ -614,6 +644,11 @@ function Lineup({
                 )}
               </span>
               {row.state === "decided" ? <Dialog scale={2}>{row.decision.reason}</Dialog> : <div className={styles.thinkingBubble} aria-label="thinking" />}
+              {/* What a learned answer was drawn from. Under the answer
+                  itself, because it is the working rather than the claim. */}
+              {row.state === "decided" && evidenceLine(row.decision.evidence, plan?.stakeChips ?? 0) && (
+                <p className={styles.evidence}>{evidenceLine(row.decision.evidence, plan?.stakeChips ?? 0)}</p>
+              )}
             </div>
           </li>
         ))}
@@ -781,6 +816,7 @@ function Resting({
   watching,
   run,
   bank,
+  lever,
   onShowGraveyard,
   onReplay,
   onShowBoard,
@@ -790,6 +826,7 @@ function Resting({
   watching: WatchingShape;
   run: RunShape | null;
   bank: BankShape | null;
+  lever: LeverShape | null;
   onShowGraveyard: () => void;
   onReplay: () => void;
   onShowBoard: () => void;
@@ -832,6 +869,13 @@ function Resting({
             {watching.restReason}
           </p>
         )}
+        {/* What the pit has behind a round that is not reasoning. One line,
+            and a count: nothing here says how any of those rounds ended. */}
+        {recordLine(watching.reasonedRounds) && (
+          <p className={styles.restReason} data-rest-row="">
+            {recordLine(watching.reasonedRounds)}
+          </p>
+        )}
         {winner && (
           <p className={styles.restLast} data-rest-row="">
             Last round: {winner} took {run ? chipsOf(BigInt(run.potWei) - BigInt(run.rakeWei), run.weiPerChip) : "0"} chips.
@@ -844,6 +888,24 @@ function Resting({
           <p className={styles.restLast} data-rest-row="">
             Backing opens after the draw, once the next round is under way.
           </p>
+        )}
+        {/* The lever. Above the other actions because it is the one thing on
+            this screen that changes what the pit does, and it says what it
+            will cost in pulls and whether the round reasons before it is
+            pulled rather than after. */}
+        {lever && (
+          <div className={styles.lever} data-rest-row="">
+            <Button onClick={lever.onPull} scale={2} disabled={!lever.canPull}>
+              {lever.action}
+            </Button>
+            <p className={styles.leverLine}>{lever.said ?? lever.reasoning}</p>
+            {lever.pulls && <p className={styles.leverLine}>{lever.pulls}</p>}
+            {lever.blocked && (
+              <p className={styles.leverLine} role="status">
+                {lever.blocked}
+              </p>
+            )}
+          </div>
         )}
         <div className={styles.restActions} data-rest-row="">
           {watching.canReplay && (
@@ -1245,6 +1307,9 @@ export function GameShell(props: GameShellProps) {
               because it is the other thing that is true of the whole round
               rather than of one screen. The rows say it per agent. */}
           {props.watching?.reasoning && <span className={styles.reasoningNote}>{props.watching.reasoning}</span>}
+          {/* Who asked for this round, beside what the round is doing,
+              because it is true of the whole round rather than one screen. */}
+          {props.watching?.pulled && <span className={styles.reasoningNote}>{props.watching.pulled}</span>}
           {props.watching?.replay && (
             <Button onClick={props.onLeaveReplay} scale={2}>
               Back to the pit
@@ -1259,6 +1324,13 @@ export function GameShell(props: GameShellProps) {
           <Button onClick={props.onToggleMute} scale={2} aria-pressed={!props.muted}>
             {props.muted ? "Sound off" : "Sound on"}
           </Button>
+          {/* Its own switch, beside the cues rather than inside them: an hour
+              of loop is a different question from a reel stop. */}
+          {props.onToggleMusic && (
+            <Button onClick={props.onToggleMusic} scale={2} aria-pressed={props.musicOn === true}>
+              {props.musicOn ? "Music on" : "Music off"}
+            </Button>
+          )}
         </div>
       </header>
 
@@ -1315,6 +1387,7 @@ export function GameShell(props: GameShellProps) {
           watching={props.watching}
           run={run}
           bank={plan?.bank ?? null}
+          lever={props.lever ?? null}
           onShowGraveyard={props.onShowGraveyard}
           onReplay={props.onReplay}
           onShowBoard={props.onShowBoard}

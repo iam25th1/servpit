@@ -35,3 +35,25 @@ export function setServReasoning(file: string, on: boolean): boolean {
   writeFileSync(file, `off since ${new Date().toISOString()}\n`, { mode: 0o600 });
   return false;
 }
+
+/**
+ * Whether a round the interval started may reason.
+ *
+ * Presence is on here, because the default is off: a pit playing itself for a
+ * day should not spend a day of credit before anybody asks it to think.
+ */
+export function scheduledReasoningOn(file: string | undefined): boolean {
+  if (file === undefined) return false;
+  return existsSync(file);
+}
+
+/** Writes the scheduled setting, and says what it now is. */
+export function setScheduledReasoning(file: string, on: boolean): boolean {
+  if (!on) {
+    rmSync(file, { force: true });
+    return false;
+  }
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, `scheduled rounds reason since ${new Date().toISOString()}\n`, { mode: 0o600 });
+  return true;
+}

@@ -1,6 +1,8 @@
 // Shapes shared by the decision loop and the round flow.
 
 import type { AgentProfile } from "@/config/agents";
+import type { LearnedEvidence } from "./learn";
+import type { Situation } from "./situation";
 
 export interface RoundOutcome {
   roundId: string;
@@ -43,7 +45,17 @@ export interface Decision {
   reason: string;
 }
 
-export type DecisionSource = "serv" | "heuristic";
+/**
+ * Where an answer came from, and never a flattering guess.
+ *
+ * serv       a model answered and the answer passed validation
+ * learned    drawn from what serv decided for this agent in a spot like this
+ * heuristic  the fixed rule, which is what a pit with no history does
+ *
+ * A learned decision is never labelled reasoned. It is the pit repeating a
+ * pattern it was shown, which is a different claim from the pit thinking.
+ */
+export type DecisionSource = "serv" | "learned" | "heuristic";
 
 export interface AgentDecision {
   agentId: string;
@@ -57,6 +69,10 @@ export interface AgentDecision {
   balanceWei: bigint;
   decision: Decision;
   source: DecisionSource;
+  /** The spot it was in, recorded so a later round can learn from this one. */
+  situation?: Situation;
+  /** What a learned answer was drawn from. Only on a learned one. */
+  evidence?: LearnedEvidence;
   /** Why the SERV answer was not used, when it was not. */
   rejection?: string;
   model?: string;

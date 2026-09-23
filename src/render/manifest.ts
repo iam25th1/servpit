@@ -92,7 +92,10 @@ export interface Manifest {
 }
 
 const ASSET_PATH = /^\/assets\/[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*\.png$/;
-const AUDIO_PATH = /^\/assets\/audio\/[A-Za-z0-9_-]+\.wav$/;
+// Wav for the cues and ogg for the two music beds: a three minute loop as
+// wav is tens of megabytes served to every visitor. Same origin either way,
+// which is the part that matters.
+const AUDIO_PATH = /^\/assets\/audio\/[A-Za-z0-9_-]+\.(wav|ogg)$/;
 const UI_PATH = /^\/assets\/ui\/[A-Za-z0-9_-]+\.(png|ttf)$/;
 const UI_KINDS: readonly UiKind[] = ["ninePatch", "sprite", "tileset", "font"];
 
@@ -187,7 +190,7 @@ function audio(v: unknown, index: number): AudioDef {
   const path = `audio[${index}]`;
   if (!isObject(v)) fail(path, "must be an object");
   const file = str(v.path, `${path}.path`);
-  if (!AUDIO_PATH.test(file)) fail(`${path}.path`, `must be a same origin /assets/audio wav path, got ${file}`);
+  if (!AUDIO_PATH.test(file)) fail(`${path}.path`, `must be a same origin /assets/audio wav or ogg path, got ${file}`);
   if (typeof v.loop !== "boolean") fail(`${path}.loop`, "must be a boolean");
   return { id: str(v.id, `${path}.id`), path: file, loop: v.loop };
 }

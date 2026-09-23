@@ -25,18 +25,20 @@ export interface ArenaFeedRound {
   bots: number;
   stakeChips: number;
   weiPerChip: string;
-  decisions: Array<{ agentId: string; name: string; face: string | null; enter: boolean; stake: number; reason: string; source: string; balance: number; debt: number }>;
-  loans: Array<{ agentId: string; name: string; asked: number; amount: number; rateBps: number; reason: string; source: string }>;
-  refusals: Array<{ agentId: string; name: string; asked: number; reason: string; source: string }>;
+  decisions: Array<{ agentId: string; name: string; face: string | null; enter: boolean; stake: number; reason: string; source: string; balance: number; debt: number; evidence?: { matches: number; entered: number; typicalStake: number } }>;
+  loans: Array<{ agentId: string; name: string; asked: number; amount: number; rateBps: number; reason: string; source: string; evidence?: { matches: number; approved: number; typicalAmount: number } }>;
+  refusals: Array<{ agentId: string; name: string; asked: number; reason: string; source: string; evidence?: { matches: number; approved: number; typicalAmount: number } }>;
   bank: { treasury: number; book: Array<{ agentId: string; name: string; owed: number; principal: number; rateBps: number }> } | null;
   entries: Array<{ agentId: string; amountWei: string; txHash: string | null; link: string | null }>;
+  /** The handle that asked for this round, absent when the interval started it. */
+  pulledBy?: string | null;
   reels?: Array<{ entrantId: string; symbols: string[]; characterId: string; tier: string; combo: string; bonusPct: number }>;
   fight?: { seed: string; durationMs: number; characters: unknown[]; log: unknown[]; placements: string[]; names: Record<string, string> };
   result?: Record<string, unknown>;
 }
 
 export interface ArenaFeedView {
-  pit: { network: string; backend: string; paused: boolean; nextRoundAt: string | null; updatedAt: string };
+  pit: { network: string; backend: string; paused: boolean; nextRoundAt: string | null; updatedAt: string; reasonedRounds?: number; reasonedDecisions?: number };
   round: ArenaFeedRound | null;
   last: ArenaFeedRound | null;
 }
@@ -135,9 +137,25 @@ export function reasoningLine(round: ArenaFeedRound | null, resting: boolean): s
   if (!round || round.decisions.length === 0) return null;
   const total = round.decisions.length;
   const reasoned = round.decisions.filter((d) => d.source === "serv").length;
+  const learned = round.decisions.filter((d) => d.source === "learned").length;
+  const tense = resting ? "last" : "this";
   if (reasoned === total) return resting ? "Agents reasoned with SERV last round." : "Agents are reasoning with SERV this round.";
-  if (reasoned === 0) return resting ? "Agents ran on instinct last round." : "Agents are running on instinct this round.";
-  return `${reasoned} of ${total} agents reasoned with SERV ${resting ? "last" : "this"} round.`;
+  if (learned === total) return resting ? "Agents played from what they learned last round." : "Agents are playing from what they learned this round.";
+  if (reasoned === 0 && learned === 0) return resting ? "Agents ran on instinct last round." : "Agents are running on instinct this round.";
+  if (reasoned === 0) return `${learned} of ${total} agents played from what they learned ${tense} round.`;
+  return `${reasoned} of ${total} agents reasoned with SERV ${tense} round.`;
+}
+
+/**
+ * Who asked for this round, in a sentence, or null when the pit started it.
+ *
+ * Past tense while the pit is resting, for the same reason the reasoning line
+ * is: the card is talking about the round that just finished.
+ */
+export function pulledLine(round: ArenaFeedRound | null, resting: boolean): string | null {
+  const handle = round?.pulledBy;
+  if (!handle) return null;
+  return resting ? `${handle} pulled the last round.` : `${handle} pulled this round.`;
 }
 
 /** Seconds until the next round, or null when nothing is scheduled. */
@@ -160,7 +178,11 @@ export function watchDecisions(round: ArenaFeedRound | null): DecidedShape[] {
     balance: d.balance,
     debt: d.debt,
     face: d.face,
-    source: d.source === "serv" ? "serv" : "heuristic",
+    // The three sources, kept apart. Collapsing learned into heuristic here
+    // would put "on instinct" under a decision the pit drew from its own
+    // reasoned rounds, which is not what happened.
+    source: d.source === "serv" ? "serv" : d.source === "learned" ? "learned" : "heuristic",
+    ...(d.evidence ? { evidence: d.evidence } : {}),
   }));
 }
 

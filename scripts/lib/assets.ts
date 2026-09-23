@@ -167,6 +167,8 @@ export interface AudioSource {
   source: string;
   /** Looping beds must be seamless; one shots must not loop. */
   loop: boolean;
+  /** The file's own extension. Wav unless the pack ships it otherwise. */
+  ext?: "wav" | "ogg";
 }
 
 /**
@@ -176,6 +178,12 @@ export interface AudioSource {
  * body, because either alone reads thin.
  */
 export const AUDIO_SOURCES: readonly AudioSource[] = [
+  // Two music beds, kept apart from the cues above: one for a pit between
+  // rounds and one for a fight. Ogg rather than wav because a three minute
+  // loop as wav is tens of megabytes, and these loop for as long as a viewer
+  // leaves the page open.
+  { id: "musicPit", source: "Audio/Musics/9 - Quiet.ogg", loop: true, ext: "ogg" },
+  { id: "musicFight", source: "Audio/Musics/17 - Fight.ogg", loop: true, ext: "ogg" },
   { id: "leverPull", source: "Audio/Sounds/Whoosh & Slash/Whoosh.wav", loop: false },
   { id: "reelSpin", source: "Audio/Sounds/Whoosh & Slash/Whoosh2.wav", loop: true },
   { id: "reelStop", source: "Audio/Sounds/Menu/Move4.wav", loop: false },

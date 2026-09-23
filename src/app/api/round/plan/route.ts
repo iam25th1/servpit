@@ -45,6 +45,9 @@ function decisionShape(d: AgentDecision, link: Linker) {
     stake: d.decision.stake,
     reason: d.decision.reason,
     source: d.source,
+    // What a learned answer was drawn from, so the lever flow shows the same
+    // working the arena does. Counts, never outcomes.
+    evidence: d.evidence ?? null,
     rejection: d.rejection ?? null,
     model: d.model ?? null,
     latencyMs: d.latencyMs ?? null,

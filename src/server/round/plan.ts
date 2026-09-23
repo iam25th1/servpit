@@ -58,11 +58,26 @@ export function seatOccupants(ctx: FlowContext): Array<{ agentId: string; name: 
   });
 }
 
+/** What the caller knows about this round that the plan cannot work out. */
+export interface PlanOptions {
+  /**
+   * Whether this round may reason at all, before the operator switch is
+   * consulted.
+   *
+   * The lever and the tests leave it out, which means yes, exactly as it has
+   * always been. The arena worker passes false for a round the interval
+   * started unless an operator has turned scheduled reasoning on, and true
+   * for a round somebody pulled.
+   */
+  reasoning?: boolean;
+}
+
 export async function planRound(
   ctx: FlowContext,
   seed: string,
   onDecided?: (decision: AgentDecision) => void,
   onLoan?: (decision: BankDecision, name: string, bank: BankSnapshot) => void,
+  options: PlanOptions = {},
 ): Promise<RoundPlan> {
   if (!SEED.test(seed)) throw new RangeError(`seed must match ${SEED}`);
   // A share of a funded wallet rather than a flat amount, so an agent can
@@ -78,7 +93,10 @@ export async function planRound(
   // Undefined rather than the client is the whole mechanism: decideForAgent
   // and decideLoan already answer deterministically when there is nobody to
   // ask, which is the same path a pit with no key has always taken.
-  const serv = servReasoningOn(ctx.servSwitchFile) ? ctx.serv : undefined;
+  // Two gates, in this order: what this round is for, then what the operator
+  // allows. A pulled round asks to reason and a scheduled one does not, but
+  // neither reaches the model with the switch off.
+  const serv = options.reasoning !== false && servReasoningOn(ctx.servSwitchFile) ? ctx.serv : undefined;
 
   ctx.bankroll.invalidate();
   // Every balance in one chain request. It used to be one request per agent,
@@ -178,7 +196,11 @@ export async function planRound(
   const tappedIds = new Set(tapped.map((s) => s.profile.id));
   const asked = snapshots.filter((s) => !tappedIds.has(s.profile.id));
 
-  const run = await decideForAgents({ client: serv, meter: ctx.meter }, asked, context, onDecided);
+  // The record, for the rounds that are not reasoning. Read here rather than
+  // inside the loop so every agent in one round learns from the same history,
+  // and passed rather than reached for so a context without a store keeps the
+  // fixed rule.
+  const run = await decideForAgents({ client: serv, meter: ctx.meter, history: serv ? undefined : ctx.store.all() }, asked, context, onDecided);
 
   const tappedDecisions: AgentDecision[] = tapped.map((s) => ({
     agentId: s.profile.id,
@@ -220,7 +242,7 @@ export async function planRound(
       }));
   const rates = bankRateBounds();
   const loans: PlannedLoan[] = [];
-  const refusals: Array<{ agentId: string; name: string; reason: string; askedWei: bigint; tappedOut: boolean }> = [];
+  const refusals: RoundPlan["refusals"] = [];
   const borrowed = new Map<string, { principalWei: bigint; rateBps: number }>();
   // Agents that could not cover a seat and were turned down. They are out,
   // and the settle path is what ends them.
@@ -288,10 +310,13 @@ export async function planRound(
         // asked to pretend otherwise.
         const tappedOutHere = tappedIds.has(snapshot.profile.id);
         if (lendableChips(request, bounds) <= 0) {
-          refusals.push({ agentId: snapshot.profile.id, name: snapshot.profile.name, reason: "Nothing left to lend against that record.", askedWei: shortfallWei, tappedOut: tappedOutHere });
+          // Nothing was asked of the lender at all here: there is nothing to
+          // lend, so this is the pit's own arithmetic rather than a decision
+          // anybody made.
+          refusals.push({ agentId: snapshot.profile.id, name: snapshot.profile.name, reason: "Nothing left to lend against that record.", askedWei: shortfallWei, tappedOut: tappedOutHere, source: "heuristic" });
           if (tappedIds.has(snapshot.profile.id)) deniedCredit.push(snapshot.profile.id);
         } else {
-          const answer = await decideLoan({ client: serv, meter: ctx.meter }, request, bounds);
+          const answer = await decideLoan({ client: serv, meter: ctx.meter, history: serv ? undefined : ctx.store.all() }, request, bounds);
           // With the answer, what the lender is holding as it gives it. The
           // panel is drawn from this, and without it a viewer watching the
           // banking phase sees the answers with nobody giving them.
@@ -313,9 +338,24 @@ export async function planRound(
               rejection: answer.rejection,
               model: answer.model,
               latencyMs: answer.latencyMs,
+              situation: answer.situation,
+              evidence: answer.evidence,
             });
           } else {
-            refusals.push({ agentId: snapshot.profile.id, name: snapshot.profile.name, reason: answer.decision.reason, askedWei: shortfallWei, tappedOut: tappedOutHere });
+            // A refusal is a decision, so it carries where it came from and
+            // the spot it was made in, exactly as an advance does. Without
+            // the source, a refusal written by the fixed lender was published
+            // as though Marrow had reasoned its way to it.
+            refusals.push({
+              agentId: snapshot.profile.id,
+              name: snapshot.profile.name,
+              reason: answer.decision.reason,
+              askedWei: shortfallWei,
+              tappedOut: tappedOutHere,
+              source: answer.source,
+              situation: answer.situation,
+              evidence: answer.evidence,
+            });
             if (tappedIds.has(snapshot.profile.id)) deniedCredit.push(snapshot.profile.id);
           }
         }

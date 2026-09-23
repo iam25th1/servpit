@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { servReasoningOn, setServReasoning } from "./switch";
+import { scheduledReasoningOn, servReasoningOn, setScheduledReasoning, setServReasoning } from "./switch";
 
 let dir: string;
 let file: string;
@@ -46,5 +46,25 @@ describe("the reasoning switch", () => {
   it("is on for a context that has no switch at all", () => {
     // A test harness, or any caller built before the switch existed.
     expect(servReasoningOn(undefined)).toBe(true);
+  });
+});
+
+describe("whether a scheduled round reasons", () => {
+  it("is off until somebody turns it on, because a pit plays itself all day", () => {
+    const dir = mkdtempSync(join(tmpdir(), "servpit-scheduled-"));
+    try {
+      const file = join(dir, "serv-scheduled");
+      expect(scheduledReasoningOn(file)).toBe(false);
+      expect(setScheduledReasoning(file, true)).toBe(true);
+      expect(scheduledReasoningOn(file)).toBe(true);
+      expect(setScheduledReasoning(file, false)).toBe(false);
+      expect(scheduledReasoningOn(file)).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("is off for a context that has no setting at all", () => {
+    expect(scheduledReasoningOn(undefined)).toBe(false);
   });
 });

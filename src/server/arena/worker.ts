@@ -11,12 +11,16 @@
 
 import { existsSync } from "node:fs";
 import { backingWindowSeconds } from "@/config/backing";
+import { PULL_POLL_MS } from "@/config/pulls";
 import { toChips, weiPerChip } from "@/config/stake";
 import { ticksToMs } from "@/config/playback";
 import type { ServerContext } from "../context";
 import { log } from "../log";
 import { basescanTx } from "../money";
 import { planRound, runRound, type RoundPlan } from "../round/flow";
+import { scheduledReasoningOn, servReasoningOn } from "../serv/switch";
+import { budgetState } from "../pulls/budget";
+import { readPullSettings } from "../pulls/settings";
 import { settleBackingQuietly } from "../backing/settle";
 import { ArenaStore, type ArenaPhase, type ArenaRound, type ArenaState, type PhaseMark } from "./state";
 
@@ -60,7 +64,22 @@ export interface LoopOptions {
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
   /** Injected by tests. The real one is playArenaRound. */
-  play?: (ctx: ServerContext, store: ArenaStore, nextAt: number) => Promise<ArenaOutcome | void>;
+  play?: (ctx: ServerContext, store: ArenaStore, nextAt: number, pulledBy?: string | null) => Promise<ArenaOutcome | void>;
+  /** The queue of asks from the site, when the pit takes them. */
+  pulls?: PullSource;
+}
+
+/**
+ * What the loop needs from the pull log.
+ *
+ * An interface rather than the store itself, so the loop can be driven by a
+ * test without a file, and so nothing in here can write a line the log did
+ * not mean to offer.
+ */
+export interface PullSource {
+  pending(): { id: string; handle: string } | null;
+  take(id: string): void;
+  start(id: string, roundId: string): void;
 }
 
 /**
@@ -96,10 +115,22 @@ export async function runArenaLoop(options: LoopOptions): Promise<{ played: numb
           counts.rested += 1;
           log.warn("arena resting on funds", { reason: funds.reason });
         } else {
+          // Somebody asking for this round, if anybody did. Taken before the
+          // round starts so a second ask cannot queue behind it while the
+          // plan is being built, and named on the round itself.
+          const asked = options.pulls?.pending() ?? null;
+          if (asked) {
+            options.pulls?.take(asked.id);
+            log.info("arena round pulled", { handle: asked.handle });
+          }
           // A round that rests because nobody could cover a seat is not a
           // round played, and counting it as one would make an empty pit look
           // busy in the only numbers an operator sees.
-          const outcome = (await play(ctx, store, nextAt)) ?? "played";
+          const outcome = (await play(ctx, store, nextAt, asked?.handle ?? null)) ?? "played";
+          if (asked) {
+            const roundId = store.read().round?.roundId;
+            if (roundId) options.pulls?.start(asked.id, roundId);
+          }
           if (outcome === "rested") counts.rested += 1;
           else counts.played += 1;
         }
@@ -112,8 +143,18 @@ export async function runArenaLoop(options: LoopOptions): Promise<{ played: numb
     }
 
     if (maxRounds > 0 && counts.played + counts.failed + counts.rested >= maxRounds) break;
-    const waitMs = nextAt - now();
-    if (waitMs > 0) await sleep(waitMs);
+    // The wait is in slices rather than one sleep, because somebody at a
+    // screen may ask for a round in the middle of it and an hour is a long
+    // time to hold a lever down. Nothing else changes: an ask that arrives
+    // ends the wait early, and the next interval is measured from the round
+    // it started, exactly as a scheduled one is.
+    let waitMs = nextAt - now();
+    while (waitMs > 0 && running()) {
+      if (options.pulls?.pending()) break;
+      const slice = Math.min(waitMs, PULL_POLL_MS);
+      await sleep(slice);
+      waitMs = nextAt - now();
+    }
     if (!running()) break;
   }
   return counts;
@@ -178,15 +219,56 @@ function failed(store: ArenaStore, reason: string, nextAt: number): void {
 }
 
 /**
+ * Whether a round reasons, which is also what the round publishes about
+ * itself.
+ *
+ * Three gates and every one of them can say no. What the round is for: a
+ * pull asks to reason and a scheduled round does not unless an operator has
+ * said it should. What the day has left, because reasoning is the only thing
+ * here that costs per round. And the operator switch, which is the master.
+ *
+ * planRound checks the switch again on its own, which is deliberate: this is
+ * what the round says about itself and that is what actually reaches a model.
+ * A published flag that said a round was reasoning while the switch was off
+ * would be a claim nobody could check from the outside.
+ */
+export function roundReasons(gates: { pulled: boolean; scheduledReasoning: boolean; withinBudget: boolean; switchOn: boolean; keyed?: boolean }): boolean {
+  // No key, no reasoning, whatever anybody has switched on.
+  if (gates.keyed === false) return false;
+  if (!gates.switchOn) return false;
+  if (!gates.withinBudget) return false;
+  return gates.pulled || gates.scheduledReasoning;
+}
+
+/**
  * One round, start to finish, with every phase published as it begins.
  *
  * The outcome is computed by runRound and is not published until the fight
  * phase starts: the seed, the log and the placements all decide the winner,
  * and the resolver is deterministic.
  */
-export async function playArenaRound(ctx: ServerContext, store: ArenaStore, nextAt: number): Promise<ArenaOutcome> {
+export async function playArenaRound(ctx: ServerContext, store: ArenaStore, nextAt: number, pulledBy: string | null = null): Promise<ArenaOutcome> {
   const flow = ctx.flow;
   const seed = `arena-${Date.now().toString(36)}`;
+  // A round somebody asked for reasons. A round the clock asked for does not,
+  // unless an operator has said it should: the pit plays itself all day, and
+  // a day of reasoning is a day of credit nobody was there to read. Either
+  // way the operator switch is still the master, inside planRound.
+  //
+  // The daily budget is enforced here rather than at the button, because the
+  // button is advice and this is the only writer. Over budget, the round
+  // still plays: it just plays on instinct, which costs nothing.
+  const budget = budgetState(flow.store.all(), readPullSettings(flow.pullSettingsFile ?? "").dailyBudgetCents, Date.now());
+  const reasoning = roundReasons({
+    pulled: pulledBy !== null,
+    scheduledReasoning: scheduledReasoningOn(flow.servScheduledFile),
+    withinBudget: budget.withinBudget,
+    switchOn: servReasoningOn(flow.servSwitchFile),
+    keyed: Boolean(flow.serv),
+  });
+  if (pulledBy !== null && !reasoning) {
+    log.info("arena round on instinct", { spentMicroCents: budget.spentMicroCents, budgetMicroCents: budget.budgetMicroCents, switchOn: servReasoningOn(flow.servSwitchFile) });
+  }
   const link = (hash: string | null | undefined): string | null => (ctx.chain.settles && hash ? basescanTx(ctx.chain.network, hash) : null);
 
   let round: ArenaRound = {
@@ -205,6 +287,8 @@ export async function playArenaRound(ctx: ServerContext, store: ArenaStore, next
     refusals: [],
     bank: null,
     entries: [],
+    pulledBy,
+    reasoning,
   };
   const publish = (next: Partial<ArenaRound>, phase?: ArenaPhase, mark?: Omit<PhaseMark, "phase" | "at">): void => {
     round = { ...round, ...next };
@@ -239,6 +323,7 @@ export async function playArenaRound(ctx: ServerContext, store: ArenaStore, next
               source: d.source,
               balance: toChips(d.balanceWei),
               debt: toChips(d.debtWei ?? 0n),
+              ...(d.evidence ? { evidence: { matches: d.evidence.matches, entered: d.evidence.entered, typicalStake: d.evidence.typicalStake } } : {}),
             },
           ],
         },
@@ -246,7 +331,14 @@ export async function playArenaRound(ctx: ServerContext, store: ArenaStore, next
       );
     },
     (answer, name, bank) => {
-      const entry = { agentId: answer.agentId, name, asked: 0, reason: answer.decision.reason, source: answer.source };
+      const entry = {
+        agentId: answer.agentId,
+        name,
+        asked: 0,
+        reason: answer.decision.reason,
+        source: answer.source,
+        ...(answer.evidence ? { evidence: { matches: answer.evidence.matches, approved: answer.evidence.approved, typicalAmount: answer.evidence.typicalAmount } } : {}),
+      };
       // The lender itself, alongside its answer. Until this the banking phase
       // published the answers and nothing that draws them, so a viewer
       // watching a round where everybody had to borrow saw the tapped out
@@ -259,6 +351,7 @@ export async function playArenaRound(ctx: ServerContext, store: ArenaStore, next
         "banking",
       );
     },
+    { reasoning },
   );
 
   publish(
@@ -278,9 +371,13 @@ export async function playArenaRound(ctx: ServerContext, store: ArenaStore, next
         source: d.source,
         balance: toChips(d.balanceWei),
         debt: toChips(d.debtWei ?? 0n),
+        ...(d.evidence ? { evidence: { matches: d.evidence.matches, entered: d.evidence.entered, typicalStake: d.evidence.typicalStake } } : {}),
       })),
-      loans: plan.loans.map((l) => ({ agentId: l.agentId, name: l.name, asked: toChips(l.askedWei), amount: toChips(l.principalWei), rateBps: l.rateBps, reason: l.reason, source: l.source })),
-      refusals: plan.refusals.map((r) => ({ agentId: r.agentId, name: r.name, asked: toChips(r.askedWei), reason: r.reason, source: "serv" })),
+      loans: plan.loans.map((l) => ({ agentId: l.agentId, name: l.name, asked: toChips(l.askedWei), amount: toChips(l.principalWei), rateBps: l.rateBps, reason: l.reason, source: l.source, ...(l.evidence ? { evidence: { matches: l.evidence.matches, approved: l.evidence.approved, typicalAmount: l.evidence.typicalAmount } } : {}) })),
+      // The refusal's own source, which used to be published as serv
+      // whatever answered: a refusal written by the fixed lender read as
+      // though Marrow had reasoned its way to it.
+      refusals: plan.refusals.map((r) => ({ agentId: r.agentId, name: r.name, asked: toChips(r.askedWei), reason: r.reason, source: r.source, ...(r.evidence ? { evidence: { matches: r.evidence.matches, approved: r.evidence.approved, typicalAmount: r.evidence.typicalAmount } } : {}) })),
       bank: plan.bank ? { treasury: toChips(plan.bank.treasuryWei), book: plan.bank.book.map((b) => ({ agentId: b.agentId, name: b.name, owed: toChips(b.principalWei + b.interestWei), principal: toChips(b.principalWei), rateBps: b.rateBps })) } : null,
     },
     "settling",

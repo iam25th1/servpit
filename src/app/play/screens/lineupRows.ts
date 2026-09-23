@@ -34,7 +34,15 @@ export interface DecidedShape {
    * an agent reasoned its way to it. Absent on a decision streamed before
    * this was carried.
    */
-  source?: "serv" | "heuristic";
+  source?: "serv" | "learned" | "heuristic";
+  /**
+   * What a learned answer was drawn from, when it was learned.
+   *
+   * Counts of past reasoned decisions in the same kind of spot, and the
+   * stake it usually put up. Never an outcome: the learner does not read
+   * them, so nothing here can imply it did.
+   */
+  evidence?: { matches: number; entered: number; typicalStake: number };
 }
 
 export type LineupRow =

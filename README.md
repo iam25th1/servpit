@@ -408,6 +408,49 @@ kind of answer it is.
 
 ## SERV Reasoning
 
+The pit reasons when somebody pulls the lever, and plays from what it learned when nobody
+does. A round the interval starts runs without a single SERV call unless an operator turns
+scheduled reasoning on (`npm run serv -- scheduled on`), because a pit playing itself round
+the clock would spend a day of credit with nobody there to read it.
+
+**What it learns from, and when.** Every decision is recorded with the spot that produced it:
+what the wallet held, what it owed, what the pot was worth, how big the field was, and how
+many of its last five rounds it entered and came out of ahead. When a round is not reasoning,
+each agent's answer is drawn from what SERV actually decided for that agent in a spot like
+this one.
+
+Spots are matched by band, not exactly, because an agent holding 91 chips and one holding 94
+are in the same position and there will never be enough rounds to match them to the chip. The
+bands are: balance in seat prices (under one, under three, under ten, under thirty, above),
+debt against balance (none, under half, more), the pot per seat (under a seat price, under
+two, above), the field (up to 12, up to 24, more), and the record as two counts out of the
+last five, entered and ahead.
+
+**The minimum is five.** Below five reasoned rounds in the same band, nothing is drawn and the
+fixed rule answers exactly as it always has. Five is the smallest number where a split can go
+either way, which is what makes "it held more often than it entered" mean anything.
+
+**It imitates decisions, never outcomes.** Only what SERV chose is read. What happened
+afterwards is not looked at, because one fight in twenty four is variance at every sample size
+this pit will ever have, and learning from results would be learning from noise. A tie holds,
+because entering spends a seat and holding spends nothing.
+
+**A learned answer is labelled learned.** Three sources, and the screen says which: reasoned,
+learned, on instinct. A learned stake goes through the same independent validator against the
+chain balance as a model's answer, and a learned answer that fails it falls to the fixed rule.
+
+**Marrow learns the same way.** The lender records every answer it gives, advances and
+refusals alike, with the borrower's spot: what it held, what it owed, what it could not cover,
+what was in the till and whether it has ever won. When the pit is not reasoning, Marrow's
+answer is drawn from its own reasoned answers to borrowers in the same band, with the same
+minimum of five, the same tie rule (a tie refuses, because lending spends the treasury and
+refusing spends nothing), the same validator against the real treasury, and the same evidence
+on screen.
+
+Rounds stored before the pit started recording the spot carry no situation and are skipped, so
+learning starts from the rounds played after this change rather than pretending about the ones
+before it.
+
 Three of the four SERV features are on. They are not decoration.
 
 | feature | state | why |

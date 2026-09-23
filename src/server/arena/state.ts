@@ -45,10 +45,18 @@ export interface ArenaDecision {
   enter: boolean;
   stake: number;
   reason: string;
-  /** serv or heuristic: whether a model answered or the fallback did. */
+  /** serv, learned or heuristic: a model, the record, or the fixed rule. */
   source: string;
   balance: number;
   debt: number;
+  /**
+   * What a learned answer was drawn from. Only on a learned one.
+   *
+   * Counts of past reasoned decisions by this agent in the same band, and
+   * the stake it usually put up. Nothing about how any of those rounds
+   * ended: the learner does not read outcomes and neither does this.
+   */
+  evidence?: { matches: number; entered: number; typicalStake: number };
 }
 
 export interface ArenaLoan {
@@ -59,6 +67,8 @@ export interface ArenaLoan {
   rateBps: number;
   reason: string;
   source: string;
+  /** What a learned answer was drawn from. Counts, never outcomes. */
+  evidence?: { matches: number; approved: number; typicalAmount: number };
 }
 
 export interface ArenaRefusal {
@@ -67,6 +77,8 @@ export interface ArenaRefusal {
   asked: number;
   reason: string;
   source: string;
+  /** What a learned answer was drawn from. Counts, never outcomes. */
+  evidence?: { matches: number; approved: number; typicalAmount: number };
 }
 
 /**
@@ -125,6 +137,21 @@ export interface ArenaRound {
   refusals: ArenaRefusal[];
   bank: { treasury: number; book: Array<{ agentId: string; name: string; owed: number; principal: number; rateBps: number }> } | null;
   entries: Array<{ agentId: string; amountWei: string; txHash: string | null; link: string | null }>;
+  /**
+   * The handle that asked for this round, or null when the interval did.
+   *
+   * A name, not an outcome: it says who pulled the lever, which is true from
+   * the moment the round starts and gives nothing about the fight away.
+   */
+  pulledBy?: string | null;
+  /**
+   * Whether this round was allowed to reason, before the operator switch.
+   *
+   * True for a round somebody pulled, and for a scheduled round only when an
+   * operator has turned scheduled reasoning on. What each agent actually did
+   * is on the decision, in its source.
+   */
+  reasoning?: boolean;
   /**
    * What each entrant drew, from the reels phase onwards.
    *

@@ -31,6 +31,10 @@ export interface ArenaView {
     paused: boolean;
     nextRoundAt: string | null;
     updatedAt: string;
+    /** Rounds with reasoned decisions the pit can learn from. A count. */
+    reasonedRounds: number;
+    /** Those decisions, counted. Neither says anything about how a round ended. */
+    reasonedDecisions: number;
   };
   /** The round being played, or the last one if the pit is resting. */
   round: ArenaRoundView | null;
@@ -68,13 +72,22 @@ export function roundView(round: ArenaRound | null): ArenaRoundView | null {
     refusals: round.refusals,
     bank: round.bank,
     entries: round.entries,
+    // Who asked for this round, and whether it was allowed to reason.
+    // Neither is an outcome: both are true from the moment it starts.
+    ...(round.pulledBy ? { pulledBy: round.pulledBy } : {}),
+    ...(round.reasoning === undefined ? {} : { reasoning: round.reasoning }),
     // The draw, which does not decide the fight: the resolver runs the same
     // way whoever is in it. Everything that does decide it is left out above.
     ...(round.reels ? { reels: round.reels } : {}),
   };
 }
 
-export function arenaView(state: ArenaState, chain: { network: string; kind: string }): ArenaView {
+export function arenaView(
+  state: ArenaState,
+  chain: { network: string; kind: string },
+  /** What the pit has to learn from. Counts, not outcomes. */
+  learning: { reasonedRounds: number; reasonedDecisions: number } = { reasonedRounds: 0, reasonedDecisions: 0 },
+): ArenaView {
   return {
     pit: {
       network: chain.network,
@@ -82,6 +95,11 @@ export function arenaView(state: ArenaState, chain: { network: string; kind: str
       paused: state.paused,
       nextRoundAt: state.nextRoundAt,
       updatedAt: state.updatedAt,
+      // How much record the pit has behind a round that is not reasoning.
+      // A count of rounds and of decisions in them, and nothing about how
+      // any of them ended.
+      reasonedRounds: learning.reasonedRounds,
+      reasonedDecisions: learning.reasonedDecisions,
     },
     round: roundView(state.round),
     // The last round is finished, so its fight and its result are history
