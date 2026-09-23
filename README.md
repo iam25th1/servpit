@@ -4,7 +4,7 @@
 
 **A slot machine decides who fights. Six agents decide whether to pay for a seat.**
 
-`SERV Reasoning` · `Coinbase AgentKit` · `Base Sepolia` · `Next.js` · `1190 tests`
+`SERV Reasoning` · `Coinbase AgentKit` · `Base Sepolia` · `Next.js` · `1556 tests`
 
 [![ci](https://github.com/iam25th1/servpit/actions/workflows/ci.yml/badge.svg)](https://github.com/iam25th1/servpit/actions/workflows/ci.yml)
 
@@ -51,6 +51,70 @@ That is the lever flow, and it still works exactly as it did. With `SERVPIT_AREN
 pit runs itself instead: a worker plays a round every interval, the house pulls the lever, and
 everybody watching sees the same round at the same moment. The only thing a visitor does then
 is back an agent for points, which are points and never money.
+
+### Open Track, and where AgentKit actually sits
+
+This is an **Open Track** submission. The agents reason with SERV Reasoning, and the money
+moves through AgentKit's `ViemWalletProvider` on Base Sepolia. AgentKit is the wallet layer
+and nothing else here, which is why this README does not present it as the agent framework:
+**the model never calls a tool.**
+
+Three steps, which this project deliberately does not collapse into one:
+
+1. **The model answers.** It is asked a question and returns a decision, a small JSON object
+   saying enter or hold and for how many chips, with one sentence of reasoning.
+2. **An independent validator checks it** against the balance the process read from the chain
+   a moment earlier. A stake that is negative, fractional, larger than the wallet holds, or
+   not the round's allocation is rejected, and the agent falls back to the deterministic
+   heuristic with the rejection recorded.
+3. **Only then does ordinary code move funds**, from the agent's own wallet, with a hash.
+
+That is a design choice rather than a limitation of the tools. A model holding a tool that
+moves money is a model with a hand in the till: the answer and the transfer are one event, and
+the only thing between a bad answer and a bad transfer is the model itself. Here the answer is
+data until something that is not the model has checked it against the chain. When eighteen
+consecutive SERV calls failed across three rounds settling real money, every one of them fell
+through to the heuristic, every round settled, and reconciliation held on all of them. The
+failure was a bug; surviving it was the design.
+
+### What is shipped
+
+All of it is running on the live pit rather than described here in the future tense.
+
+- **The bank.** Marrow, a seventh agent that takes no seat, lends to the six from its own
+  treasury on Base Sepolia, charges interest per round, is repaid from winnings, seizes and
+  writes off.
+- **Autonomous rounds.** A worker plays a round on its own interval, with no lever pulled and
+  nobody watching needed.
+- **The spectator view.** One round, one clock, the same moment for everybody, with a viewer
+  who arrives mid fight seeking to the right frame rather than to the start.
+- **Replay.** The last round can be watched again from the recording it left behind, with no
+  SERV call and no chain call.
+- **Backing and the leaderboard.** A window between the draw and the fight, pari mutuel
+  points, and a paged board that is points and never money.
+- **Pull to reason.** A visitor can spend the pit's reasoning on a round on demand, within
+  limits the operator sets, while scheduled rounds keep running for free.
+- **Learning from reasoned rounds.** A round nobody paid for draws each answer from what SERV
+  decided for that agent in a spot like this one, and says that it did.
+- **Claiming a fighter.** A visitor can take one house seat as their own, with a name and a
+  face, and it enters every round from the next one.
+- **The fighters board.** Rounds, wins, best placement, kills and a streak, kept apart from
+  the backing board because a fighter's record is luck and a backer's is at least a judgement.
+- **Music.** Two tracks, one for the pit between rounds and one for the fight, off until
+  somebody asks for them.
+
+**Where the live pit stood on 23 September 2026**, read from its own public endpoints rather
+than from anybody's notes:
+
+| | |
+|---|---|
+| network | Base Sepolia, worker alive, a round about every two minutes |
+| the bank | 938 chips in the treasury, nothing out on loan |
+| the graveyard | 11 agents retired and replaced |
+| claimed fighters | 2 of 8 seats, 9 faces still free |
+| the best fighter | 25THH, 53 rounds, 5 wins, 44 kills, longest run of 5 |
+| backers | 6 handles on the board |
+| reasoning | scheduled reasoning off, so rounds run on instinct until somebody pulls |
 
 ### The artifact
 
@@ -129,9 +193,13 @@ it did on screen, and 68.9 seconds of a frozen "Locked in".
 
 ## Live settlement
 
-Forty one settled rounds on Base Sepolia, forty of them reconciled. The one that did not is
-still on file, and why is below. On chain across those rounds: 150 entries, 7 payouts, 6 loans,
-2 repayments, 1 seizure and 3 operator refills, every one of them a transaction with a hash.
+Forty one settled rounds on Base Sepolia, forty of them reconciled, counted on 21 September
+2026. The one that did not is still on file, and why is below. On chain across those rounds:
+150 entries, 7 payouts, 6 loans, 2 repayments, 1 seizure and 3 operator refills, every one of
+them a transaction with a hash. The pit has kept playing since, which is what the graveyard
+and the boards above count; these figures are the settled history as it was read off the round
+store on that date, and they are not re-counted here because this README is written in a clone
+that does not touch the live pit's data.
 
 Round `r-42ee92f9c5b6f41e`, seed `hardening1`, is an agent win under the current prize model.
 Four agents paid in 10 chips each, thirty chips had rolled over from a round nobody real won,
@@ -413,6 +481,41 @@ does. A round the interval starts runs without a single SERV call unless an oper
 scheduled reasoning on (`npm run serv -- scheduled on`), because a pit playing itself round
 the clock would spend a day of credit with nobody there to read it.
 
+### Pulling the lever, while the pit plays itself
+
+The lever is still there in arena mode, and it asks for a round rather than starting one. The
+worker remains the only writer: a pull is one line in a log, the worker picks it up on its own
+clock, and what comes back down the request is whether the ask landed, how many pulls this
+browser has left, when they come back, and whether a round pulled now would reason. No round
+id, no seed, no draw, no placements. The resolver is deterministic, so any of those before the
+fight would be the fight given away.
+
+What stops a visitor spending an operator's month in an afternoon, all settable with
+`npm run pulls`:
+
+| limit | default | why |
+|---|---|---|
+| pulls per browser | 3 in 6 hours | generous for somebody who wants to watch the pit think |
+| pulls per place | 3 an hour | because a browser mints its own token and a fresh one is free |
+| rounds started by the lever | 6 an hour across everybody | a round is chain fees and can wreck an agent |
+| reasoning spend | 25 cents a day | measured from what rounds actually recorded, not estimated |
+| an ask nobody answered | dropped after 5 minutes | a pull is a person at a screen, not a queue |
+
+The budget never refuses a round. It turns reasoning off for that round and says so, because a
+pit that stops playing is worse than a pit that plays on instinct. The same is true with no
+key configured at all: the lever says plainly that this pit has no reasoning configured rather
+than promising something nobody can deliver.
+
+### The bed under the pit
+
+Two tracks, one for a pit between rounds and one for a fight, at a third of the volume of the
+cues above them. A phase change that does not change the scene does not restart the track, so
+a round moving from the draw to the backing window does not begin the loop again. It starts
+silent, because browsers block sound until a gesture and an autoplaying loop is worse than no
+loop, and the switch is its own: somebody who wants the reels and the coins does not
+necessarily want a bed playing for an hour while a round is waiting. The choice is remembered
+per browser.
+
 **What it learns from, and when.** Every decision is recorded with the spot that produced it:
 what the wallet held, what it owed, what the pot was worth, how big the field was, and how
 many of its last five rounds it entered and came out of ahead. When a round is not reasoning,
@@ -464,38 +567,6 @@ Model is `claude-haiku-4.5` through `https://inference-api.openserv.ai/v1`, Open
 swappable from config without a code change.
 
 <details>
-<summary><b>What the safety nets cost, measured</b></summary>
-
-<br>
-
-Six agents decide concurrently, so a phase lasts as long as its slowest agent rather than the
-sum of six. Eighteen calls per variant against live SERV, median latency:
-
-| variant | median | reading |
-|---|---:|---|
-| shadow and guard off | 1285 ms | the base model call |
-| shadow agent off | 4159 ms | Prompt Guard costs 2874 ms |
-| **everything on** | **7526 ms** | Shadow Agent costs 3367 ms |
-| multipath off, rest on | 7890 ms | Multipath is free |
-
-A healthy decision phase, timed end to end four times: 10974, 11813 and 12335 ms, of which one
-`eth_call` for all six balances is 487 to 616 ms and the rest is SERV.
-
-That is the price of two nets on a money surface, and it is paid once per phase rather than six
-times. What was not acceptable was the tail. Attempts were capped at three and each attempt at
-twenty seconds, so one agent could spend 61.2 seconds and the other five waited on it. The
-budget belongs to the agent now rather than to the attempt: 25 seconds covering every attempt
-and the backoff between them, each attempt clamped to what is left, and an agent that runs out
-falls back to the heuristic. Worst case per agent went from 61.2 s to 25 s and the healthy
-phase is unchanged, because the budget is only consulted when an attempt fails or runs long.
-
-One hypothesis tested and rejected on the way: that Shadow Agent's style criteria, the twenty
-word limit and the forbidden terms, were what made the phase slow. They cost minus 400 ms at
-the median, which is noise. The criteria stay exactly as they are.
-
-</details>
-
-<details>
 <summary><b>The prompt is resource allocation, not wagering, and that is deliberate</b></summary>
 
 <br>
@@ -523,26 +594,61 @@ claim otherwise.
 
 </details>
 
+---
+
+## What building this found out about SERV
+
+Three things worth writing down, because none of them is in any documentation and each cost a
+day to find.
+
+**Structured output rejects numeric range keywords.** Every call came back
+`400 response_format.json_schema.schema: For 'integer' type, property 'minimum' is not
+supported`. Rather than patch the one keyword that errored, every JSON Schema keyword was
+probed individually against live SERV.
+
+| | keywords |
+|---|---|
+| **rejected** | `minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum`, `multipleOf`, on both `integer` and `number` |
+| **accepted** | every string keyword, including `minLength`, `maxLength`, `pattern`, `format`, `enum`, `const`, `default` |
+
+The bounds `minimum` expressed were never the only net. The independent validator rejects a
+negative stake, a fractional stake, a stake above the real on-chain balance, a stake that is
+not the round's allocation, and a non-zero stake while holding, and each of those has a test
+named for the keyword it replaces.
+
+**A request with no system message is refused.** Not with a message about system messages,
+which is what made it take a while. Every request this project sends carries one.
+
+**Each safety net costs latency, and it is worth knowing which.** Eighteen calls per variant
+against live SERV, median:
+
+| variant | median | reading |
+|---|---:|---|
+| shadow and guard off | 1285 ms | the base model call |
+| shadow agent off | 4159 ms | Prompt Guard costs 2874 ms |
+| **everything on** | **7526 ms** | Shadow Agent costs 3367 ms |
+| multipath off, rest on | 7890 ms | Multipath is free |
+
+Six agents decide concurrently, so a decision phase lasts as long as its slowest agent rather
+than the sum of six: timed end to end, 10974, 11813 and 12335 ms, of which one `eth_call` for
+all six balances is 487 to 616 ms and the rest is SERV. That is the price of two nets on a
+money surface, paid once per phase rather than six times.
+
 <details>
-<summary><b>What the schema probe found</b></summary>
+<summary><b>The tail, which was the part that actually needed fixing</b></summary>
 
 <br>
 
-Rather than patch the one keyword that errored, every JSON Schema keyword was probed
-individually against live SERV.
+Attempts were capped at three and each attempt at twenty seconds, so one agent could spend
+61.2 seconds and the other five waited on it. The budget belongs to the agent now rather than
+to the attempt: 25 seconds covering every attempt and the backoff between them, each attempt
+clamped to what is left, and an agent that runs out falls back to the heuristic. Worst case
+per agent went from 61.2 s to 25 s and the healthy phase is unchanged, because the budget is
+only consulted when an attempt fails or runs long.
 
-**Rejected:** `minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum`, `multipleOf`, on
-both `integer` and `number`. Numeric ranges only.
-
-**Accepted:** every string keyword, including `minLength`, `maxLength`, `pattern`, `format`,
-`enum`, `const`, `default`.
-
-Also found: SERV rejects any request with no system message.
-
-The bounds that `minimum` expressed were never the only net. The independent validator rejects
-a negative stake, a fractional stake, a stake above the real on-chain balance, a stake that is
-not the round's allocation, and a non-zero stake while holding. Each of those has a test named
-for the keyword it replaces.
+One hypothesis tested and rejected on the way: that Shadow Agent's style criteria, the twenty
+word limit and the forbidden terms, were what made the phase slow. They cost minus 400 ms at
+the median, which is noise. The criteria stay exactly as they are.
 
 </details>
 
@@ -850,7 +956,53 @@ finishes the round it is in before it goes.
 
 **What is not served in production.** The wallet view at `/api/agents`, the seed box at
 `/arena`, and both lever routes, which write. In production a visitor can read the pit and
-write exactly one thing: a pick, rate limited and bound to a handle and a browser token.
+write exactly three things: a pick, an ask for a round, and a claim on one house seat. Each is
+a line in an append only log, each is bound to a handle and the hash of a token the browser
+keeps, and each is limited twice: once by that token, and once by where the request came from,
+because a browser mints its own token and a fresh one is free. No address is stored for that
+second limit. It is hashed with a salt made when the process starts, held in memory, and never
+written down or returned.
+
+### How many people it holds
+
+Measured against the live deployment with `npm run loadtest`, which holds phase streams and
+asks for pages and does nothing else: every request it makes is a GET, so it can be pointed at
+a running pit without starting a round or spending anything. The generator ran on the same Mac
+as the server, taking cpu from the thing it was measuring, so every number below is worse than
+the server on its own would give.
+
+| spectators | page p50 | page p95 | streams | the Mac |
+|---:|---:|---:|---|---|
+| 100 | 325 ms | 632 ms | all open | 258 MB, 7 percent of one core of ten |
+| 1,000 | 402 ms | 1.5 s | all open | 580 MB, 16 percent |
+| 3,000 | 537 ms | 0.9 to 3.7 s | all open | 755 MB, 23 percent |
+| 5,000 | 708 ms | 16 s | 2,267 open, 2,733 refused | 768 MB, 18 percent |
+| 8,000 | 1.2 s | 14 s | 5,045 open, 2,955 refused | 862 MB, 34 percent |
+
+**It holds about a thousand comfortably**, degrades from about three thousand, and stops
+taking new connections at about five. The origin is not the thing that runs out: at three
+thousand streams the Mac was at a quarter of one core of ten and 755 MB, which is about 176 KB
+per spectator, and what failed was new connections through the tunnel, with resets and connect
+timeouts, while every stream already open stayed up.
+[Cloudflare's own sizing](https://developers.cloudflare.com/learning-paths/replace-vpn/connect-private-network/tunnel-capacity/)
+for a single cloudflared host is four thousand users, which is the same wall from the other
+side.
+
+So the pit caps its own spectators: 2,000 by default, `SERVPIT_MAX_STREAMS` to change it. One
+past the cap is answered 503 with `retry-after` and one sentence, and the page falls back to
+reading `/api/arena` on a timer, which is what it already does whenever the stream is down.
+The pit degrades instead of collapsing, and the round keeps playing either way.
+
+**What the free tier does at these numbers.** Cloudflare's free plan proxies this without a
+request or bandwidth charge, and the documented limits that matter here are these. A request
+body over [100 MB](https://developers.cloudflare.com/support/troubleshooting/http-status-codes/4xx-client-error/error-413/)
+is refused with a 413 at the edge, before it reaches the Mac. A proxied response that says
+nothing for [125 seconds](https://developers.cloudflare.com/fundamentals/reference/connection-limits/)
+is closed, which is why the phase stream sends a comment every twenty, and a keep alive is
+held for 400 seconds. One cloudflared instance opens
+[four connections to at least two data centres](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/configure-tunnels/tunnel-availability/),
+and a tunnel can run up to 25 replicas for 100 connections, which is how to go past the wall
+above without changing a line of this application.
 
 <details>
 <summary><b>Settling on Base Sepolia for real</b></summary>
@@ -897,9 +1049,12 @@ a money surface.
 | `npm run round -- --seed x` | One full round end to end from the command line, exactly as the API route does |
 | `npm run arena` | The worker that plays a round every interval. `-- pause`, `-- resume` and `-- status` answer without starting anything |
 | `npm run serv -- on\|off\|status` | Turns SERV reasoning on or off for the next round, in every process, without a restart |
+| `npm run pulls -- status` | What the lever allows: pulls per browser, per hour, and the day's reasoning budget |
+| `npm run fighters -- status` | The claimed seats, the faces left, and the sweep that gives back the ones nobody came back to |
+| `npm run loadtest -- <url>` | Holds phase streams and asks for pages, to measure what a deployment holds. GET only |
 | `npm run extract-assets` | Pulls the roster, FX, UI kit, fonts and tilesets out of the asset pack into `public/assets` and writes the manifest |
 | `npm run gate` | typecheck, lint, test, build. What CI runs |
-| `npm test` | 1190 tests |
+| `npm test` | 1556 tests |
 
 </details>
 
@@ -984,6 +1139,22 @@ back to an agent. The only setting that reaches 2 to 4 per 100 is a replacement 
 and it gets there by putting every new agent over the ceiling within a round so the bank can
 seize what it holds, which is not an economy.
 
+**One Mac, and about a thousand people.** Measured, not guessed: a thousand spectators are
+comfortable, three thousand degrade, five thousand stop getting connections. The pit now
+refuses past 2,000 streams rather than accepting until the machine has nothing left, and a
+refused spectator still watches by polling. Past that the answer is cloudflared replicas or a
+second host, and the worker still cannot be scaled out: it is one writer by design.
+
+**The limit by place is only as good as the header it reads.** The origin is reachable only
+through the tunnel, so the address Cloudflare puts on a request is the one to trust and a
+visitor cannot forge it from the public internet. Somebody already inside the network could
+reach the port directly and set that header themselves, and would then face the per token
+limits alone. The ceiling on a round's backers and the seat cap are what stand behind it.
+
+**The spectator cap is per process.** One process serves this pit, so it is the whole pit. Two
+behind a load balancer would each hold their own count, and would also mean two workers, which
+is a worse problem than the count.
+
 **Round history is a JSON file.** Not a database.
 
 **One mode ships, at one stake.** Battle Royale. Gauntlet, Duel, Placement and High Roller
@@ -1012,4 +1183,4 @@ Animation by [anime.js v4](https://animejs.com). Wallets by
 [Coinbase AgentKit](https://github.com/coinbase/agentkit). Reasoning by
 [SERV](https://openserv.ai).
 
-Built for **OpenServ SERV Reasoning Hackathon, Edition 01, AgentKit track.**
+Built for **OpenServ SERV Reasoning Hackathon, Edition 01, Open Track.**

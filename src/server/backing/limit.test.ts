@@ -56,3 +56,22 @@ describe("a device token", () => {
     expect(validToken(crypto.randomUUID())).not.toBeNull();
   });
 });
+
+describe("a window that is not a minute", () => {
+  it("counts attempts over the window it was given", () => {
+    let at = 0;
+    const limiter = new RateLimiter(2, () => at, 10 * 60_000);
+
+    expect(limiter.allow("one-address")).toBe(true);
+    expect(limiter.allow("one-address")).toBe(true);
+    expect(limiter.allow("one-address")).toBe(false);
+
+    // Still refused after a minute, which the default window would have let
+    // through, and allowed again once the longer window has passed.
+    at += 60_000;
+    expect(limiter.allow("one-address")).toBe(false);
+    at += 10 * 60_000;
+    expect(limiter.allow("one-address")).toBe(true);
+  });
+});
+

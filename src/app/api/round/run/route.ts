@@ -4,6 +4,10 @@
 // same transfers and a retry never double pays.
 
 import { getSettleContext } from "@/server/settleContext";
+import { arenaMode } from "@/config/arena";
+import { ARENA_RUNNING } from "@/server/arena/message";
+import { LEVER_CLOSED, inProduction } from "@/server/production";
+import { TOO_LARGE, readBody } from "@/server/net/body";
 import { log } from "@/server/log";
 import { internalDetail, publicError } from "@/server/publicError";
 import { basescanAddress } from "@/server/money";
@@ -14,24 +18,15 @@ import { roundIdFor } from "@/server/round/types";
 import { runRound } from "@/server/round/settle";
 import { overReached } from "@/server/round/wrecks";
 import { parseRoundRequest } from "../plan/params";
-import { arenaMode } from "@/config/arena";
-import { LEVER_CLOSED, inProduction } from "@/server/production";
-import { ARENA_RUNNING } from "@/server/arena/message";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function POST(request: Request): Promise<Response> {
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
-    body = {};
-  }
-  const parsed = parseRoundRequest(body);
-  if (!parsed.ok) return Response.json({ error: parsed.error }, { status: 400 });
+/** An entrant count and a seed. Anything larger is not a request for a round. */
+const MAX_BODY_BYTES = 2_000;
 
-  // And closed outright on a public deployment. This is the route that moves
+export async function POST(request: Request): Promise<Response> {
+  // Closed outright on a public deployment. This is the route that moves
   // money: entries, loans, payouts and seizures, from keys that sit on the
   // server. Only the worker settles a round there.
   if (inProduction()) return Response.json({ code: "lever_closed", error: LEVER_CLOSED, message: LEVER_CLOSED, retryable: false }, { status: 403 });
@@ -40,6 +35,20 @@ export async function POST(request: Request): Promise<Response> {
   // and the same stores: the settle lock would serialise the two, which is
   // not the same as there being only one.
   if (arenaMode()) return Response.json({ code: "arena_running", error: ARENA_RUNNING, message: ARENA_RUNNING, retryable: false }, { status: 409 });
+
+  // A ceiling, because a route should not hold whatever was sent to it while
+  // deciding what to do with it. An entrant count and a seed is tiny.
+  const read = await readBody(request, MAX_BODY_BYTES);
+  if (!read.ok) return Response.json({ error: TOO_LARGE }, { status: 413 });
+  let body: unknown;
+  try {
+    body = JSON.parse(read.text);
+  } catch {
+    body = {};
+  }
+  const parsed = parseRoundRequest(body);
+  if (!parsed.ok) return Response.json({ error: parsed.error }, { status: 400 });
+
 
   const ctx = await getSettleContext();
   const flow = { ...ctx.flow, entrants: parsed.entrants };

@@ -22,6 +22,7 @@
 
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { MAX_BACKERS_PER_ROUND } from "@/config/backing";
 import { StoreNetworkMismatch, storeStamp } from "../store/file";
 import { withAppendLock } from "./appendLock";
 
@@ -45,7 +46,7 @@ interface PickLine {
 type Line = ClaimLine | PickLine | { k: "head"; network: string };
 
 /** What happened to a pick, in the caller's words rather than an exception. */
-export type RecordOutcome = "recorded" | "handle taken";
+export type RecordOutcome = "recorded" | "handle taken" | "round full";
 
 export function pickFile(dataDir: string, network: string): string {
   return join(dataDir, `picks-${network}.ndjson`);
@@ -60,6 +61,8 @@ export class PickStore {
   constructor(
     private readonly file: string,
     private readonly network: string,
+    /** Most backers one round may have. Lowered by tests that fill a round. */
+    private readonly maxBackers: number = MAX_BACKERS_PER_ROUND,
   ) {}
 
   /** The token hash a handle belongs to, or null when nobody has claimed it. */
@@ -71,19 +74,34 @@ export class PickStore {
   /**
    * Appends a pick, and the claim on the handle if it is a new one.
    *
-   * The only rule enforced here is that a handle belongs to the token that
-   * claimed it. Whether the window is open, whether the agent is in the
-   * round and how often this client may ask are the route's business, because
-   * they are about the request rather than about the log.
+   * Two rules are enforced here, both inside the lock because both are races:
+   * a handle belongs to the token that claimed it, and a round holds only so
+   * many backers. Reading first and appending after would let two requests
+   * take the same handle, or the last seat in a round, in the same moment.
+   *
+   * Whether the window is open, whether the agent is in the round and how
+   * often this client may ask are the route's business, because they are
+   * about the request rather than about the log.
    */
   record(roundId: string, handle: string, tokenHash: string, agentId: string): RecordOutcome {
-    const held = this.owner(handle);
-    if (held !== null && held !== tokenHash) return "handle taken";
-    const at = new Date().toISOString();
-    const lines: Line[] = held === null ? [{ k: "claim", handle, tokenHash, at }] : [];
-    lines.push({ k: "pick", roundId, handle, agentId, at });
-    this.append(lines);
-    return "recorded";
+    this.head();
+    return withAppendLock(this.file, () => {
+      this.stamp = null;
+      this.reload();
+
+      const held = this.claims.get(handle) ?? null;
+      if (held !== null && held !== tokenHash) return "handle taken" as const;
+      // A backer already in the round may always change their mind. The
+      // ceiling is on how many different people one round can carry.
+      const round = this.picks.get(roundId);
+      if (round !== undefined && !round.has(handle) && round.size >= this.maxBackers) return "round full" as const;
+
+      const at = new Date().toISOString();
+      const lines: Line[] = held === null ? [{ k: "claim", handle, tokenHash, at }] : [];
+      lines.push({ k: "pick", roundId, handle, agentId, at });
+      this.write(lines);
+      return "recorded" as const;
+    });
   }
 
   /** What this handle backed in this round, or null. */
@@ -104,12 +122,15 @@ export class PickStore {
     return counts;
   }
 
-  private append(lines: readonly Line[]): void {
-    this.head();
-    // Under the lock, because O_APPEND alone does not promise a whole line:
-    // six processes appending at once tore one on the first run of the
-    // concurrency test. One call inside it, so a batch lands together.
-    withAppendLock(this.file, () => appendFileSync(this.file, lines.map((line) => JSON.stringify(line)).join("\n") + "\n", { mode: 0o600 }));
+  /**
+   * Appends lines. Called with the lock already held.
+   *
+   * The lock is what makes an append whole: O_APPEND alone does not promise
+   * it, and six processes appending at once tore a line on the first run of
+   * the concurrency test. One call inside it, so a batch lands together.
+   */
+  private write(lines: readonly Line[]): void {
+    appendFileSync(this.file, lines.map((line) => JSON.stringify(line)).join("\n") + "\n", { mode: 0o600 });
     // Force the next read to look, since our own write changed the file.
     this.stamp = null;
   }

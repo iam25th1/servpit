@@ -26,6 +26,9 @@ const SECURITY_HEADERS = [
 ];
 
 const nextConfig: NextConfig = {
+  // Nothing on a response should name what is serving it. The framework
+  // banner is one line of free reconnaissance and buys a visitor nothing.
+  poweredByHeader: false,
   // Nothing here is served from another origin, and nothing here should be
   // read by one.
   async headers() {

@@ -20,6 +20,7 @@
     "serv": "tsx scripts/serv.ts",
     "pulls": "tsx scripts/pulls.ts",
     "fighters": "tsx scripts/fighters.ts",
+    "loadtest": "tsx scripts/loadtest.ts",
     "generate-wallets": "tsx scripts/generate-wallets.ts",
     "fund-wallets": "tsx scripts/fund-wallets.ts"
   },

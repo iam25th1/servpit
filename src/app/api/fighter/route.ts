@@ -10,7 +10,7 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { arenaMode } from "@/config/arena";
-import { CLAIMS_PER_MINUTE, fighterSettingsFile } from "@/config/fighters";
+import { CLAIMS_PER_MINUTE, CLAIMS_PER_PLACE, CLAIM_PLACE_WINDOW_MS, fighterSettingsFile } from "@/config/fighters";
 import { readFighterSettings } from "@/server/fighters/settings";
 import { pickReader } from "@/server/backing/read";
 import { RateLimiter } from "@/server/backing/limit";
@@ -22,6 +22,8 @@ import { fighterReader } from "@/server/fighters/read";
 import { log } from "@/server/log";
 import { internalDetail, publicError } from "@/server/publicError";
 import { pullReader } from "@/server/pulls/read";
+import { TOO_LARGE, readBody } from "@/server/net/body";
+import { visitorKey } from "@/server/net/visitor";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,6 +33,9 @@ const MAX_BODY_BYTES = 2_000;
 
 /** The limiter for this process, since a limit per request would limit nothing. */
 const claimLimiter = new RateLimiter(CLAIMS_PER_MINUTE);
+
+/** Claims from one place, which is what stops one machine taking every face. */
+const placeLimiter = new RateLimiter(CLAIMS_PER_PLACE, Date.now, CLAIM_PLACE_WINDOW_MS);
 
 let careers: CareerStore | undefined;
 
@@ -70,17 +75,17 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
-    const body = await request.text();
-    if (body.length > MAX_BODY_BYTES) return NextResponse.json({ error: "That is not a claim." }, { status: 413 });
+    const body = await readBody(request, MAX_BODY_BYTES);
+    if (!body.ok) return NextResponse.json({ error: TOO_LARGE }, { status: 413 });
     let input: unknown;
     try {
-      input = JSON.parse(body);
+      input = JSON.parse(body.text);
     } catch {
       return NextResponse.json({ error: "That is not a claim." }, { status: 400 });
     }
     const { handle, token, name, face } = (input ?? {}) as { handle?: unknown; token?: unknown; name?: unknown; face?: unknown };
 
-    const answer = claimFighter({ handle, token, name, face }, deps());
+    const answer = claimFighter({ handle, token, name, face }, { ...deps(), crowd: () => placeLimiter.allow(visitorKey(request.headers)) });
     if (!answer.ok) return NextResponse.json({ error: answer.message }, { status: answer.status });
     return NextResponse.json(answer.view);
   } catch (e) {

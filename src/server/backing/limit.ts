@@ -10,7 +10,7 @@
 // stands behind this, since a flood of picks from one handle still resolves
 // to that handle's last pick and one row on the board.
 
-/** A sliding minute, because the limit is written per minute. */
+/** A sliding minute, because most of these limits are written per minute. */
 export const WINDOW_MS = 60_000;
 
 export class RateLimiter {
@@ -19,12 +19,14 @@ export class RateLimiter {
   constructor(
     private readonly perWindow: number,
     private readonly now: () => number = Date.now,
+    /** The window this many attempts are counted over. A minute by default. */
+    private readonly windowMs: number = WINDOW_MS,
   ) {}
 
   /** Records an attempt and says whether it is allowed. */
   allow(key: string): boolean {
     const at = this.now();
-    const recent = (this.seen.get(key) ?? []).filter((t) => at - t < WINDOW_MS);
+    const recent = (this.seen.get(key) ?? []).filter((t) => at - t < this.windowMs);
     if (recent.length >= this.perWindow) {
       this.seen.set(key, recent);
       return false;
@@ -38,7 +40,7 @@ export class RateLimiter {
   /** Drops keys whose attempts have all aged out, so the map is not a leak. */
   private sweep(at: number): void {
     for (const [key, times] of this.seen) {
-      if (times.every((t) => at - t >= WINDOW_MS)) this.seen.delete(key);
+      if (times.every((t) => at - t >= this.windowMs)) this.seen.delete(key);
     }
   }
 }
