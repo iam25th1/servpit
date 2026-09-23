@@ -1048,6 +1048,20 @@
   ],
   "audio": [
     {
+      "id": "musicPit",
+      "source": "Audio/Musics/9 - Quiet.ogg",
+      "path": "/assets/audio/musicPit.ogg",
+      "loop": true,
+      "bytes": 392854
+    },
+    {
+      "id": "musicFight",
+      "source": "Audio/Musics/17 - Fight.ogg",
+      "path": "/assets/audio/musicFight.ogg",
+      "loop": true,
+      "bytes": 780630
+    },
+    {
       "id": "leverPull",
       "source": "Audio/Sounds/Whoosh & Slash/Whoosh.wav",
       "path": "/assets/audio/leverPull.wav",

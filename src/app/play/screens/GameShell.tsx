@@ -287,6 +287,9 @@ export interface GameShellProps {
   probeSymbol: (x: number, y: number) => string | null;
   onPlayAgain: () => void;
   onToggleMute: () => void;
+  /** The bed, which has its own switch: some people want the cues and not the loop. */
+  musicOn?: boolean;
+  onToggleMusic?: () => void;
 }
 
 
@@ -1321,6 +1324,13 @@ export function GameShell(props: GameShellProps) {
           <Button onClick={props.onToggleMute} scale={2} aria-pressed={!props.muted}>
             {props.muted ? "Sound off" : "Sound on"}
           </Button>
+          {/* Its own switch, beside the cues rather than inside them: an hour
+              of loop is a different question from a reel stop. */}
+          {props.onToggleMusic && (
+            <Button onClick={props.onToggleMusic} scale={2} aria-pressed={props.musicOn === true}>
+              {props.musicOn ? "Music on" : "Music off"}
+            </Button>
+          )}
         </div>
       </header>
 

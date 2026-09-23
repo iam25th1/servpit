@@ -19,6 +19,7 @@ import { Juice } from "@/render/juice";
 import { startLoop } from "@/render/loop";
 import { parseManifest, type Manifest } from "@/render/manifest";
 import { SlotAudio } from "@/render/slot/audio";
+import { Music, sceneForPhase } from "@/render/slot/music";
 import { SlotRenderer } from "@/render/slot/draw";
 import { SLOT_LAYOUT, paylineY, reelX } from "@/render/slot/layout";
 import { Lever } from "@/render/slot/lever";
@@ -170,6 +171,8 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
   const [manifest, setManifest] = useState<Manifest | null>(null);
   const [assetError, setAssetError] = useState<string | null>(null);
   const [muted, setMuted] = useState(true);
+  const musicRef = useRef<Music | null>(null);
+  const [musicOn, setMusicOn] = useState(false);
   // Whether the canvas engine exists yet. A spectator can arrive in the
   // middle of a fight, and the phase to act on is usually known before the
   // sprites have finished loading, so the effect below waits for this
@@ -250,6 +253,13 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
   };
   // The screen on show: the pit's phase while it runs itself, the machine's
   // own screen otherwise. Boot and the title belong to the machine either way.
+  // The bed follows the pit rather than the screen: the phase is what says
+  // whether a fight is happening, and a phase that does not change the scene
+  // leaves the loop alone.
+  useEffect(() => {
+    musicRef.current?.setScene(sceneForPhase(watch.round?.phase ?? null));
+  }, [watch.round?.phase]);
+
   const watchingNow = arenaMode && state.screen !== "boot" && state.screen !== "title";
   const shownScreen: Screen = watchingNow ? watch.screen : state.screen;
   const watchedPhaseRef = useRef<string>("");
@@ -325,6 +335,10 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
         const fxRng = createRng("slot-vfx");
         const emitter = new ParticleEmitter(() => fxRng.nextU32() / 0x1_0000_0000);
         const audio = new SlotAudio(manifest.audio, sink, { storage: window.localStorage });
+        // The bed, on the same sink and its own switch. Silent until somebody
+        // asks for it, like everything else that makes a sound here.
+        const music = new Music(manifest.audio, sink, { storage: window.localStorage });
+        musicRef.current = music;
 
         const engine: Engine = {
           store,
@@ -345,6 +359,7 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
         engineRef.current = engine;
         setEngineReady(true);
         setMuted(audio.muted);
+        setMusicOn(music.enabled);
 
         // Reel stops: click, ring, and a tiered burst on the last one.
         engine.reels.onStop((index) => {
@@ -865,6 +880,14 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
             onPull={() => void pullLever()}
             onPlayAgain={playAgain}
             onToggleMute={toggleMute}
+            musicOn={musicOn}
+            onToggleMusic={() => {
+              const music = musicRef.current;
+              if (!music) return;
+              engineRef.current?.audio.unlock();
+              music.toggle();
+              setMusicOn(music.enabled);
+            }}
           />
         </div>
       </div>
