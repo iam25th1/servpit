@@ -18,6 +18,7 @@
     "round": "tsx scripts/round.ts",
     "arena": "tsx scripts/arena.ts",
     "serv": "tsx scripts/serv.ts",
+    "pulls": "tsx scripts/pulls.ts",
     "generate-wallets": "tsx scripts/generate-wallets.ts",
     "fund-wallets": "tsx scripts/fund-wallets.ts"
   },
