@@ -43,7 +43,7 @@
 .wordmark {
   font-family: var(--font-display);
   font-size: var(--text-lead);
-  letter-spacing: 0.2em;
+  letter-spacing: 5px;
   color: var(--amber);
   margin: 0;
 }
@@ -99,7 +99,7 @@
 .modeName {
   font-family: var(--font-ui);
   font-size: var(--text-lead);
-  letter-spacing: 0.06em;
+  letter-spacing: 1px;
   margin: 0;
 }
 
@@ -164,7 +164,7 @@
 .roadmap {
   font-family: var(--font-ui);
   font-size: var(--text-micro);
-  letter-spacing: 0.18em;
+  letter-spacing: 3px;
   color: var(--amber);
   background: var(--pit-deep);
   padding: 2px 8px;
@@ -256,7 +256,7 @@
   font-family: var(--font-ui);
   font-size: var(--text-lead);
   margin: 0 0 var(--space-tight);
-  letter-spacing: 0.05em;
+  letter-spacing: 1px;
 }
 
 .sideNote {
@@ -338,7 +338,7 @@
 .agentName {
   font-family: var(--font-ui);
   font-size: var(--text-body);
-  letter-spacing: 0.04em;
+  letter-spacing: 1px;
 }
 
 /* The transaction under a buy in that has confirmed. */
@@ -440,7 +440,7 @@
 .winnerName {
   font-family: var(--font-ui);
   font-size: var(--text-title);
-  letter-spacing: 0.06em;
+  letter-spacing: 2px;
   margin: 0;
   color: var(--amber);
 }
@@ -564,7 +564,7 @@ a.transferHash {
   margin: 0;
   font-size: var(--text-small);
   color: var(--on-surface-dim, var(--bone-dim));
-  line-height: 1.45;
+  line-height: 1.5;
 }
 
 /* The explanation and the way out, on one row. */
@@ -716,7 +716,7 @@ a.transferHash {
 .bankName {
   font-family: var(--font-ui);
   font-size: var(--text-lead);
-  letter-spacing: 0.05em;
+  letter-spacing: 1px;
   margin: 0;
 }
 
@@ -868,7 +868,7 @@ a.transferHash {
 .wreckHead {
   font-family: var(--font-ui);
   font-size: var(--text-lead);
-  letter-spacing: 0.06em;
+  letter-spacing: 1px;
   color: var(--bone);
   margin: 0;
 }
@@ -913,7 +913,7 @@ a.transferHash {
 .tombName {
   font-family: var(--font-ui);
   font-size: var(--text-body);
-  letter-spacing: 0.05em;
+  letter-spacing: 1px;
   color: var(--bone);
   margin: 0;
 }
@@ -1008,7 +1008,7 @@ a.transferHash {
 .graveTitle {
   font-family: var(--font-ui);
   font-size: var(--text-lead);
-  letter-spacing: 0.06em;
+  letter-spacing: 1px;
   color: var(--bone);
   margin: 0;
 }
@@ -1052,7 +1052,7 @@ a.transferHash {
 .graveName {
   font-family: var(--font-ui);
   font-size: var(--text-small);
-  letter-spacing: 0.04em;
+  letter-spacing: 1px;
   color: var(--bone);
   margin: 0;
 }
@@ -1139,12 +1139,19 @@ a.transferHash {
 /* The stream's state, in the corner, where a viewer can ignore it until it
    matters. */
 .live,
-.offair {
+.offair,
+.waiting {
   font-size: var(--text-micro);
 }
 
 .live {
   color: var(--good);
+}
+
+/* Paused, or resting between rounds. The same dim bone the rest of the header
+   meta is said in: nothing is wrong, and nothing is running either. */
+.waiting {
+  color: var(--bone-dim);
 }
 
 /* A recording on screen. Amber, the one accent, because it is neither a
@@ -1169,8 +1176,18 @@ a.transferHash {
 
 /* The quiet between rounds. One card, centred, with the countdown as the
    thing a viewer reads first. */
+/* One composition, not two objects sharing a screen.
+   Side by side, the card and Marrow's panel were centred on each other and
+   nothing else: a 304 tall card next to a 122 tall panel lines up on no edge
+   a reader can see, and the pair floated in the middle of the stage with a
+   band of black under it. Stacked and centred, at one width, they read as a
+   single block with the card leading it. */
 .resting {
+  /* Wide enough for a sentence of reason at body size without becoming a
+     wall, on a stage that is 1280 across. */
+  --rest-width: 560px;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: var(--space-wide);
@@ -1178,10 +1195,10 @@ a.transferHash {
   min-height: 0;
 }
 
-/* Marrow beside the card rather than under it: the stage is 720 tall and the
-   card is already the tallest thing on an otherwise empty screen. */
+/* Under the card and the same width as it, so the block has two straight
+   sides. */
 .restBank {
-  width: 360px;
+  width: var(--rest-width);
   flex: none;
 }
 
@@ -1191,17 +1208,17 @@ a.transferHash {
   align-items: center;
   gap: var(--space-snug);
   text-align: center;
-  min-width: 420px;
-  /* A reason is a sentence, and a sentence that never wraps stretches the
-     card across the stage. Wrapping keeps the card the same shape whatever
-     the pit is waiting on. */
-  max-width: 520px;
+  /* One width rather than a range: a reason is a sentence, and a sentence
+     that sets the card's width makes the block a different shape every round.
+     Wrapping inside a fixed width keeps it the same shape whatever the pit is
+     waiting on, and keeps its edges on Marrow's. */
+  width: var(--rest-width);
 }
 
 .restHead {
   font-family: var(--font-ui);
   font-size: var(--text-lead);
-  letter-spacing: 0.04em;
+  letter-spacing: 1px;
   color: var(--ink);
   margin: 0;
 }
@@ -1499,13 +1516,15 @@ a.transferHash {
   min-height: 100%;
   padding: var(--space-snug) var(--space-base) var(--space-loose);
   gap: var(--space-base);
-  /* Read at arm's length rather than at desk distance. The scale steps up
-     rather than the layout zooming, so line lengths stay sensible. */
-  --text-micro: 13px;
-  --text-small: 15px;
-  --text-body: 17px;
-  --text-lead: 21px;
-  --text-title: 28px;
+  /* Read at arm's length rather than at desk distance, and still on the
+     grid the face is drawn on: every step is a whole number of modules, so
+     a phone gets the same crisp glyphs a desktop does. The hero step comes
+     down because 48 px of wordmark does not fit 390 px of phone. */
+  --text-micro: 16px;
+  --text-small: 16px;
+  --text-body: 16px;
+  --text-lead: 24px;
+  --text-title: 32px;
   --text-hero: 40px;
 }
 

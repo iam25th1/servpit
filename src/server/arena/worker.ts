@@ -89,6 +89,7 @@ export async function runArenaLoop(options: LoopOptions): Promise<{ played: numb
         counts.rested += 1;
         log.info("arena paused", { pauseFile });
       } else {
+        clearPause(store);
         const funds = await fundsCheck(ctx);
         if (!funds.ok) {
           rest(store, funds.reason, false, nextAt);
@@ -145,6 +146,20 @@ export async function fundsCheck(ctx: ServerContext): Promise<{ ok: true } | { o
     return { ok: false, reason: "The pot is holding less than the prize it carries, so a win could not be paid out." };
   }
   return { ok: true };
+}
+
+/**
+ * The pit records that it is running again the moment it runs.
+ *
+ * The pause goes into the state once, on the rest that stopped the pit, and
+ * every write after that carries the state forward. Without this, a resumed
+ * pit played rounds under a state that still read paused, and everything that
+ * reads the state believed it: the health line, and the badge a viewer sees.
+ */
+function clearPause(store: ArenaStore): void {
+  const current = store.read();
+  if (!current.paused) return;
+  store.write({ round: current.round, last: current.last, paused: false, nextRoundAt: current.nextRoundAt });
 }
 
 /** The pit is idle, and the reason is a sentence rather than a state. */

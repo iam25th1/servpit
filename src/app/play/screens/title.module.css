@@ -84,10 +84,10 @@
      clamp. The clamp was a viewport read and at 1200 px wide it resolved to
      the token anyway. */
   font-size: var(--text-hero);
-  letter-spacing: 0.18em;
+  letter-spacing: 9px;
   margin: 0;
   color: var(--amber);
-  line-height: 1.1;
+  line-height: 1.25;
 }
 
 .wordmark span {
@@ -101,7 +101,7 @@
   color: var(--on-surface-dim, var(--bone-dim));
   margin: 0;
   max-width: 44ch;
-  line-height: 1.6;
+  line-height: 1.5;
 }
 
 .attract {
@@ -109,7 +109,7 @@
   font-size: var(--text-small);
   color: var(--amber);
   margin: 0;
-  letter-spacing: 0.14em;
+  letter-spacing: 2px;
 }
 
 .actions {

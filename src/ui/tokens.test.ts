@@ -55,7 +55,7 @@ describe("scales", () => {
     for (const family of Object.values(type.family)) {
       // One of the two faces this project ships, and nothing a system might
       // substitute: the fallback is a monospace, never a serif.
-      expect(family).toMatch(/PixelifySans|ServpitNormal/);
+      expect(family).toMatch(/Tiny5|ServpitNormal/);
       expect(family).not.toMatch(/serif|Georgia|Times|Palatino|Iowan/i);
     }
   });
@@ -129,7 +129,7 @@ describe("no serif is reachable anywhere in the app", () => {
         if (!/font-family:/.test(line)) continue;
         // The @font-face blocks name the faces themselves; everything else
         // goes through a token.
-        if (/ServpitNormal|PixelifySans/.test(line) || /var\(--font-(ui|display)\)/.test(line)) continue;
+        if (/ServpitNormal|Tiny5/.test(line) || /var\(--font-(ui|display)\)/.test(line)) continue;
         offenders.push(`${file}: ${line.trim()}`);
       }
     }

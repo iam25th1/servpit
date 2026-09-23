@@ -23,9 +23,9 @@
 
 .wordmark {
   font-family: var(--font-ui);
-  font-size: 1.9rem;
+  font-size: var(--text-title);
   font-weight: 700;
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
   margin: 0;
 }
 
@@ -34,7 +34,7 @@
   align-items: center;
   gap: 16px;
   color: var(--bone-dim);
-  font-size: 0.9rem;
+  font-size: var(--text-small);
 }
 
 .ghost {
@@ -43,7 +43,7 @@
   border: 1px solid var(--edge);
   padding: 5px 12px;
   font: inherit;
-  font-size: 0.85rem;
+  font-size: var(--text-small);
   cursor: pointer;
 }
 
@@ -61,8 +61,8 @@
 
 .lede {
   font-family: var(--font-ui);
-  font-size: 1.5rem;
-  line-height: 1.35;
+  font-size: var(--text-lead);
+  line-height: 1.25;
   max-width: 24ch;
   margin: 0 0 6px;
 }
@@ -123,20 +123,20 @@
 
 .cardName {
   font-family: var(--font-ui);
-  font-size: 1.2rem;
+  font-size: var(--text-lead);
   margin: 0;
 }
 
 .cardBlurb {
   margin: 0;
-  font-size: 0.9rem;
+  font-size: var(--text-small);
 }
 
 .roadmap {
   align-self: flex-start;
   border: 1px solid var(--edge);
   padding: 1px 7px;
-  font-size: 0.72rem;
+  font-size: var(--text-small);
   color: var(--bone-dim);
 }
 
@@ -153,7 +153,7 @@
   border: 1px solid var(--edge);
   padding: 6px 8px;
   font: inherit;
-  font-size: 0.85rem;
+  font-size: var(--text-small);
   cursor: pointer;
 }
 
@@ -191,7 +191,7 @@
   padding: 11px 16px;
   font: inherit;
   font-weight: 700;
-  letter-spacing: 0.02em;
+  letter-spacing: 0;
   cursor: pointer;
 }
 
@@ -204,7 +204,7 @@
 .leverNote {
   margin: 6px 0 0;
   color: var(--bone-dim);
-  font-size: 0.82rem;
+  font-size: var(--text-small);
   min-height: 1.2em;
 }
 
@@ -215,13 +215,13 @@
 
 .sideHead {
   font-family: var(--font-ui);
-  font-size: 1.25rem;
+  font-size: var(--text-lead);
   margin: 0 0 2px;
 }
 
 .sideNote {
   color: var(--bone-dim);
-  font-size: 0.85rem;
+  font-size: var(--text-small);
   margin: 0 0 12px;
 }
 
@@ -248,28 +248,28 @@
 
 .agentName {
   font-family: var(--font-ui);
-  font-size: 1rem;
+  font-size: var(--text-body);
 }
 
 .in {
   color: var(--amber);
-  font-size: 0.85rem;
+  font-size: var(--text-small);
 }
 
 .out {
   color: var(--bone-dim);
-  font-size: 0.85rem;
+  font-size: var(--text-small);
 }
 
 .reason {
   margin: 4px 0 0;
-  font-size: 0.85rem;
-  line-height: 1.4;
+  font-size: var(--text-small);
+  line-height: 1.5;
 }
 
 .source {
   margin: 4px 0 0;
-  font-size: 0.75rem;
+  font-size: var(--text-small);
   color: var(--bone-dim);
 }
 
@@ -286,20 +286,20 @@
 
 .statLabel {
   color: var(--bone-dim);
-  font-size: 0.82rem;
+  font-size: var(--text-small);
   margin: 0 0 2px;
 }
 
 .statValue {
   font-family: var(--font-ui);
-  font-size: 1.6rem;
+  font-size: var(--text-lead);
   margin: 0;
 }
 
 .ledger {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.86rem;
+  font-size: var(--text-small);
   margin-top: 18px;
 }
 
@@ -324,7 +324,7 @@
   padding: 9px 12px;
   border: 1px solid var(--edge);
   color: var(--bone-dim);
-  font-size: 0.85rem;
+  font-size: var(--text-small);
 }
 
 .error {
