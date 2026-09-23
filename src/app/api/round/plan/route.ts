@@ -12,7 +12,10 @@
 
 import { toChips, weiPerChip } from "@/config/stake";
 import { getServerContext } from "@/server/context";
+import { arenaMode } from "@/config/arena";
+import { ARENA_RUNNING } from "@/server/arena/message";
 import { LEVER_CLOSED, inProduction } from "@/server/production";
+import { TOO_LARGE, readBody } from "@/server/net/body";
 import { log } from "@/server/log";
 import { internalDetail, publicError } from "@/server/publicError";
 import type { AgentDecision } from "@/server/decisions/types";
@@ -20,11 +23,12 @@ import { basescanAddress } from "@/server/money";
 import { planRound, seatOccupants, type RoundPlan } from "@/server/round/flow";
 import { TAPPED_OUT } from "@/server/round/plan";
 import { parseRoundRequest } from "./params";
-import { arenaMode } from "@/config/arena";
-import { ARENA_RUNNING } from "@/server/arena/message";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+/** An entrant count and a seed. Anything larger is not a request for a round. */
+const MAX_BODY_BYTES = 2_000;
 
 type Linker = (address: string) => string | null;
 
@@ -83,16 +87,7 @@ function planShape(plan: RoundPlan, network: string, kind: string, costMicroCent
 }
 
 export async function POST(request: Request): Promise<Response> {
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
-    body = {};
-  }
-  const parsed = parseRoundRequest(body);
-  if (!parsed.ok) return Response.json({ error: parsed.error }, { status: 400 });
-
-  // And closed outright on a public deployment, whatever the flag says. This
+  // Closed outright on a public deployment, whatever the flag says. This
   // route spends an operator's SERV credit and writes a plan the settle path
   // will act on, which is not something a visitor gets to start.
   if (inProduction()) return Response.json({ code: "lever_closed", error: LEVER_CLOSED, message: LEVER_CLOSED, retryable: false }, { status: 403 });
@@ -100,6 +95,20 @@ export async function POST(request: Request): Promise<Response> {
   // costs real money to make: six agents deciding is a cent of SERV whether
   // or not anybody ever settles it.
   if (arenaMode()) return Response.json({ code: "arena_running", error: ARENA_RUNNING, message: ARENA_RUNNING, retryable: false }, { status: 409 });
+
+  // A ceiling, because a route should not hold whatever was sent to it while
+  // deciding what to do with it. An entrant count and a seed is tiny.
+  const read = await readBody(request, MAX_BODY_BYTES);
+  if (!read.ok) return Response.json({ error: TOO_LARGE }, { status: 413 });
+  let body: unknown;
+  try {
+    body = JSON.parse(read.text);
+  } catch {
+    body = {};
+  }
+  const parsed = parseRoundRequest(body);
+  if (!parsed.ok) return Response.json({ error: parsed.error }, { status: 400 });
+
 
   const ctx = await getServerContext();
   const flow = { ...ctx.flow, entrants: parsed.entrants };

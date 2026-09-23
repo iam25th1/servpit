@@ -13,6 +13,8 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { arenaMode } from "@/config/arena";
+import { PULLS_PER_PLACE_PER_HOUR } from "@/config/pulls";
+import { HOUR_MS } from "@/config/pulls";
 import { arenaReader } from "@/server/arena/read";
 import { pickReader } from "@/server/backing/read";
 import { log } from "@/server/log";
@@ -22,12 +24,18 @@ import { ownerAcross } from "@/server/identity/service";
 import { pullEnvironment } from "@/server/pulls/deps";
 import { pullReader } from "@/server/pulls/read";
 import { pullStatus, requestPull } from "@/server/pulls/service";
+import { RateLimiter } from "@/server/backing/limit";
+import { TOO_LARGE, readBody } from "@/server/net/body";
+import { visitorKey } from "@/server/net/visitor";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /** A handle and a token. Anything larger is not an ask. */
 const MAX_BODY_BYTES = 2_000;
+
+/** Pulls from one place, for the limit a browser's own token cannot carry. */
+const placeLimiter = new RateLimiter(PULLS_PER_PLACE_PER_HOUR, Date.now, HOUR_MS);
 
 function deps() {
   const environment = pullEnvironment();
@@ -53,17 +61,17 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
-    const body = await request.text();
-    if (body.length > MAX_BODY_BYTES) return NextResponse.json({ error: "That is not a pull." }, { status: 413 });
+    const body = await readBody(request, MAX_BODY_BYTES);
+    if (!body.ok) return NextResponse.json({ error: TOO_LARGE }, { status: 413 });
     let input: unknown;
     try {
-      input = JSON.parse(body);
+      input = JSON.parse(body.text);
     } catch {
       return NextResponse.json({ error: "That is not a pull." }, { status: 400 });
     }
     const { handle, token } = (input ?? {}) as { handle?: unknown; token?: unknown };
 
-    const answer = requestPull(arenaReader().state(), { handle, token }, deps());
+    const answer = requestPull(arenaReader().state(), { handle, token }, { ...deps(), crowd: () => placeLimiter.allow(visitorKey(request.headers)) });
     if (!answer.ok) return NextResponse.json({ error: answer.message }, { status: answer.status });
     return NextResponse.json(answer.view);
   } catch (e) {

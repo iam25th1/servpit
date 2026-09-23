@@ -50,6 +50,8 @@ export interface ClaimInput {
 export interface FighterDeps {
   store: FighterStore;
   limiter: RateLimiter;
+  /** Whether this request's place in the world may claim. Already keyed to it. */
+  crowd?: () => boolean;
   arenaMode: boolean;
   /** Most seats that may be claimed at once. Zero means no cap. */
   cap?: number;
@@ -115,6 +117,9 @@ export function claimFighter(input: ClaimInput, deps: FighterDeps): ClaimAnswer 
     return { ok: false, status: 409, message: "That handle belongs to another browser. Pick another one." };
   }
   if (!deps.limiter.allow(hash)) return { ok: false, status: 429, message: "That is a lot of claiming. Give it a moment." };
+  // And by where the request came from: the token above is one the browser
+  // made for itself, so without this one machine takes every free face.
+  if (deps.crowd !== undefined && !deps.crowd()) return { ok: false, status: 429, message: "That is a lot of claiming from one place. Give it a moment." };
 
   const answer = deps.store.claim({ handle, tokenHash: hash, name, face, cap: deps.cap });
   if (answer.outcome === "handle taken") return { ok: false, status: 409, message: "That handle belongs to another browser. Pick another one." };

@@ -44,6 +44,28 @@ export const HANDLE_PATTERN = /^[a-z0-9_-]{3,16}$/;
 /** How many picks one client may make in a minute, before it is just noise. */
 export const PICKS_PER_MINUTE = 10;
 
+/**
+ * How many picks may come from one place in a minute.
+ *
+ * The limit above is keyed by the token a browser made for itself, which is
+ * the right key for a handle and no key at all against somebody minting a
+ * token per request. This one is keyed by where the request came from, and it
+ * is looser on purpose: a house, an office or a lecture hall shares one
+ * address, and thirty picks a minute is a room full of people changing their
+ * minds.
+ */
+export const PICKS_PER_MINUTE_PER_PLACE = 30;
+
+/**
+ * Most backers one round may have.
+ *
+ * A ceiling on the log rather than on the game: a round with two thousand
+ * backers is a round nobody in this project has ever seen, and a round with
+ * two hundred thousand is somebody filling a disk one line at a time. A
+ * backer already in the round can still change their pick after it.
+ */
+export const MAX_BACKERS_PER_ROUND = 2_000;
+
 export function backingWindowSeconds(env: NodeJS.ProcessEnv = process.env): number {
   const raw = env.SERVPIT_BACKING_WINDOW_SECONDS?.trim();
   if (raw === undefined || raw.length === 0) return DEFAULT_BACKING_WINDOW_SECONDS;

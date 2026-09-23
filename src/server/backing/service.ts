@@ -41,6 +41,8 @@ export interface PickInput {
 export interface PickDeps {
   store: PickStore;
   limiter: RateLimiter;
+  /** Whether this request's place in the world may write. Already keyed to it. */
+  crowd?: () => boolean;
   arenaMode: boolean;
   /**
    * The handle's owner outside this log.
@@ -116,9 +118,13 @@ export function submitPick(state: ArenaState, input: PickInput, deps: PickDeps):
     return { ok: false, status: 409, message: "That handle belongs to another browser. Pick another one." };
   }
   if (!deps.limiter.allow(hash)) return { ok: false, status: 429, message: "That is a lot of picks. Give it a moment." };
+  // And by where the request came from, because the token above is one the
+  // browser made for itself and a fresh one is free.
+  if (deps.crowd !== undefined && !deps.crowd()) return { ok: false, status: 429, message: "That is a lot of picks from one place. Give it a moment." };
 
   const outcome = deps.store.record(open.roundId, handle, hash, agentId);
   if (outcome === "handle taken") return { ok: false, status: 409, message: "That handle belongs to another browser. Pick another one." };
+  if (outcome === "round full") return { ok: false, status: 429, message: "This round has all the backers it can hold. The next one is yours." };
 
   return { ok: true, view: backingView(state, deps.store, handle, now) };
 }

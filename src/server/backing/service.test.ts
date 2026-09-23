@@ -185,3 +185,39 @@ describe("one handle, one browser, across both logs", () => {
     expect(answer.ok).toBe(true);
   });
 });
+
+describe("a flood from one place", () => {
+  // Every limit above is keyed by the token the browser made for itself, and
+  // a fresh one is free: the measured flood put 242 picks a second on the
+  // disk from one machine, each under a new handle and a new token.
+  const fresh = () => `${crypto.randomUUID()}${crypto.randomUUID()}`;
+
+  it("refuses picks once the place they come from has had its share", () => {
+    const crowd = new RateLimiter(3);
+    const place = () => crowd.allow("one-address");
+    const flood = (n: number) =>
+      submitPick(state("backing"), { handle: `atk${n}`, token: fresh(), agentId: "atlas" }, { ...deps(), crowd: place });
+
+    expect(flood(1)).toMatchObject({ ok: true });
+    expect(flood(2)).toMatchObject({ ok: true });
+    expect(flood(3)).toMatchObject({ ok: true });
+    expect(flood(4)).toMatchObject({ ok: false, status: 429, message: "That is a lot of picks from one place. Give it a moment." });
+    // And nothing from the refused one reached the log.
+    expect(store.pickOf("r-1", "atk4")).toBeNull();
+  });
+
+  it("holds one round to the backers it can carry, and still lets them change their minds", () => {
+    const small = new PickStore(join(dir, "picks-fake.ndjson"), "fake", 2);
+    const on = { ...deps(), store: small };
+    expect(submitPick(state("backing"), { handle: "ash", token: TOKEN, agentId: "atlas" }, on)).toMatchObject({ ok: true });
+    expect(submitPick(state("backing"), { handle: "bowen", token: OTHER_TOKEN, agentId: "vex" }, on)).toMatchObject({ ok: true });
+
+    const third = submitPick(state("backing"), { handle: "cass", token: fresh(), agentId: "atlas" }, on);
+    expect(third).toMatchObject({ ok: false, status: 429, message: "This round has all the backers it can hold. The next one is yours." });
+
+    // A backer already in the round is not shut out by the ceiling.
+    expect(submitPick(state("backing"), { handle: "ash", token: TOKEN, agentId: "vex" }, on)).toMatchObject({ ok: true });
+    expect(small.pickOf("r-1", "ash")).toBe("vex");
+    expect(small.picksFor("r-1").size).toBe(2);
+  });
+});
