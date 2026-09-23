@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { ArenaStore } from "./state";
-import { fundsCheck, runArenaLoop } from "./worker";
+import { fundsCheck, roundReasons, runArenaLoop } from "./worker";
 import type { ServerContext } from "../context";
 
 let dir: string;
@@ -293,5 +293,31 @@ describe("the kill switch", () => {
     });
 
     expect(arena.read().paused).toBe(false);
+  });
+});
+
+describe("whether a round reasons", () => {
+  const gates = (over: Partial<Parameters<typeof roundReasons>[0]> = {}) =>
+    roundReasons({ pulled: false, scheduledReasoning: false, withinBudget: true, switchOn: true, ...over });
+
+  it("reasons for a pull and not for the clock", () => {
+    expect(gates({ pulled: true })).toBe(true);
+    expect(gates()).toBe(false);
+  });
+
+  it("reasons for the clock once an operator says so", () => {
+    expect(gates({ scheduledReasoning: true })).toBe(true);
+  });
+
+  it("says no when the day's budget is spent, whoever asked", () => {
+    expect(gates({ pulled: true, withinBudget: false })).toBe(false);
+    expect(gates({ scheduledReasoning: true, withinBudget: false })).toBe(false);
+  });
+
+  it("says no with the operator switch off, which is the master", () => {
+    // And this is what the round publishes about itself, so a viewer reading
+    // it is reading something true rather than an intention.
+    expect(gates({ pulled: true, switchOn: false })).toBe(false);
+    expect(gates({ scheduledReasoning: true, switchOn: false })).toBe(false);
   });
 });

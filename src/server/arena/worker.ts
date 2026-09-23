@@ -18,7 +18,7 @@ import type { ServerContext } from "../context";
 import { log } from "../log";
 import { basescanTx } from "../money";
 import { planRound, runRound, type RoundPlan } from "../round/flow";
-import { scheduledReasoningOn } from "../serv/switch";
+import { scheduledReasoningOn, servReasoningOn } from "../serv/switch";
 import { budgetState } from "../pulls/budget";
 import { readPullSettings } from "../pulls/settings";
 import { settleBackingQuietly } from "../backing/settle";
@@ -219,6 +219,26 @@ function failed(store: ArenaStore, reason: string, nextAt: number): void {
 }
 
 /**
+ * Whether a round reasons, which is also what the round publishes about
+ * itself.
+ *
+ * Three gates and every one of them can say no. What the round is for: a
+ * pull asks to reason and a scheduled round does not unless an operator has
+ * said it should. What the day has left, because reasoning is the only thing
+ * here that costs per round. And the operator switch, which is the master.
+ *
+ * planRound checks the switch again on its own, which is deliberate: this is
+ * what the round says about itself and that is what actually reaches a model.
+ * A published flag that said a round was reasoning while the switch was off
+ * would be a claim nobody could check from the outside.
+ */
+export function roundReasons(gates: { pulled: boolean; scheduledReasoning: boolean; withinBudget: boolean; switchOn: boolean }): boolean {
+  if (!gates.switchOn) return false;
+  if (!gates.withinBudget) return false;
+  return gates.pulled || gates.scheduledReasoning;
+}
+
+/**
  * One round, start to finish, with every phase published as it begins.
  *
  * The outcome is computed by runRound and is not published until the fight
@@ -236,10 +256,16 @@ export async function playArenaRound(ctx: ServerContext, store: ArenaStore, next
   // The daily budget is enforced here rather than at the button, because the
   // button is advice and this is the only writer. Over budget, the round
   // still plays: it just plays on instinct, which costs nothing.
-  const wanted = pulledBy !== null || scheduledReasoningOn(flow.servScheduledFile);
   const budget = budgetState(flow.store.all(), readPullSettings(flow.pullSettingsFile ?? "").dailyBudgetCents, Date.now());
-  const reasoning = wanted && budget.withinBudget;
-  if (wanted && !reasoning) log.info("arena round on instinct, the day's reasoning budget is spent", { spentMicroCents: budget.spentMicroCents, budgetMicroCents: budget.budgetMicroCents });
+  const reasoning = roundReasons({
+    pulled: pulledBy !== null,
+    scheduledReasoning: scheduledReasoningOn(flow.servScheduledFile),
+    withinBudget: budget.withinBudget,
+    switchOn: servReasoningOn(flow.servSwitchFile),
+  });
+  if (pulledBy !== null && !reasoning) {
+    log.info("arena round on instinct", { spentMicroCents: budget.spentMicroCents, budgetMicroCents: budget.budgetMicroCents, switchOn: servReasoningOn(flow.servSwitchFile) });
+  }
   const link = (hash: string | null | undefined): string | null => (ctx.chain.settles && hash ? basescanTx(ctx.chain.network, hash) : null);
 
   let round: ArenaRound = {
