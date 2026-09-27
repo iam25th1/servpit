@@ -803,7 +803,7 @@ function Board({ board, onClose, onPage }: { board: BoardShape; onClose: () => v
             </li>
           ))}
         </ul>
-        {board.total === 0 && <p className={styles.sideNote}>Nobody has scored yet. Call the next round to be the first.</p>}
+        {board.total === 0 && <p className={styles.sideNote}>Nobody has scored yet. Predict the next round to be the first.</p>}
         {board.you && !board.rows.some((row) => row.handle === board.you?.handle) && (
           <p className={styles.sideNote}>
             You have {board.you.points} points: {board.you.readsRight ?? 0} of {board.you.reads ?? 0} calls right, {board.you.correct} of {board.you.picks} backs won.
@@ -1079,7 +1079,7 @@ function Lineup({
 /** A viewer's call beside an agent's answer: what they said, and whether it held. */
 function CallMark({ call }: { call: ReturnType<typeof seatCall> }) {
   if (!call) return null;
-  const said = call.call ? "you called in" : "you called out";
+  const said = call.call ? "you said fights" : "you said sits out";
   if (call.right === null) return <span className={styles.callMarkWaiting}>{said}</span>;
   return <span className={call.right ? styles.callMarkRight : styles.callMarkWrong}>{call.right ? `${said}, right` : `${said}, wrong`}</span>;
 }
@@ -1370,13 +1370,13 @@ function Resting({
               <Button onClick={lever.onPull} scale={2} disabled={!lever.canPull}>
                 {lever.action}
               </Button>
-              <p className={styles.leverLine}>{lever.said ?? lever.reasoning}</p>
-              {lever.pulls && <p className={styles.leverLine}>{lever.pulls}</p>}
-              {lever.blocked && (
-                <p className={styles.leverLine} role="status">
-                  {lever.blocked}
-                </p>
-              )}
+              {/* One paragraph rather than three: the card shares a 720 stage
+                  with Marrow, and three short lines cost Marrow its last row. */}
+              <p className={styles.leverLine}>
+                {lever.said ?? lever.reasoning}
+                {lever.pulls && ` ${lever.pulls}`}
+                {lever.blocked && <span role="status">{` ${lever.blocked}`}</span>}
+              </p>
             </div>
           )}
           <div className={styles.restActions} data-rest-row="">
@@ -1444,7 +1444,7 @@ export function lastRoundLine(run: RunShape, names: Record<string, string>): str
 }
 
 /**
- * The game a visitor plays between rounds: call each agent in or out.
+ * The game a visitor plays between rounds: predict which agents fight.
  *
  * Every seat, with what a visitor needs to read it by: how it tends to play,
  * what it holds, what it owes and what it did last round. The calls lock the
@@ -1461,8 +1461,8 @@ function CallPanel({ calls }: { calls: CallsShape }) {
 
   return (
     <NinePatch sprite="bg" className={styles.restCalls} data-anim="calls">
-      <h2 className={styles.sideHead}>Call the next round</h2>
-      <p className={styles.sideNote}>Will each agent buy a seat, or hold? Call it before the round starts.</p>
+      <h2 className={styles.sideHead}>Predict who fights next</h2>
+      <p className={styles.sideNote}>Before every round each agent decides: pay its stake and fight, or sit out and keep its chips. Guess what each one will do. Points only, no money, and the agents never see your guesses.</p>
       <ul ref={listRef} className={styles.callList}>
         {calls.seats.map((seat) => {
           const call = calls.draft[seat.agentId];
@@ -1477,12 +1477,12 @@ function CallPanel({ calls }: { calls: CallsShape }) {
                 </span>
                 <span className={styles.callStyle}>{styleLine(seat.strategy)}</span>
               </div>
-              <div className={styles.callPick} role="group" aria-label={`${seat.name}, in or out`}>
-                <Toggle pressed={call === true} onPress={() => calls.onCall(seat.agentId, true)} disabled={!calls.open} aria-label={`${seat.name} buys in`}>
-                  In
+              <div className={styles.callPick} role="group" aria-label={`${seat.name}: fights or sits out`}>
+                <Toggle pressed={call === true} onPress={() => calls.onCall(seat.agentId, true)} disabled={!calls.open} aria-label={`${seat.name} fights`}>
+                  Fights
                 </Toggle>
-                <Toggle pressed={call === false} onPress={() => calls.onCall(seat.agentId, false)} disabled={!calls.open} aria-label={`${seat.name} holds`}>
-                  Out
+                <Toggle pressed={call === false} onPress={() => calls.onCall(seat.agentId, false)} disabled={!calls.open} aria-label={`${seat.name} sits out`}>
+                  Sits out
                 </Toggle>
               </div>
             </li>
@@ -1966,7 +1966,7 @@ export function GameShell(props: GameShellProps) {
       {/* The stage is always mounted so the canvases exist before the player
           reaches them; the engine builds against them during boot. Only its
           visibility changes. */}
-      <div className={showStage ? styles.playfield : styles.offstage} aria-hidden={!showStage}>
+      <div className={showStage ? styles.playfield : styles.offstage} aria-hidden={!showStage} data-playfield>
           <div className={styles.cabinet}>
             <NinePatch sprite="panelAlt" data-anim="cabinet" style={{ padding: "var(--space-base)", position: "relative" }}>
               <SlotCanvas canvasRef={slotCanvasRef} hidden={state.screen === "arena"} probeSymbol={props.probeSymbol} labelFor={fighterLabel} fitToWidth={layout !== "desktop"} />

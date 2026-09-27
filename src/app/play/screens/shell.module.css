@@ -1249,6 +1249,12 @@ a.transferHash {
   gap: var(--space-wide);
   min-height: 0;
   flex: none;
+  /* A card with a fighter, a record and a read on it, above Marrow with a
+     book of loans, can be taller than the stage. It used to be cut off at the
+     bottom, Marrow with it. Now the column scrolls instead, and only then. */
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--bone-dim, #8a8170) transparent;
 }
 
 /* Under the card and the same width as it, so the block has two straight

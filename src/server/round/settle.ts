@@ -240,7 +240,7 @@ async function settleRound(ctx: FlowContext, plan: RoundPlan, progress: RunProgr
       const balanceWei = settledBalances.get(walletId) ?? 0n;
 
       const trigger: WreckTrigger | null =
-        totalOwed(owed) > ceilingWei ? "debt above the ceiling" : denied.has(walletId) && balanceWei < plan.stakeWei ? "broke and denied credit" : null;
+        totalOwed(owed) > ceilingWei ? "debt above the ceiling" : denied.has(walletId) && balanceWei < plan.stakeWei + ctx.chain.gasReserveWei ? "broke and denied credit" : null;
       if (trigger === null) continue;
 
       // The bank takes what is there and writes off the rest. It can never

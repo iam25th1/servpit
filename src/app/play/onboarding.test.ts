@@ -50,7 +50,7 @@ describe("what a first time visitor is told", () => {
   it("tells a viewer the game they play, where there is one", () => {
     const arena = onboardingScreens(true).flatMap((s) => s.lines).join(" ");
     const lever = onboardingScreens(false).flatMap((s) => s.lines).join(" ");
-    expect(arena).toMatch(/call each agent in or out/i);
+    expect(arena).toMatch(/predict which agents will pay to fight/i);
     expect(arena).toMatch(/double when SERV made the decision/);
     expect(lever).not.toMatch(/call each agent/i);
   });
