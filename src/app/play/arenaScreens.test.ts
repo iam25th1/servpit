@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fightOffsetMs, phaseMark, pulledLine, reasoningLine, secondsUntil, watchDecisions, watchEntries, watchOccupants, watchState, type ArenaFeedRound, type ArenaFeedView } from "./arenaScreens";
+import { fightOffsetMs, phaseMark, pulledLine, reasoningLine, reasoningTag, secondsUntil, servLine, watchDecisions, watchEntries, watchOccupants, watchState, type ArenaFeedRound, type ArenaFeedView } from "./arenaScreens";
 import type { ArenaPhase } from "@/server/arena/state";
 
 const AT = "2026-09-22T00:00:00.000Z";
@@ -249,5 +249,24 @@ describe("reasoningLine with three sources", () => {
 
   it("still says instinct when that is what it was", () => {
     expect(reasoningLine(decided(["heuristic", "heuristic"]), true)).toBe("Agents ran on instinct last round.");
+  });
+});
+
+describe("what SERV did, in the bar and on the result", () => {
+  it("tags the round in a few words, counted from the same decisions as the sentence", () => {
+    expect(reasoningTag(round("deciding"))).toBe("1 of 2 reasoned by SERV");
+    expect(reasoningTag(round("deciding", { decisions: [] }))).toBeNull();
+    const instinct = round("deciding").decisions.map((d) => ({ ...d, source: "heuristic" }));
+    expect(reasoningTag(round("deciding", { decisions: instinct }))).toBe("on instinct");
+  });
+
+  it("counts the lender's reasoned answers with the agents'", () => {
+    const loan = { agentId: "blaze", name: "Vex", asked: 10, amount: 10, rateBps: 2500, reason: "Fine.", source: "serv" };
+    expect(servLine(round("result", { loans: [loan] }))).toBe("SERV Reasoning decided for 1 of 2 agents and Marrow once this round.");
+  });
+
+  it("says a round that never asked the model ran on instinct, and how to get one that does", () => {
+    const instinct = round("result").decisions.map((d) => ({ ...d, source: "heuristic" }));
+    expect(servLine(round("result", { decisions: instinct }))).toBe("An instinct round: no SERV calls. A pulled round reasons.");
   });
 });

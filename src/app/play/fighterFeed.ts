@@ -2,9 +2,10 @@
 
 // A fighter of your own, from the viewer's side.
 //
-// Asked for when a handle exists and again after a claim, and nothing else:
-// a claim changes on a person's own action rather than on the pit's clock, so
-// there is no poll here and no timer in this file.
+// Asked for when a handle exists, after a claim, and whenever the caller says
+// something worth asking again about has happened, which is a round reaching
+// its result. A claim changes on a person's own action rather than on the
+// pit's clock, so there is no poll here and no timer in this file.
 
 import { useCallback, useEffect, useState } from "react";
 
@@ -40,7 +41,7 @@ export interface FighterFeed {
   claim: (name: string, face: string) => Promise<string | null>;
 }
 
-export function useFighterFeed(enabled: boolean, handle: string | null, token: string): FighterFeed {
+export function useFighterFeed(enabled: boolean, handle: string | null, token: string, refresh = ""): FighterFeed {
   const [view, setView] = useState<FighterView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [claiming, setClaiming] = useState(false);
@@ -62,7 +63,7 @@ export function useFighterFeed(enabled: boolean, handle: string | null, token: s
     return () => {
       alive = false;
     };
-  }, [enabled, handle, token]);
+  }, [enabled, handle, token, refresh]);
 
   const claim = useCallback(
     async (name: string, face: string): Promise<string | null> => {

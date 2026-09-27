@@ -151,7 +151,9 @@ describe("heuristicDecision", () => {
     const a = heuristicDecision(snapshot(), round);
     expect(heuristicDecision(snapshot(), round)).toEqual(a);
     expect(a.stake).toBe(a.enter ? 1_000 : 0);
-    expect(a.reason).toMatch(/heuristic/i);
+    // In the agent's voice, like a reasoned answer. What says it came from the
+    // fixed rule is its source, which the screen prints beside it.
+    expect(a.reason).toMatch(/^Gut says (go|hold)\./);
   });
 
   it("never enters when the balance is below the minimum multiple", () => {
@@ -228,7 +230,7 @@ describe("decideForAgents", () => {
     const decision = out.decisions[0]!;
     expect(decision.source).toBe("learned");
     expect(decision.decision.enter).toBe(true);
-    expect(decision.decision.reason).toMatch(/learned: in 6 reasoned rounds/);
+    expect(decision.decision.reason).toMatch(/SERV (had me in|sat me out in) \d of 6 spots like this/);
     expect(decision.evidence).toMatchObject({ matches: 6, entered: 6 });
     // And it cost nothing: no client, no call, no meter.
     expect(out.servCalls).toBe(0);

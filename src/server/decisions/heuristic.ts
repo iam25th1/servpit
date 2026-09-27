@@ -17,8 +17,11 @@ export function heuristicDecision(snapshot: AgentSnapshot, round: RoundContext):
   // stake on screen. It was never the number that moved, because the round's
   // own stake is what settles, which is why it survived this long.
   const stake = toChips(snapshot.stakeWei);
+  // Said in the agent's own voice, like a reasoned answer, because this line
+  // goes in the same speech box. The label beside it is what says it came
+  // from the fixed rule rather than a model, so the words do not have to.
   if (snapshot.balanceWei < snapshot.stakeWei * BigInt(p.minBankrollMultiple)) {
-    return { enter: false, stake: 0, reason: `heuristic: balance ${toChips(snapshot.balanceWei)} chips is below the ${p.minBankrollMultiple}x floor this posture keeps` };
+    return { enter: false, stake: 0, reason: `Only ${toChips(snapshot.balanceWei)} chips, under the ${p.minBankrollMultiple} seat cushion I keep. Holding.` };
   }
   const last = snapshot.recentOutcomes[snapshot.recentOutcomes.length - 1];
   let chance = p.baseEnterChance;
@@ -33,8 +36,8 @@ export function heuristicDecision(snapshot: AgentSnapshot, round: RoundContext):
     enter,
     stake: enter ? stake : 0,
     reason: enter
-      ? `heuristic: ${p.strategy} posture commits at ${chance} percent with ${round.participants} participants`
-      : `heuristic: ${p.strategy} posture holds at ${chance} percent this period`,
+      ? `Gut says go. I take about ${chance} in 100 rounds like this one.`
+      : `Gut says hold. I only take about ${chance} in 100 rounds like this one.`,
   };
 }
 

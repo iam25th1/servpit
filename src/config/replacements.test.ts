@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { NAMED_AGENTS } from "./agents";
-import { ORIGINAL_FACES, REPLACEMENTS, arrivalFor, chooseOccupant, faceFor, profileFor, replacementById } from "./replacements";
+import { CLAIMABLE_FACES } from "./fighters";
+import { ORIGINAL_FACES, ORIGINAL_FACE_OF, REPLACEMENTS, arrivalFor, chooseOccupant, faceFor, profileFor, replacementById, seatFace } from "./replacements";
 
 describe("the people who take an emptied seat", () => {
   it("gives every one of them a line to say when it sits down", () => {
@@ -92,5 +93,17 @@ describe("the people who take an emptied seat", () => {
     const seat = NAMED_AGENTS[0].id;
     expect(profileFor(seat, `${seat}-1`, "vex").name).toBe(NAMED_AGENTS[0].name);
     expect(faceFor(seat, `${seat}-1`, "vex")).toBeNull();
+  });
+});
+
+describe("the originals' faces", () => {
+  it("gives each of the six its own face, which nobody can claim", () => {
+    const faces = NAMED_AGENTS.map((agent) => ORIGINAL_FACE_OF[agent.id]);
+    expect(faces.every((face) => typeof face === "string")).toBe(true);
+    expect(new Set(faces).size).toBe(NAMED_AGENTS.length);
+    for (const face of faces) expect(CLAIMABLE_FACES).not.toContain(face);
+    // A replacement's own face wins over the original's.
+    expect(seatFace("flint", "Eskimo")).toBe("Eskimo");
+    expect(seatFace("flint", null)).toBe("Caveman");
   });
 });

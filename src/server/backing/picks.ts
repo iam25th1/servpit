@@ -1,5 +1,10 @@
 // Who backed whom, written by everybody at once.
 //
+// It also holds each visitor's calls on the next round: which agents buy in
+// and which hold. Calls are the same kind of write as a pick, from the same
+// visitors under the same handles, so they share this log and its claims
+// rather than starting a second log that could disagree about who owns a name.
+//
 // Every other store in this project has one writer: the worker, or the settle
 // path behind a lock. Picks are the opposite. A round's backing window is one
 // moment that many viewers act in at the same time, and each of them is a
@@ -42,7 +47,37 @@ interface PickLine {
   at: string;
 }
 
-type Line = ClaimLine | PickLine | { k: "head"; network: string };
+/**
+ * One viewer's calls on the next round: which agents buy in and which hold.
+ *
+ * Filed under the round the pit had on file when they were made, which is the
+ * round before the one they are about. The round being called has no id until
+ * it starts, and it is locked the moment it does, so the round before it is
+ * the only name the calls can be given that nobody could have chosen after
+ * seeing the answer.
+ */
+interface CallLine {
+  k: "call";
+  after: string;
+  handle: string;
+  calls: Record<string, boolean>;
+  at: string;
+}
+
+type Line = ClaimLine | PickLine | CallLine | { k: "head"; network: string };
+
+/** A set of calls as the log kept it, with when it was made. */
+interface HeldCall {
+  handle: string;
+  calls: Record<string, boolean>;
+  at: number;
+}
+
+/** True for an object of seat ids to true or false, which is all a call line may carry. */
+function isCalls(value: unknown): value is Record<string, boolean> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  return Object.values(value).every((call) => typeof call === "boolean");
+}
 
 /** What happened to a pick, in the caller's words rather than an exception. */
 export type RecordOutcome = "recorded" | "handle taken";
@@ -56,6 +91,8 @@ export class PickStore {
   private stamp: string | null = null;
   private claims = new Map<string, string>();
   private picks = new Map<string, Map<string, string>>();
+  /** Every call line, by the round it was made after, in the order written. */
+  private calls = new Map<string, HeldCall[]>();
 
   constructor(
     private readonly file: string,
@@ -84,6 +121,47 @@ export class PickStore {
     lines.push({ k: "pick", roundId, handle, agentId, at });
     this.append(lines);
     return "recorded";
+  }
+
+  /**
+   * Appends a visitor's calls on the next round, and the claim on the handle
+   * if it is a new one.
+   *
+   * The same rule as a pick and nothing more: a handle belongs to the token
+   * that claimed it. Whether calls are being taken right now is the route's
+   * business, and the settle's, which only counts lines made before the round
+   * they are about had started.
+   */
+  recordCalls(after: string, handle: string, tokenHash: string, calls: Record<string, boolean>): RecordOutcome {
+    const held = this.owner(handle);
+    if (held !== null && held !== tokenHash) return "handle taken";
+    const at = new Date().toISOString();
+    const lines: Line[] = held === null ? [{ k: "claim", handle, tokenHash, at }] : [];
+    lines.push({ k: "call", after, handle, calls, at });
+    this.append(lines);
+    return "recorded";
+  }
+
+  /**
+   * Every visitor's calls filed after this round, the latest set each made.
+   *
+   * With a cutoff, only lines made at or before it count: the settle passes
+   * the moment the called round started, so a line that landed after the
+   * agents began deciding can never be scored, whatever a route let through.
+   */
+  callsAfter(after: string, until?: number): Map<string, Record<string, boolean>> {
+    this.reload();
+    const latest = new Map<string, Record<string, boolean>>();
+    for (const line of this.calls.get(after) ?? []) {
+      if (until !== undefined && line.at > until) continue;
+      latest.set(line.handle, { ...line.calls });
+    }
+    return latest;
+  }
+
+  /** This handle's latest calls filed after this round, or null. */
+  callsOf(after: string, handle: string, until?: number): Record<string, boolean> | null {
+    return this.callsAfter(after, until).get(handle) ?? null;
   }
 
   /** What this handle backed in this round, or null. */
@@ -131,6 +209,7 @@ export class PickStore {
     this.stamp = stamp;
     this.claims = new Map();
     this.picks = new Map();
+    this.calls = new Map();
     if (stamp === "") return;
 
     for (const text of readFileSync(this.file, "utf8").split("\n")) {
@@ -153,6 +232,14 @@ export class PickStore {
         // window is open. The route is what stops one arriving after it shuts.
         round.set(line.handle, line.agentId);
         this.picks.set(line.roundId, round);
+      } else if (line.k === "call") {
+        // Checked as it is read, because the settle trusts what comes back:
+        // a line with anything but true or false in it is skipped whole.
+        const at = Date.parse(line.at);
+        if (typeof line.after !== "string" || typeof line.handle !== "string" || !isCalls(line.calls) || !Number.isFinite(at)) continue;
+        const filed = this.calls.get(line.after) ?? [];
+        filed.push({ handle: line.handle, calls: line.calls, at });
+        this.calls.set(line.after, filed);
       }
     }
   }

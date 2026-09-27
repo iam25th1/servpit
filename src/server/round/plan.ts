@@ -43,6 +43,14 @@ export const UNREACHABLE_REASON = "Couldn't reach its wallet, sitting this one o
 export const TAPPED_OUT = "I'm tapped out. I need a loan.";
 
 /**
+ * What an agent says when the fixed rule would have held it under its floor.
+ *
+ * Fixed for the same reason as TAPPED_OUT: nothing was reasoned, so nothing
+ * is narrated.
+ */
+export const BELOW_FLOOR = "Running low, but sitting out won't fix that. In at the minimum.";
+
+/**
  * Who is sitting in each seat, before anybody has decided anything.
  *
  * The lineup draws a row per seat from the moment a round starts, and until
@@ -76,7 +84,7 @@ export async function planRound(
   ctx: FlowContext,
   seed: string,
   onDecided?: (decision: AgentDecision) => void,
-  onLoan?: (decision: BankDecision, name: string, bank: BankSnapshot) => void,
+  onLoan?: (decision: BankDecision, name: string, bank: BankSnapshot, tappedOut: boolean) => void,
   options: PlanOptions = {},
 ): Promise<RoundPlan> {
   if (!SEED.test(seed)) throw new RangeError(`seed must match ${SEED}`);
@@ -200,7 +208,25 @@ export async function planRound(
   // inside the loop so every agent in one round learns from the same history,
   // and passed rather than reached for so a context without a store keeps the
   // fixed rule.
-  const run = await decideForAgents({ client: serv, meter: ctx.meter, history: serv ? undefined : ctx.store.all() }, asked, context, onDecided);
+  // The fixed rule holds any agent below its own floor, and holds it every
+  // round: balances only move when somebody plays, so a pit where every agent
+  // had drifted under its floor rested on instinct forever. Under the floor
+  // is not broke. The agent goes in at the minimum, and the bank is asked for
+  // whatever it is short, exactly as it is for a tapped out one. Only the
+  // floor is overridden: a hold the dice decided, or one a model or the
+  // learner chose, stands.
+  const liftFloor = (d: AgentDecision): AgentDecision => {
+    if (d.source !== "heuristic" || d.decision.enter) return d;
+    const s = asked.find((a) => a.profile.id === d.agentId);
+    if (!s || s.balanceWei >= s.stakeWei * BigInt(s.profile.minBankrollMultiple)) return d;
+    return {
+      ...d,
+      decision: { enter: true, stake: toChips(stakeWei), reason: BELOW_FLOOR },
+      rejection: d.rejection ? `${d.rejection}; below its floor, so it went in at the minimum rather than holding` : "below its floor, so it went in at the minimum rather than holding",
+    };
+  };
+  const run = await decideForAgents({ client: serv, meter: ctx.meter, history: serv ? undefined : ctx.store.all() }, asked, context, onDecided && ((d) => onDecided(liftFloor(d))));
+  run.decisions = run.decisions.map(liftFloor);
 
   const tappedDecisions: AgentDecision[] = tapped.map((s) => ({
     agentId: s.profile.id,
@@ -320,7 +346,7 @@ export async function planRound(
           // With the answer, what the lender is holding as it gives it. The
           // panel is drawn from this, and without it a viewer watching the
           // banking phase sees the answers with nobody giving them.
-          onLoan?.(answer, snapshot.profile.name, { treasuryWei, book: bookNow() });
+          onLoan?.(answer, snapshot.profile.name, { treasuryWei, book: bookNow() }, tappedOutHere);
           if (answer.decision.approve && answer.decision.amountChips > 0) {
             lentWei = toWei(answer.decision.amountChips);
             treasuryWei -= lentWei;

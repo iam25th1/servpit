@@ -163,7 +163,7 @@ describe("the viewer's own fighter on screen", () => {
       }),
     );
     expect(document.body.textContent).toContain("9 rounds, 1 win, best 1st");
-    fireEvent.click(screen.getByRole("button", { name: "The fighters" }));
+    fireEvent.click(screen.getByRole("button", { name: "Fighters" }));
     expect(onShowFighters).toHaveBeenCalledTimes(1);
   });
 

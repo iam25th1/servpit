@@ -1,8 +1,9 @@
 // Who has called the most rounds right.
 //
-// Points, picks, correct picks and the current streak, per handle. Nothing
-// here is money, redeemable or transferable, and a handle is unverified: one
-// person can hold several, which the README says out loud.
+// Points, picks, correct picks, the current streak and how well each handle
+// reads the agents, per handle. Nothing here is money, redeemable or
+// transferable, and a handle is unverified: one person can hold several,
+// which the README says out loud.
 //
 // One writer, the worker, settling a round once it is over, so this is an
 // ordinary store rather than the append only log the picks themselves need.
@@ -16,14 +17,37 @@ import { join } from "node:path";
 
 export interface BoardRow {
   handle: string;
+  /** Everything this handle has scored, from backing and from reading the agents. */
   points: number;
+  /** Rounds backed, and how many of them were called right. */
   picks: number;
   correct: number;
   /** Correct calls in a row, as of the last round this handle backed. */
   streak: number;
   /** The longest that streak has ever been. */
   best: number;
+  /** Agents called in or out, across every round this handle read. */
+  reads: number;
+  /** How many of those calls were right. */
+  readsRight: number;
+  /** Rounds where every agent was called and every call was right. */
+  perfect: number;
 }
+
+/** One visitor's read of one round, as the settle scores it. */
+export interface ReadScoreRow {
+  handle: string;
+  called: number;
+  right: number;
+  perfect: boolean;
+  points: number;
+}
+
+/** The key a round's reads are settled under, apart from its backing. */
+const readsKey = (roundId: string): string => `reads:${roundId}`;
+
+/** A row with nothing in it yet. */
+const emptyRow = (handle: string): BoardRow => ({ handle, points: 0, picks: 0, correct: 0, streak: 0, best: 0, reads: 0, readsRight: 0, perfect: 0 });
 
 export function leaderboardFile(dataDir: string, network: string): string {
   return join(dataDir, `leaderboard-${network}.json`);
@@ -54,7 +78,11 @@ export class LeaderboardStore {
 
   private load(body: Record<string, unknown> | null): void {
     const rows = Array.isArray(body?.rows) ? body.rows : [];
-    this.rowsByHandle = new Map(rows.filter(isRow).map((row) => [row.handle, { ...row, streak: row.streak ?? 0, best: row.best ?? 0 }]));
+    // Rows written before reads existed carry none of those fields, and read
+    // as a handle that has never called an agent.
+    this.rowsByHandle = new Map(
+      rows.filter(isRow).map((row) => [row.handle, { ...emptyRow(row.handle), ...row, streak: row.streak ?? 0, best: row.best ?? 0, reads: row.reads ?? 0, readsRight: row.readsRight ?? 0, perfect: row.perfect ?? 0 }]),
+    );
     const settled = Array.isArray(body?.settled) ? body.settled : [];
     this.settled = settled.filter((id): id is string => typeof id === "string");
   }
@@ -76,7 +104,7 @@ export class LeaderboardStore {
     this.sync.read();
     if (this.settled.includes(roundId)) return false;
     for (const score of scores) {
-      const row = this.rowsByHandle.get(score.handle) ?? { handle: score.handle, points: 0, picks: 0, correct: 0, streak: 0, best: 0 };
+      const row = this.rowsByHandle.get(score.handle) ?? emptyRow(score.handle);
       row.points += score.points;
       row.picks += 1;
       if (score.correct) {
@@ -93,15 +121,48 @@ export class LeaderboardStore {
     this.settled.push(roundId);
     // Only what a board is asked about: the last few hundred rounds is plenty
     // to keep a settle idempotent without the file growing without end.
-    if (this.settled.length > 500) this.settled = this.settled.slice(-500);
+    if (this.settled.length > 1000) this.settled = this.settled.slice(-1000);
     this.write();
     return true;
+  }
+
+  /**
+   * Adds a round's reads, once.
+   *
+   * Settled under a key of its own, so a round's backing and its reads are
+   * each applied exactly once however the two settles are ordered or repeated.
+   * A read never touches the backing streak: calling agents and calling a
+   * winner are two different judgements, and one must not end a run of the
+   * other.
+   */
+  applyReads(roundId: string, scores: readonly ReadScoreRow[]): boolean {
+    this.sync.read();
+    const key = readsKey(roundId);
+    if (this.settled.includes(key)) return false;
+    for (const score of scores) {
+      const row = this.rowsByHandle.get(score.handle) ?? emptyRow(score.handle);
+      row.points += score.points;
+      row.reads += score.called;
+      row.readsRight += score.right;
+      if (score.perfect) row.perfect += 1;
+      this.rowsByHandle.set(score.handle, row);
+    }
+    this.settled.push(key);
+    if (this.settled.length > 1000) this.settled = this.settled.slice(-1000);
+    this.write();
+    return true;
+  }
+
+  /** Whether this round's reads have already been scored onto the board. */
+  hasReads(roundId: string): boolean {
+    this.sync.read();
+    return this.settled.includes(readsKey(roundId));
   }
 
   /** Every row, best first, then by handle so the order never wobbles. */
   rows(): BoardRow[] {
     this.sync.read();
-    return [...this.rowsByHandle.values()].sort((a, b) => b.points - a.points || b.correct - a.correct || a.handle.localeCompare(b.handle));
+    return [...this.rowsByHandle.values()].sort((a, b) => b.points - a.points || b.readsRight - a.readsRight || b.correct - a.correct || a.handle.localeCompare(b.handle));
   }
 
   /** One page of it, counted from one. */

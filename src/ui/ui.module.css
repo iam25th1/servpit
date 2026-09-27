@@ -48,6 +48,14 @@
   cursor: default;
 }
 
+/* A toggle that is on. The pressed sprite alone is a mid brown close to the
+   disabled one, so a chosen switch could read as a dead one: an amber frame
+   says chosen, the same accent the face picker uses for a selection. */
+.toggleOn {
+  outline: 2px solid var(--amber);
+  outline-offset: 2px;
+}
+
 .button:focus-visible,
 .focusable:focus-visible {
   outline: 2px solid var(--amber);

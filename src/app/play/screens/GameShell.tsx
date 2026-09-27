@@ -11,6 +11,11 @@ import { useEffect, useRef, useState, type RefObject } from "react";
 import { GAME_MODES } from "@/config/modes";
 import { BankPanel, loanBeats, type BankShape, type LoanShape, type RefusalShape } from "./BankPanel";
 import { Button } from "@/ui/Button";
+import { Toggle } from "@/ui/Toggle";
+import { seatFace } from "@/config/replacements";
+import type { Calls } from "@/config/reads";
+import { CALL_TERMS, lastLine, seatCall, styleLine, type CallSeat } from "../calls";
+import { ordinal as ordinalOf } from "../myFighter";
 import { liveBadge, type BadgeTone } from "./liveBadge";
 import { Dialog } from "@/ui/Dialog";
 import { Meter } from "@/ui/Meter";
@@ -30,7 +35,7 @@ import { staggerIn } from "@/ui/transitions";
 import type { FlowState } from "../machine";
 import type { ArenaStanding } from "./arenaHud";
 import { swingMeters } from "./bankrollMeter";
-import { entrantLabel } from "./entrantLabel";
+import { entrantLabel, houseLabel } from "./entrantLabel";
 import { decidedCount, lineupRows, type DecidedShape, type OccupantShape } from "./lineupRows";
 import { secondsUntil } from "../arenaScreens";
 import { GRAVES_PER_PAGE, graveyardPage, type GraveShape } from "./graveyardRows";
@@ -83,7 +88,20 @@ function nextRoundLine(watching: WatchingShape, now: number): string {
   const seconds = secondsUntil(watching.nextRoundAt, now);
   if (seconds === null) return "The next round will start when the pit is ready.";
   if (seconds <= 0) return "The next round is starting.";
-  return `Next round in ${seconds === 1 ? "a second" : `${seconds} seconds`}.`;
+  return `Next round in ${countdown(seconds)}.`;
+}
+
+/**
+ * A wait as a person reads it.
+ *
+ * Seconds under a minute, and minutes and seconds past it, because "2873
+ * seconds" is a number nobody can hold and the default interval is an hour.
+ */
+export function countdown(seconds: number): string {
+  if (seconds < 60) return seconds === 1 ? "a second" : `${seconds} seconds`;
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  return `${minutes}:${String(rest).padStart(2, "0")}`;
 }
 
 /** Chips from wei, for a screen that has no round of its own to divide by. */
@@ -110,6 +128,8 @@ interface PlanDecision {
   reason: string;
   source: "serv" | "learned" | "heuristic";
   balanceWei: string;
+  /** A replacement's face. Null or absent for an original. */
+  face?: string | null;
 }
 
 interface PlanShape {
@@ -139,6 +159,12 @@ interface RunShape {
   winner: string;
   potWei: string;
   rakeWei: string;
+  /** What the winner was actually paid. Zero when a house seat won and the prize rolled over. */
+  payoutWei?: string;
+  /** What rolled into the next round's pot. */
+  nextRolloverWei?: string;
+  /** The character the winner fought as, which is the face a viewer saw win. */
+  winnerCharacter?: string | null;
   network: string;
   backend: string;
   /** True when the chain settles for real, so a hash is worth linking. */
@@ -165,7 +191,7 @@ export interface BackingShape {
   /** True while a pick would still be taken: the phase and the clock agree. */
   open: boolean;
   closesAt: string | null;
-  options: Array<{ agentId: string; name: string; face: string | null; characterId: string | null; tier: string | null; backers: number }>;
+  options: Array<{ agentId: string; name: string; face: string | null; characterId: string | null; tier: string | null; backers: number; stake?: number; source?: string }>;
   /** How many viewers have backed anybody in this round. */
   backers: number;
   /** The name this browser backs under, or null until one is chosen. */
@@ -178,13 +204,27 @@ export interface BackingShape {
   outcome: { pick: string; won: boolean; points: number } | null;
 }
 
+/** A row of the points board: backing and reading, one total. */
+export interface BoardRowShape {
+  handle: string;
+  points: number;
+  picks: number;
+  correct: number;
+  streak: number;
+  best: number;
+  /** Agents called, and called right. Absent on an older board. */
+  reads?: number;
+  readsRight?: number;
+  perfect?: number;
+}
+
 /** A page of the points board. */
 export interface BoardShape {
-  rows: Array<{ handle: string; points: number; picks: number; correct: number; streak: number; best: number }>;
+  rows: BoardRowShape[];
   page: number;
   pages: number;
   total: number;
-  you: { handle: string; points: number; picks: number; correct: number; streak: number; best: number } | null;
+  you: BoardRowShape | null;
 }
 
 /** The spectator's view of a pit that runs itself. */
@@ -222,11 +262,33 @@ export interface FighterShape {
   freeFaces: string[];
   /** What the pit said about the last attempt, or null. */
   error: string | null;
+  /** What the pit said about this browser's fighter, once there is one. */
+  message?: string | null;
   /** True between asking and being answered. */
   claiming: boolean;
   /** False until a handle exists, because a claim is bound to one. */
   ready: boolean;
   onClaim: (name: string, face: string) => void;
+}
+
+/**
+ * Calling the agents, between rounds.
+ *
+ * Null where there are no calls, which is the lever flow. The seats are the
+ * finished round's: who sits in each one, what it holds and owes, and what it
+ * did, which is everything a visitor reads an agent by.
+ */
+export interface CallsShape {
+  seats: CallSeat[];
+  /** What this viewer has called on the next round. */
+  draft: Calls;
+  /** True while calls are being taken: between rounds, and not over a replay. */
+  open: boolean;
+  /** One line: saved, saving, what went wrong, or what to do next. */
+  status: string;
+  /** How many visitors have called the next round so far. */
+  callers: number;
+  onCall: (agentId: string, call: boolean) => void;
 }
 
 /** The lever, as the shell draws it. Every sentence is worked out in leverNote.ts. */
@@ -257,6 +319,10 @@ export interface WatchingShape {
   nextRoundAt: string | null;
   /** Whether this round's agents reasoned, in one sentence, or null. */
   reasoning: string | null;
+  /** The same in two or three words, for the top bar. */
+  reasoningTag?: string | null;
+  /** Who pulled the lever for this round, by handle, or null. */
+  pulledBy?: string | null;
   /** Who pulled the lever for this round, in one sentence, or null. */
   pulled?: string | null;
   /** How many reasoned rounds the pit has to learn from. */
@@ -344,6 +410,23 @@ export interface GameShellProps {
   /** The bed, which has its own switch: some people want the cues and not the loop. */
   musicOn?: boolean;
   onToggleMusic?: () => void;
+  /** Calling the next round, in arena mode. Null in the lever flow. */
+  calls?: CallsShape | null;
+  /** This viewer's calls on the round on screen, for the lineup to mark. */
+  roundCalls?: Calls | null;
+  /** How this viewer's read of the round on screen went, in a sentence, or null. */
+  readLine?: string | null;
+  /** Every name the round on screen knows, by entrant id. */
+  names?: Record<string, string>;
+  /** The claimed fighters in the round on screen, and which one is this viewer's. */
+  fighters?: Array<{ name: string; face: string; entrantId: string }>;
+  myEntrantId?: string | null;
+  /** True while the graveyard is open over a pit that runs itself. */
+  graveyardOpen?: boolean;
+  /** Wei one chip is worth, for the figures shown before a round has a result. */
+  weiPerChip?: string;
+  /** What SERV did in the round on screen, in a sentence, or null. */
+  servLine?: string | null;
 }
 
 
@@ -561,9 +644,11 @@ function FighterPanel({ fighter }: { fighter: FighterShape }) {
 
   if (fighter.mine) {
     return (
-      <p className={styles.fighterMine}>
+      <p className={styles.fighterMine} role="status">
         <img className={styles.faceset} src={facesetPath(fighter.mine.face)} alt="" width={38} height={38} />
-        {fighter.mine.name} is yours, and enters every round.
+        {/* The pit's own sentence, which knows whether this is a claim that
+            just landed or one that has been fighting for a week. */}
+        {fighter.message ?? `${fighter.mine.name} is yours, and enters every round.`}
       </p>
     );
   }
@@ -630,7 +715,7 @@ function Backing({ backing, handle, onBack }: { backing: BackingShape; handle: H
 
   return (
     <NinePatch sprite="bg" data-anim="backing">
-      <h2 className={styles.sideHead}>Back a fighter</h2>
+      <h2 className={styles.sideHead}>Back an agent to win</h2>
       <p className={styles.sideNote}>
         {backing.open ? (
           <Ticking
@@ -652,10 +737,15 @@ function Backing({ backing, handle, onBack }: { backing: BackingShape; handle: H
       <ul ref={listRef} className={styles.backList}>
         {backing.options.map((option) => (
           <li key={option.agentId} className={option.agentId === backing.pick ? `${styles.backRow} ${styles.backed}` : styles.backRow}>
-            <img className={styles.faceset} src={facesetPath(option.face ?? characterFor(option.agentId))} alt="" width={38} height={38} />
+            <img className={styles.faceset} src={facesetPath(seatFace(option.agentId, option.face))} alt="" width={38} height={38} />
             <div className={styles.backWho}>
               <span className={styles.backName}>{option.name}</span>
-              <span className={styles.backDraw}>{option.characterId ? `${option.characterId}, ${option.tier}` : "waiting on the draw"}</span>
+              {/* What it drew decides its odds; what it staked is what the
+                  reasoning decided. Both, because a pick is made on both. */}
+              <span className={styles.backDraw}>
+                {option.characterId ? `drew ${option.characterId}, ${option.tier}` : "waiting on the draw"}
+                {option.stake ? `, staked ${option.stake}` : ""}
+              </span>
             </div>
             <span className={styles.backCount}>{option.backers === 1 ? "1 backer" : `${option.backers} backers`}</span>
             {/* A handle before a pick: without one the server would refuse
@@ -694,9 +784,9 @@ function Board({ board, onClose, onPage }: { board: BoardShape; onClose: () => v
   return (
     <div ref={rootRef} className={styles.boardOver} data-anim="board">
       <NinePatch sprite="panelAlt" scale={uiScale} className={styles.boardCard}>
-        <h2 className={styles.graveTitle}>Who calls it right</h2>
+        <h2 className={styles.graveTitle}>Who reads the pit best</h2>
         <p className={styles.sideNote}>
-          {board.total === 1 ? "1 backer" : `${board.total} backers`}. Points, never money, and handles are unverified.
+          {board.total === 1 ? "1 player" : `${board.total} players`}. Points for calling the agents right and backing winners. Never money, and handles are unverified.
         </p>
         <ul className={styles.boardList}>
           {board.rows.map((row, i) => (
@@ -704,28 +794,30 @@ function Board({ board, onClose, onPage }: { board: BoardShape; onClose: () => v
               <span className={styles.boardRank}>{(board.page - 1) * 10 + i + 1}</span>
               <span className={styles.boardHandle}>{row.handle}</span>
               <span className={styles.boardStat}>
-                {row.correct} of {row.picks} called
+                {row.readsRight ?? 0} of {row.reads ?? 0} calls
               </span>
-              <span className={styles.boardStat}>{row.streak > 0 ? `${row.streak} in a row` : "no run"}</span>
+              <span className={styles.boardStat}>
+                {row.correct} of {row.picks} backs
+              </span>
               <span className={styles.boardPoints}>{row.points}</span>
             </li>
           ))}
         </ul>
-        {board.total === 0 && <p className={styles.sideNote}>Nobody has backed a round yet.</p>}
+        {board.total === 0 && <p className={styles.sideNote}>Nobody has scored yet. Call the next round to be the first.</p>}
         {board.you && !board.rows.some((row) => row.handle === board.you?.handle) && (
           <p className={styles.sideNote}>
-            You have {board.you.points} points from {board.you.picks} picks.
+            You have {board.you.points} points: {board.you.readsRight ?? 0} of {board.you.reads ?? 0} calls right, {board.you.correct} of {board.you.picks} backs won.
           </p>
         )}
         <div className={styles.restActions}>
           <Button onClick={() => onPage(board.page - 1)} scale={2} disabled={board.page <= 1}>
-            Back a page
+            Previous page
           </Button>
           <span className={styles.boardStat}>
             Page {board.page} of {board.pages}
           </span>
           <Button onClick={() => onPage(board.page + 1)} scale={2} disabled={board.page >= board.pages}>
-            On a page
+            Next page
           </Button>
           <Button onClick={onClose} scale={2}>
             Close
@@ -747,6 +839,8 @@ export interface FighterBoardRow {
   kills: number;
   streak: number;
   longest: number;
+  /** True while its seat is claimed, so it fights next round. Absent on an older board. */
+  inPit?: boolean;
 }
 
 export interface FighterBoardShape {
@@ -754,8 +848,12 @@ export interface FighterBoardShape {
   page: number;
   pages: number;
   total: number;
+  /** Seats claimed right now. Absent on an older board. */
+  claimed?: number;
   /** This viewer's own row, wherever it sits. */
   you: FighterBoardRow | null;
+  /** Set when the board could not be read, so an empty board is not taken for one. */
+  error?: string | null;
 }
 
 /**
@@ -789,28 +887,47 @@ function Fighters({
       <NinePatch sprite="panelAlt" scale={uiScale} className={styles.boardCard}>
         <h2 className={styles.graveTitle}>The fighters</h2>
         <p className={styles.sideNote}>
-          {board.total === 1 ? "1 fighter" : `${board.total} fighters`}. One seat in twenty four with nothing to decide, so a record here is mostly luck.
+          {board.claimed === undefined
+            ? `${board.total === 1 ? "1 fighter" : `${board.total} fighters`}.`
+            : `${board.claimed === 1 ? "1 fighter is" : `${board.claimed} fighters are`} in the pit.`}{" "}
+          A claimed fighter is a free house seat with your name on it. It enters every round, stakes nothing and decides nothing, so its record is mostly luck.
         </p>
         <ul className={styles.boardList}>
           {board.rows.map((row, i) => (
             <li key={row.handle} className={row.handle === board.you?.handle ? `${styles.boardRow} ${styles.boardYou}` : styles.boardRow} data-board-row="">
               <span className={styles.boardRank}>{(board.page - 1) * 10 + i + 1}</span>
               <img className={styles.faceset} src={facesetPath(row.face)} alt="" width={38} height={38} />
-              <span className={styles.boardHandle}>{row.name}</span>
-              <span className={styles.boardStat}>
-                {row.wins} of {row.rounds} won
+              <span className={styles.boardHandle}>
+                {row.name}
+                {row.inPit === false ? " (left the pit)" : ""}
               </span>
-              <span className={styles.boardStat}>best {row.best === 0 ? "none" : row.best}</span>
-              <span className={styles.boardStat}>{row.kills === 1 ? "1 kill" : `${row.kills} kills`}</span>
-              <span className={styles.boardPoints}>{row.streak > 0 ? `${row.streak} up` : "no run"}</span>
+              {row.rounds === 0 ? (
+                <span className={styles.boardStat}>first fight next round</span>
+              ) : (
+                <>
+                  <span className={styles.boardStat}>
+                    {row.wins} of {row.rounds} won
+                  </span>
+                  <span className={styles.boardStat}>best {row.best === 0 ? "none" : ordinalOf(row.best)}</span>
+                  <span className={styles.boardStat}>{row.kills === 1 ? "1 kill" : `${row.kills} kills`}</span>
+                </>
+              )}
+              <span className={styles.boardPoints}>{row.streak > 0 ? `${row.streak} up` : row.rounds === 0 ? "new" : "no run"}</span>
             </li>
           ))}
         </ul>
-        {board.total === 0 && <p className={styles.sideNote}>Nobody has claimed a fighter yet.</p>}
+        {board.error ? (
+          <p className={styles.sideNote} role="status">
+            {board.error}
+          </p>
+        ) : (
+          board.total === 0 && <p className={styles.sideNote}>Nobody has claimed a fighter yet. Be the first.</p>
+        )}
         {/* Claiming lives here rather than on the card: this is where a
             visitor is told what a fighter is, and the quiet screen has a
-            countdown and a lever on it already. */}
-        {fighter && !fighter.mine && <FighterPanel fighter={fighter} />}
+            countdown and a lever on it already. Once there is a fighter, the
+            pit's own sentence about it stands where the form was. */}
+        {fighter && <FighterPanel fighter={fighter} />}
         {board.you && !board.rows.some((row) => row.handle === board.you?.handle) && (
           <p className={styles.sideNote}>
             {board.you.name} has {board.you.wins} wins from {board.you.rounds} rounds.
@@ -818,13 +935,13 @@ function Fighters({
         )}
         <div className={styles.restActions}>
           <Button onClick={() => onPage(board.page - 1)} scale={2} disabled={board.page <= 1}>
-            Back a page
+            Previous page
           </Button>
           <span className={styles.boardStat}>
             Page {board.page} of {board.pages}
           </span>
           <Button onClick={() => onPage(board.page + 1)} scale={2} disabled={board.page >= board.pages}>
-            On a page
+            Next page
           </Button>
           <Button onClick={onClose} scale={2}>
             Close
@@ -841,12 +958,20 @@ function Lineup({
   occupants,
   error,
   onRetry,
+  calls,
+  fighters,
+  myEntrantId,
 }: {
   plan: PlanShape | null;
   decided: DecidedShape[];
   occupants: OccupantShape[];
   error: string | null;
   onRetry: () => void;
+  /** This viewer's calls on this round, marked against each answer as it lands. */
+  calls: Calls | null;
+  /** The claimed fighters in this round, which fight without deciding anything. */
+  fighters: Array<{ name: string; face: string; entrantId: string }>;
+  myEntrantId: string | null;
 }) {
   const { facesetPath } = useUiKit();
   const listRef = useRef<HTMLUListElement>(null);
@@ -854,6 +979,14 @@ function Lineup({
   // leave a row showing something the round did not use.
   const rows = lineupRows(plan ? plan.decisions : decided, occupants);
   const done = decidedCount(rows);
+  const entering = rows.filter((row) => row.state === "decided" && row.decision.enter).length;
+  // The note counts what is known. A plan with no answers in it yet read "0
+  // of 0 are in", and the house bots are not counted until the round settles.
+  const fill =
+    plan && plan.bots > 0
+      ? ` ${fighters.length > 0 ? `${fighters.length} claimed fighter${fighters.length === 1 ? "" : "s"} and ` : ""}${plan.bots} house bots fill the rest.`
+      : "";
+  const note = done < rows.length ? `The agents are deciding. ${done} of ${rows.length} have answered.` : `${entering} of ${rows.length} agents are in.${fill}`;
   useEffect(() => {
     // Only the row that just filled in. Restaggering the whole list on
     // every arrival would blink the five already on screen.
@@ -866,11 +999,7 @@ function Lineup({
   return (
     <NinePatch sprite="bg" data-anim="lineup">
       <h2 className={styles.sideHead}>Who is in</h2>
-      <p className={styles.sideNote}>
-        {plan
-          ? `${plan.decisions.filter((d) => d.enter).length} of ${plan.decisions.length} are in. ${plan.bots} house bots fill the rest.`
-          : `Your agents are checking their wallets. ${done} of ${rows.length} have answered.`}
-      </p>
+      <p className={styles.sideNote}>{note}</p>
       <ul ref={listRef} className={styles.lineup}>
         {rows.map((row) => (
           <li key={row.agentId} className={styles.agentRow} data-decided={row.state === "decided" ? "true" : "false"}>
@@ -878,13 +1007,10 @@ function Lineup({
                 rather than in state: these rows are rebuilt on every
                 parent render, and a tooltip held in state is torn down by
                 the rebuild the moment it is opened. */}
-            <div className={styles.agentPortrait} tabIndex={0} aria-label={fighterLabel(row.face ?? characterFor(row.agentId)) ?? row.name}>
-              <span className={styles.faceTip} aria-hidden="true">
-                {fighterLabel(row.face ?? characterFor(row.agentId)) ?? ""}
-              </span>
+            <div className={styles.agentPortrait} tabIndex={0} aria-label={row.name}>
               <img
                 className={`${styles.faceset} ${row.state === "waiting" ? styles.thinkingFace : ""}`}
-                src={facesetPath(row.face ?? characterFor(row.agentId))}
+                src={facesetPath(seatFace(row.agentId, row.face))}
                 alt=""
                 width={38}
                 height={38}
@@ -905,6 +1031,9 @@ function Lineup({
                   {row.state === "decided" && sourceLabel(row.decision.source) && (
                     <span className={styles[sourceLabel(row.decision.source)!.tone]}>{sourceLabel(row.decision.source)!.text}</span>
                   )}
+                  {/* The viewer's own call, marked the moment the answer
+                      lands. This is the reveal the calls are for. */}
+                  <CallMark call={seatCall(calls, row.agentId, row.state === "decided" ? row.decision : null)} />
                 </span>
                 {/* What it holds and what it owes, kept apart. A balance and
                     a debt read as one number if they share a colour, and an
@@ -927,9 +1056,32 @@ function Lineup({
           </li>
         ))}
       </ul>
+      {/* The claimed seats, which fight without deciding anything. Named
+          here so a visitor whose fighter is in can see it is in before the
+          fight, rather than only as a plate once it starts. */}
+      {fighters.length > 0 && (
+        <p className={styles.fighterLine}>
+          <span className={styles.fighterLineLabel}>Also fighting:</span>
+          {fighters.map((f) => (
+            <span key={f.entrantId} className={f.entrantId === myEntrantId ? `${styles.fighterChip} ${styles.fighterChipMine}` : styles.fighterChip}>
+              <img className={styles.fighterChipFace} src={facesetPath(f.face)} alt="" width={19} height={19} />
+              {f.name}
+              {f.entrantId === myEntrantId ? " (yours)" : ""}
+            </span>
+          ))}
+        </p>
+      )}
       {error && <Failure error={error} onRetry={onRetry} />}
     </NinePatch>
   );
+}
+
+/** A viewer's call beside an agent's answer: what they said, and whether it held. */
+function CallMark({ call }: { call: ReturnType<typeof seatCall> }) {
+  if (!call) return null;
+  const said = call.call ? "you called in" : "you called out";
+  if (call.right === null) return <span className={styles.callMarkWaiting}>{said}</span>;
+  return <span className={call.right ? styles.callMarkRight : styles.callMarkWrong}>{call.right ? `${said}, right` : `${said}, wrong`}</span>;
 }
 
 /**
@@ -985,7 +1137,7 @@ function BuyIns({ plan, entries, error, onRetry }: { plan: PlanShape | null; ent
           return (
             <li key={d.agentId} className={styles.agentRow} data-paid={entry ? "true" : "false"}>
               <div className={styles.agentPortrait}>
-                <img className={`${styles.faceset} ${entry ? "" : styles.thinkingFace}`} src={facesetPath(characterFor(d.agentId))} alt="" width={38} height={38} />
+                <img className={`${styles.faceset} ${entry ? "" : styles.thinkingFace}`} src={facesetPath(seatFace(d.agentId, d.face))} alt="" width={38} height={38} />
               </div>
               <div className={styles.agentBody}>
                 <span className={styles.agentLine}>
@@ -1016,7 +1168,25 @@ function BuyIns({ plan, entries, error, onRetry }: { plan: PlanShape | null; ent
   );
 }
 
-function ArenaHud({ run, arena, backing }: { run: RunShape | null; arena: ArenaStanding; backing: BackingShape | null }) {
+function ArenaHud({
+  run,
+  arena,
+  backing,
+  names,
+  paidInWei,
+  weiPerChip,
+  myEntrantId,
+}: {
+  run: RunShape | null;
+  arena: ArenaStanding;
+  backing: BackingShape | null;
+  /** Every name the round knows, so the feed reads Vex and House 13 rather than ids. */
+  names: Record<string, string>;
+  /** What the agents paid in, for a fight whose result is not in yet. */
+  paidInWei: bigint;
+  weiPerChip: string | undefined;
+  myEntrantId: string | null;
+}) {
   const feedRef = useRef<HTMLUListElement>(null);
   useEffect(() => {
     // Only the line that just arrived. Staggering the whole list on every
@@ -1043,15 +1213,25 @@ function ArenaHud({ run, arena, backing }: { run: RunShape | null; arena: ArenaS
       {backing?.pick && (
         <div className={styles.hudRow}>
           <span>Your pick</span>
-          <span className={styles.hudPick}>{backing.pick}</span>
+          <span className={styles.hudPick}>{entrantLabel(`agent-${backing.pick}`, [], names)}</span>
+        </div>
+      )}
+      {/* The viewer's own fighter, standing or out, so they can follow it
+          without finding one plate among twenty four sprites. */}
+      {myEntrantId && (
+        <div className={styles.hudRow}>
+          <span>Your fighter</span>
+          <span className={styles.hudPick}>{arena.downed.includes(myEntrantId) ? "out" : "standing"}</span>
         </div>
       )}
       <div className={styles.hudRow}>
-        <span>Pot</span>
+        <span>{run ? "Pot" : "Paid in"}</span>
         {/* Chips, like every other figure on screen. It printed raw wei,
             which is a fifteen digit number nobody can read at a glance,
-            and a replay puts this panel in front of a visitor. */}
-        <span className={styles.hudValue}>{run ? `${chipsOf(BigInt(run.potWei), run.weiPerChip)} chips` : "-"}</span>
+            and a replay puts this panel in front of a visitor. While the
+            fight plays the result is not in, so it says what the agents
+            paid rather than a dash. */}
+        <span className={styles.hudValue}>{run ? `${chipsOf(BigInt(run.potWei), run.weiPerChip)} chips` : `${chipsOf(paidInWei, weiPerChip)} chips`}</span>
       </div>
       {/* The feed grows as the pit empties. It used to render the final
           placement list in full the moment the replay started, which is
@@ -1059,7 +1239,7 @@ function ArenaHud({ run, arena, backing }: { run: RunShape | null; arena: ArenaS
       <ul ref={feedRef} className={styles.feed}>
         {arena.downed.slice(0, 12).map((id, i) => (
           <li key={id} className={styles.feedItem}>
-            {arena.standing + i + 1}. {entrantLabel(id, run?.agents ?? [])} is out
+            {arena.standing + i + 1}. {entrantLabel(id, run?.agents ?? [], names)} is out
           </li>
         ))}
       </ul>
@@ -1094,11 +1274,13 @@ function Resting({
   handle,
   fighter,
   careerLine,
+  calls,
+  readLine,
+  names,
   onShowFighters,
   onShowGraveyard,
   onReplay,
   onShowBoard,
-  backingSoon,
   bankEnabled,
 }: {
   watching: WatchingShape;
@@ -1109,16 +1291,19 @@ function Resting({
   fighter: FighterShape | null;
   /** This viewer's fighter's record, in a sentence, or null. */
   careerLine: string | null;
+  /** Calling the next round, or null where there is nothing to call. */
+  calls: CallsShape | null;
+  /** How this viewer read the round that just finished, or null. */
+  readLine: string | null;
+  names: Record<string, string>;
   onShowFighters?: () => void;
   onShowGraveyard: () => void;
   onReplay: () => void;
   onShowBoard: () => void;
-  /** True when the pit is going to open a window in the round it is about to play. */
-  backingSoon: boolean;
   bankEnabled: boolean;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
-  const winner = run ? entrantLabel(run.winner, run.agents) : null;
+  const last = run ? lastRoundLine(run, names) : null;
 
   useEffect(() => {
     const root = rootRef.current;
@@ -1133,106 +1318,185 @@ function Resting({
     if (watching.restReason) return "The pit is sitting this one out.";
     const seconds = secondsUntil(watching.nextRoundAt, now);
     if (seconds === null) return "The pit is between rounds.";
-    return seconds > 0 ? `Next round in ${seconds === 1 ? "a second" : `${seconds} seconds`}.` : "The next round is starting.";
+    return seconds > 0 ? `Next round in ${countdown(seconds)}.` : "The next round is starting.";
   };
 
   return (
     <div ref={rootRef} className={styles.resting} data-anim="resting">
-      <NinePatch sprite="panelAlt" scale={uiScale} className={styles.restCard} data-anim="rest-card">
-        <h2 className={styles.restHead} data-rest-row="">
-          <Ticking render={headline} />
-        </h2>
-        {watching.reasoning && (
-          <p className={styles.restReason} data-rest-row="">
-            {watching.reasoning}
-          </p>
-        )}
-        {watching.restReason && (
-          <p className={styles.restReason} data-rest-row="">
-            {watching.restReason}
-          </p>
-        )}
-        {/* What the pit has behind a round that is not reasoning. One line,
-            and a count: nothing here says how any of those rounds ended. */}
-        {recordLine(watching.reasonedRounds) && (
-          <p className={styles.restReason} data-rest-row="">
-            {recordLine(watching.reasonedRounds)}
-          </p>
-        )}
-        {winner && (
-          <p className={styles.restLast} data-rest-row="">
-            Last round: {winner} took {run ? chipsOf(BigInt(run.potWei) - BigInt(run.rakeWei), run.weiPerChip) : "0"} chips.
-          </p>
-        )}
-        {/* When to come back. The window opens inside the next round rather
-            than at a time of its own, so this says where in the round it
-            is instead of inventing a clock for it. */}
-        {backingSoon && (
-          <p className={styles.restLast} data-rest-row="">
-            Backing opens after the draw, once the next round is under way.
-          </p>
-        )}
-        {/* The handle, here as well as in the backing panel, because a
-            window is open for a few seconds a round and a visitor should not
-            have to wait for one to say who they are. */}
-        {handle && (
-          <div className={styles.restHandle} data-rest-row="">
-            <HandlePanel handle={handle} label="Pick a handle" />
-            {fighter?.mine && <FighterPanel fighter={fighter} />}
-            {careerLine && <p className={styles.handleNote}>{careerLine}</p>}
-          </div>
-        )}
-        {/* The lever. Above the other actions because it is the one thing on
-            this screen that changes what the pit does, and it says what it
-            will cost in pulls and whether the round reasons before it is
-            pulled rather than after. */}
-        {lever && (
-          <div className={styles.lever} data-rest-row="">
-            <Button onClick={lever.onPull} scale={2} disabled={!lever.canPull}>
-              {lever.action}
+      <div className={styles.restMain}>
+        <NinePatch sprite="panelAlt" scale={uiScale} className={styles.restCard} data-anim="rest-card">
+          <h2 className={styles.restHead} data-rest-row="">
+            <Ticking render={headline} />
+          </h2>
+          {watching.restReason && (
+            <p className={styles.restReason} data-rest-row="">
+              {watching.restReason}
+            </p>
+          )}
+          {/* What the last round did, with the money said the way it moved:
+              a house win pays nobody and rolls the pot on. */}
+          {last && (
+            <p className={styles.restLast} data-rest-row="">
+              {last}
+            </p>
+          )}
+          {watching.reasoning && (
+            <p className={styles.restReason} data-rest-row="">
+              {watching.reasoning}
+              {recordLine(watching.reasonedRounds) ? ` ${recordLine(watching.reasonedRounds)}` : ""}
+            </p>
+          )}
+          {readLine && (
+            <p className={styles.restLast} data-rest-row="">
+              {readLine}
+            </p>
+          )}
+          {/* The handle, here as well as in the backing panel, because a
+              window is open for a few seconds a round and a visitor should not
+              have to wait for one to say who they are. */}
+          {handle && (
+            <div className={styles.restHandle} data-rest-row="">
+              <HandlePanel handle={handle} label="Pick a handle" />
+              {/* The viewer's fighter in one line: its record once it has
+                  one, and the pit's own sentence about it before that. */}
+              {fighter?.mine && (careerLine ? <FighterPanel fighter={{ ...fighter, message: careerLine }} /> : <FighterPanel fighter={fighter} />)}
+            </div>
+          )}
+          {/* The lever. It is the one thing on this screen that changes what
+              the pit does: it starts the next round now, with every agent
+              reasoning through SERV, and it says so before it is pulled. */}
+          {lever && (
+            <div className={styles.lever} data-rest-row="">
+              <Button onClick={lever.onPull} scale={2} disabled={!lever.canPull}>
+                {lever.action}
+              </Button>
+              <p className={styles.leverLine}>{lever.said ?? lever.reasoning}</p>
+              {lever.pulls && <p className={styles.leverLine}>{lever.pulls}</p>}
+              {lever.blocked && (
+                <p className={styles.leverLine} role="status">
+                  {lever.blocked}
+                </p>
+              )}
+            </div>
+          )}
+          <div className={styles.restActions} data-rest-row="">
+            {watching.canReplay && (
+              <Button onClick={onReplay} scale={2}>
+                Watch the last round
+              </Button>
+            )}
+            <Button onClick={onShowBoard} scale={2}>
+              Leaderboard
             </Button>
-            <p className={styles.leverLine}>{lever.said ?? lever.reasoning}</p>
-            {lever.pulls && <p className={styles.leverLine}>{lever.pulls}</p>}
-            {lever.blocked && (
-              <p className={styles.leverLine} role="status">
-                {lever.blocked}
-              </p>
+            {onShowFighters && (
+              <Button onClick={onShowFighters} scale={2}>
+                Fighters
+              </Button>
+            )}
+            {bankEnabled && (
+              <Button onClick={onShowGraveyard} scale={2}>
+                Graveyard
+              </Button>
             )}
           </div>
-        )}
-        <div className={styles.restActions} data-rest-row="">
-          {/* With the other ways off this screen rather than on a row of its
-              own: the card is a countdown, a lever and the doors out, and
-              every extra row pushes the whole block off the stage. */}
-          {onShowFighters && (
-            <Button onClick={onShowFighters} scale={2}>
-              The fighters
-            </Button>
-          )}
-          {watching.canReplay && (
-            <Button onClick={onReplay} scale={2}>
-              Watch the last round
-            </Button>
-          )}
-          <Button onClick={onShowBoard} scale={2}>
-            The leaderboard
-          </Button>
-          {bankEnabled && (
-            <Button onClick={onShowGraveyard} scale={2}>
-              The graveyard
-            </Button>
-          )}
-        </div>
-      </NinePatch>
+        </NinePatch>
 
-      {/* The lender, where it always is, so a viewer between rounds can see
-          the treasury and the book without waiting for the next one. */}
-      {bank && (
-        <div className={styles.restBank} data-rest-row="">
-          <BankPanel bank={bank} loans={[]} refusals={[]} />
-        </div>
-      )}
+        {/* The lender, where it always is, so a viewer between rounds can see
+            the treasury and the book without waiting for the next one. */}
+        {bank && (
+          <div className={styles.restBank} data-rest-row="">
+            <BankPanel bank={bank} loans={[]} refusals={[]} />
+          </div>
+        )}
+      </div>
+
+      {calls && <CallPanel calls={calls} />}
     </div>
+  );
+}
+
+/**
+ * What the last round did, in one sentence.
+ *
+ * The prize is said the way it moved. A seat with a wallet that wins is paid
+ * what it earned; a house seat or a claimed fighter that wins is paid nothing,
+ * and the pot rolls into the next round. This used to say every winner "took"
+ * the whole pot, which a house bot never does.
+ */
+export function lastRoundLine(run: RunShape, names: Record<string, string>): string {
+  const winner = entrantLabel(run.winner, run.agents, names);
+  const per = run.weiPerChip ? BigInt(run.weiPerChip) : 1n;
+  const chips = (wei: string | undefined): bigint => {
+    try {
+      return wei ? BigInt(wei) / per : 0n;
+    } catch {
+      return 0n;
+    }
+  };
+  const paid = chips(run.payoutWei);
+  if (paid > 0n) return `Last round: ${winner} won ${paid} chips.`;
+  const rolled = chips(run.nextRolloverWei);
+  const house = houseLabel(run.winner) !== null || run.winner.startsWith("fighter-");
+  if (run.payoutWei === undefined) return `Last round: ${winner} won.`;
+  return house
+    ? `Last round: ${winner} won, so nobody was paid and ${rolled} chips roll into the next pot.`
+    : `Last round: ${winner} won. ${rolled} chips roll into the next pot.`;
+}
+
+/**
+ * The game a visitor plays between rounds: call each agent in or out.
+ *
+ * Every seat, with what a visitor needs to read it by: how it tends to play,
+ * what it holds, what it owes and what it did last round. The calls lock the
+ * moment the next round starts, and the lineup marks each one right or wrong
+ * as the answers land.
+ */
+function CallPanel({ calls }: { calls: CallsShape }) {
+  const { facesetPath } = useUiKit();
+  const listRef = useRef<HTMLUListElement>(null);
+  useEffect(() => {
+    const rows = listRef.current ? [...listRef.current.querySelectorAll<HTMLElement>("[data-call-row]")] : [];
+    void staggerIn(rows, { delay: 50 });
+  }, []);
+
+  return (
+    <NinePatch sprite="bg" className={styles.restCalls} data-anim="calls">
+      <h2 className={styles.sideHead}>Call the next round</h2>
+      <p className={styles.sideNote}>Will each agent buy a seat, or hold? Call it before the round starts.</p>
+      <ul ref={listRef} className={styles.callList}>
+        {calls.seats.map((seat) => {
+          const call = calls.draft[seat.agentId];
+          const stats = [seat.chips === null ? null : `${seat.chips} chips`, seat.owes > 0 ? `owes ${seat.owes}` : null, lastLine(seat.last)].filter(Boolean).join(", ");
+          return (
+            <li key={seat.agentId} className={styles.callRow} data-call-row="">
+              <img className={styles.faceset} src={facesetPath(seatFace(seat.agentId, seat.face))} alt="" width={38} height={38} />
+              <div className={styles.callWho}>
+                <span className={styles.callLine}>
+                  <span className={styles.callName}>{seat.name}</span>
+                  {stats && <span className={styles.callStats}>{stats}</span>}
+                </span>
+                <span className={styles.callStyle}>{styleLine(seat.strategy)}</span>
+              </div>
+              <div className={styles.callPick} role="group" aria-label={`${seat.name}, in or out`}>
+                <Toggle pressed={call === true} onPress={() => calls.onCall(seat.agentId, true)} disabled={!calls.open} aria-label={`${seat.name} buys in`}>
+                  In
+                </Toggle>
+                <Toggle pressed={call === false} onPress={() => calls.onCall(seat.agentId, false)} disabled={!calls.open} aria-label={`${seat.name} holds`}>
+                  Out
+                </Toggle>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+      <p className={styles.callStatus} role="status">
+        {calls.status}
+      </p>
+      <p className={styles.callTerms}>
+        {CALL_TERMS}
+        {calls.callers > 0 ? ` ${calls.callers === 1 ? "1 player has" : `${calls.callers} players have`} called this one.` : ""}
+      </p>
+    </NinePatch>
   );
 }
 
@@ -1413,6 +1677,9 @@ function ResultScreen({
   backing,
   watching,
   mine,
+  read,
+  names,
+  serv,
 }: {
   run: RunShape;
   onPlayAgain: () => void;
@@ -1420,6 +1687,11 @@ function ResultScreen({
   watching: WatchingShape | null;
   /** How this viewer's own fighter did, in a sentence, or null. */
   mine: string | null;
+  /** How this viewer's calls on the round went, in a sentence, or null. */
+  read: string | null;
+  names: Record<string, string>;
+  /** What SERV did in this round, in a sentence, or null. */
+  serv: string | null;
 }) {
   const { facesetPath, ui } = useUiKit();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -1435,7 +1707,11 @@ function ResultScreen({
   };
   const meters = swingMeters(run.agents.map((a) => ({ agentId: a.agentId, changeWei: BigInt(a.balanceAfterWei) - BigInt(a.balanceBeforeWei) })));
   const banked = run.transfers.some((t) => BANK_KINDS.has(t.kind));
-  const winnerName = entrantLabel(run.winner, run.agents);
+  const winnerName = entrantLabel(run.winner, run.agents, names);
+  // What the winner was paid, which is not the pot when a house seat won it.
+  const paid = run.payoutWei === undefined ? prize : BigInt(run.payoutWei);
+  const rolled = run.nextRolloverWei === undefined ? 0n : BigInt(run.nextRolloverWei);
+  const agentNames: Record<string, string> = Object.fromEntries(run.agents.map((a) => [a.agentId, a.name]));
 
   useEffect(() => {
     const root = rootRef.current;
@@ -1480,11 +1756,15 @@ function ResultScreen({
       ))}
 
       <NinePatch sprite="panelAlt" scale={uiScale} className={styles.winner} data-anim="winner-panel">
-        <img className={styles.winnerFace} src={facesetPath(winnerCharacter(run))} alt="" width={38 * 2} height={38 * 2} />
+        <img className={styles.winnerFace} src={facesetPath(run.winnerCharacter ?? winnerCharacter(run))} alt="" width={38 * 2} height={38 * 2} />
         <h2 className={`${styles.winnerName} ${styles.nameplate}`}>{winnerName}</h2>
-        <p className={styles.winnerPot}>{chips(prize)} chips taken</p>
-        {/* How the viewer's own fighter did, under the winner rather than
-            beside it: it is their round, not the round. */}
+        {/* What the winner was paid, which is nothing for a house seat: its
+            pot rolls on, and a line that said it "took" the pot was wrong. */}
+        <p className={styles.winnerPot}>{paid > 0n ? `${chips(paid)} chips won` : `No payout. ${chips(rolled)} chips roll on.`}</p>
+        {/* How the viewer read the agents, then how their own fighter did,
+            under the winner rather than beside it: it is their round, not
+            the round. */}
+        {read && <p className={styles.mineLine}>{read}</p>}
         {mine && <p className={styles.mineLine}>{mine}</p>}
         {/* What a winner owed comes off the top, before it is treated as
             keeping anything. Three figures rather than one net number,
@@ -1499,7 +1779,7 @@ function ResultScreen({
               {chips(BigInt(run.repayment.interestWei))} interest and {chips(BigInt(run.repayment.principalWei))} principal went straight back.
             </p>
             <p className={styles.garnishKept}>
-              It kept <strong>{chips(prize - BigInt(run.repayment.paidWei))}</strong> chips.
+              It kept <strong>{chips(paid - BigInt(run.repayment.paidWei))}</strong> chips.
             </p>
             {run.repayment.link && (
               <a className={styles.transferHash} href={run.repayment.link} target="_blank" rel="noreferrer">
@@ -1512,7 +1792,7 @@ function ResultScreen({
             are not money and cannot become money. */}
         {backing?.outcome && (
           <p className={backing.outcome.won ? styles.pickWon : styles.pickLost} data-anim="pick-result">
-            You backed {backing.outcome.pick}.{" "}
+            You backed {entrantLabel(`agent-${backing.outcome.pick}`, run.agents, names)}.{" "}
             {backing.outcome.won ? `It won, and that is ${backing.outcome.points} points.` : "It did not win, so no points this round."}
           </p>
         )}
@@ -1541,6 +1821,9 @@ function ResultScreen({
             </div>
           );
         })}
+        {/* What SERV did this round, under the money it moved: the agents
+            that reasoned, and the lender when it did. */}
+        {serv && <p className={styles.ledgerNote}>{serv}</p>}
       </NinePatch>
 
       {/* A round with a lender moves twice as many chips: an advance and a
@@ -1551,7 +1834,7 @@ function ResultScreen({
       <NinePatch sprite="bg" className={`${styles.transfers} ${banked ? styles.transfersBanked : ""}`} data-anim="transfers">
         <h2 className={styles.sideHead}>Transfers</h2>
         <ul className={styles.transferList}>
-          {transferRows(run.transfers).map((row) => (
+          {transferRows(run.transfers, agentNames).map((row) => (
             <li key={`${row.kind}-${row.label}`} className={styles.transferRow} data-transfer-row="">
               <span className={styles.transferLabel}>{row.label}</span>
               <span className={styles.transferAmount}>{chips(BigInt(row.amountWei))}</span>
@@ -1573,7 +1856,7 @@ function ResultScreen({
       <div className={styles.footer}>
         <p className={styles.notice}>
           {run.settles
-            ? `Settled on ${run.network}. Every hash above links to the block explorer.`
+            ? `Settled on ${networkName(run.network)}. Every hash above links to the block explorer.`
             : "This round ran off chain against the local test chain. The hashes above are local, so there is nothing to look up on a block explorer. Set the wallet keys to settle on Base Sepolia."}
         </p>
         {/* Watching a pit that runs itself, nothing a viewer presses starts
@@ -1605,6 +1888,20 @@ export function GameShell(props: GameShellProps) {
   // stage at a third. Every rule for it is scoped to this attribute.
   const layout = useLayoutMode();
   const showStage = state.screen === "lobby" || state.screen === "slot" || state.screen === "spinning" || state.screen === "arena";
+  const names = props.names ?? {};
+  const fighters = props.fighters ?? [];
+  const myEntrantId = props.myEntrantId ?? null;
+  // What the agents paid in so far, for a fight still playing: the result,
+  // and with it the pot, is not published until it is over.
+  const paidInWei = entries.reduce((total, entry) => {
+    try {
+      return total + BigInt(entry.amountWei);
+    } catch {
+      return total;
+    }
+  }, 0n);
+  // Who is looking, by the name they chose. A guest until they choose one.
+  const who = props.handle?.value ?? (props.watching ? null : (state.player?.label ?? null));
 
   return (
     <main className={styles.shell} data-layout={layout}>
@@ -1622,11 +1919,12 @@ export function GameShell(props: GameShellProps) {
           )}
           {/* Whether this round is being reasoned, beside the connection,
               because it is the other thing that is true of the whole round
-              rather than of one screen. The rows say it per agent. */}
-          {props.watching?.reasoning && <span className={styles.reasoningNote}>{props.watching.reasoning}</span>}
+              rather than of one screen. A few words here, the sentence on the
+              card and the rows per agent: the full sentence wrapped the bar. */}
+          {props.watching?.reasoningTag && <span className={styles.reasoningNote}>{props.watching.reasoningTag}</span>}
           {/* Who asked for this round, beside what the round is doing,
               because it is true of the whole round rather than one screen. */}
-          {props.watching?.pulled && <span className={styles.reasoningNote}>{props.watching.pulled}</span>}
+          {props.watching?.pulledBy && <span className={styles.reasoningNote}>pulled by {props.watching.pulledBy}</span>}
           {props.watching?.replay && (
             <Button onClick={props.onLeaveReplay} scale={2}>
               Back to the pit
@@ -1637,7 +1935,9 @@ export function GameShell(props: GameShellProps) {
           <Button onClick={props.onShowHow} scale={2}>
             How it works
           </Button>
-          {state.player && <span>{state.player.label}</span>}
+          {/* Who is looking, when the bar has room for it: a replay adds a
+              button, and the bar is one line on a stage that does not wrap. */}
+          {who && !props.watching?.replay && <span className={styles.who}>{who}</span>}
           <Button onClick={props.onToggleMute} scale={2} aria-pressed={!props.muted}>
             {props.muted ? "Sound off" : "Sound on"}
           </Button>
@@ -1654,6 +1954,14 @@ export function GameShell(props: GameShellProps) {
       <div className={styles.body}>
       {state.screen === "modeSelect" && <ModeSelect onChoose={props.onChooseMode} error={state.error} bankEnabled={props.bankEnabled} onShowGraveyard={props.onShowGraveyard} />}
       {state.screen === "graveyard" && <Graveyard graves={props.graves} error={state.error} onClose={props.onCloseGraveyard} />}
+      {/* Over a pit that runs itself, the screen is the pit's phase rather
+          than the menu's, so the wall opens over it like the other side
+          rooms. It used to open nowhere: the button did nothing at all. */}
+      {props.graveyardOpen && state.screen !== "graveyard" && (
+        <div className={styles.graveOver} data-anim="graveyard-over">
+          <Graveyard graves={props.graves} error={state.error} onClose={props.onCloseGraveyard} />
+        </div>
+      )}
 
       {/* The stage is always mounted so the canvases exist before the player
           reaches them; the engine builds against them during boot. Only its
@@ -1668,7 +1976,7 @@ export function GameShell(props: GameShellProps) {
               <>
                 <div className={styles.leverRow}>
                   <Button onClick={props.onPull} disabled={!state.leverLive}>
-                    {state.screen === "lobby" ? "Agents deciding" : state.leverLive ? "Pull the lever" : "Agents buying in"}
+                    {state.screen === "lobby" ? (props.backing?.window ? "Backing open" : "Agents deciding") : state.leverLive ? "Pull the lever" : "Agents buying in"}
                   </Button>
                   {/* What the three reels mean, beside the lever rather than
                       under it: the stage is a fixed 1280 by 720 and the
@@ -1687,7 +1995,7 @@ export function GameShell(props: GameShellProps) {
           </div>
 
           {state.screen === "arena" ? (
-            <ArenaHud run={run} arena={props.arena} backing={props.backing} />
+            <ArenaHud run={run} arena={props.arena} backing={props.backing} names={names} paidInWei={paidInWei} weiPerChip={run?.weiPerChip ?? props.weiPerChip} myEntrantId={myEntrantId} />
           ) : state.screen === "spinning" ? (
             <BuyIns plan={plan} entries={entries} error={state.error} onRetry={props.onRetry} />
           ) : props.backing?.window ? (
@@ -1695,7 +2003,16 @@ export function GameShell(props: GameShellProps) {
                the lineup with what each agent drew and who is behind it. */
             <Backing backing={props.backing} handle={props.handle ?? null} onBack={props.onBack} />
           ) : (
-            <Lineup plan={plan} decided={decided} occupants={occupants} error={state.error} onRetry={props.onRetry} />
+            <Lineup
+              plan={plan}
+              decided={decided}
+              occupants={occupants}
+              error={state.error}
+              onRetry={props.onRetry}
+              calls={props.roundCalls ?? null}
+              fighters={fighters}
+              myEntrantId={myEntrantId}
+            />
           )}
       </div>
 
@@ -1708,11 +2025,13 @@ export function GameShell(props: GameShellProps) {
           handle={props.handle ?? null}
           fighter={props.fighter ?? null}
           careerLine={props.myCareerLine ?? null}
+          calls={watchingReplay(props.watching) ? null : (props.calls ?? null)}
+          readLine={props.readLine ?? null}
+          names={names}
           onShowFighters={props.onShowFighters}
           onShowGraveyard={props.onShowGraveyard}
           onReplay={props.onReplay}
           onShowBoard={props.onShowBoard}
-          backingSoon={props.backing !== null && !watchingReplay(props.watching)}
           bankEnabled={props.bankEnabled}
         />
       )}
@@ -1723,7 +2042,7 @@ export function GameShell(props: GameShellProps) {
       {props.onboarding && <Onboarding screens={props.onboarding} onClose={props.onCloseHow} />}
       {state.screen === "wreck" && run && <WreckScreen run={run} onContinue={props.onWreckSeen} />}
       {state.screen === "result" && run && (
-        <ResultScreen run={run} onPlayAgain={props.onPlayAgain} backing={props.backing} watching={props.watching} mine={props.myRoundLine ?? null} />
+        <ResultScreen run={run} onPlayAgain={props.onPlayAgain} backing={props.backing} watching={props.watching} mine={props.myRoundLine ?? null} read={props.readLine ?? null} names={names} serv={props.servLine ?? null} />
       )}
       </div>
     </main>
@@ -1737,14 +2056,23 @@ export function GameShell(props: GameShellProps) {
 
 }
 
-/** Placeholder mapping until agents carry a character; keeps facesets real. */
+/** A face for a seat or a wallet: its occupant's, or the original's. */
 function characterFor(agentId: string): string {
-  const roster = ["NinjaRed", "NinjaBlue", "Knight", "Monk", "Hunter", "Boy"];
-  let hash = 0;
-  for (const ch of agentId) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
-  return roster[hash % roster.length];
+  return seatFace(agentId, null);
 }
 
+/**
+ * The face on the winner card when the round did not say what it fought as.
+ *
+ * An agent's own face, and the house face for anything else. The character it
+ * actually fought as is preferred wherever the round carries it.
+ */
 function winnerCharacter(run: RunShape): string {
-  return characterFor(run.winner);
+  return run.winner.startsWith("agent-") ? seatFace(run.winner.slice("agent-".length), null) : "Boy";
+}
+
+/** A network as a person names it. */
+function networkName(network: string): string {
+  if (network === "base-sepolia") return "Base Sepolia";
+  return network;
 }

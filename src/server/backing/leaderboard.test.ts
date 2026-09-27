@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -23,8 +23,8 @@ describe("the board", () => {
     const b = board();
     b.apply("r-1", [score("ash", true, 200), score("bowen", false, 0)]);
     expect(b.rows()).toEqual([
-      { handle: "ash", points: 200, picks: 1, correct: 1, streak: 1, best: 1 },
-      { handle: "bowen", points: 0, picks: 1, correct: 0, streak: 0, best: 0 },
+      { handle: "ash", points: 200, picks: 1, correct: 1, streak: 1, best: 1, reads: 0, readsRight: 0, perfect: 0 },
+      { handle: "bowen", points: 0, picks: 1, correct: 0, streak: 0, best: 0, reads: 0, readsRight: 0, perfect: 0 },
     ]);
   });
 
@@ -82,5 +82,39 @@ describe("the board", () => {
     expect(board().rows()).toEqual([]);
     expect(board().page(1, 10)).toMatchObject({ rows: [], page: 1, pages: 1, total: 0 });
     expect(board().row("ash")).toBeNull();
+  });
+});
+
+describe("reads on the board", () => {
+  const read = (handle: string, called: number, right: number, points: number, perfect = false) => ({ handle, called, right, points, perfect });
+
+  it("adds a read's points to the same total backing scores into", () => {
+    const b = board();
+    b.apply("r-1", [score("ash", true, 100)]);
+    b.applyReads("r-1", [read("ash", 6, 6, 170, true), read("cyan", 3, 1, 10)]);
+    expect(b.row("ash")).toMatchObject({ points: 270, picks: 1, correct: 1, reads: 6, readsRight: 6, perfect: 1 });
+    expect(b.row("cyan")).toMatchObject({ points: 10, picks: 0, reads: 3, readsRight: 1, perfect: 0 });
+  });
+
+  it("settles a round's reads once, and apart from its backing", () => {
+    const b = board();
+    expect(b.applyReads("r-1", [read("ash", 2, 2, 20)])).toBe(true);
+    expect(b.applyReads("r-1", [read("ash", 2, 2, 20)])).toBe(false);
+    // The backing for the same round is still its own settle.
+    expect(b.apply("r-1", [score("ash", true, 100)])).toBe(true);
+    expect(b.row("ash")).toMatchObject({ points: 120, reads: 2 });
+    expect(b.hasReads("r-1")).toBe(true);
+  });
+
+  it("never ends a backing streak on a read", () => {
+    const b = board();
+    b.apply("r-1", [score("ash", true, 100)]);
+    b.applyReads("r-2", [read("ash", 6, 0, 0)]);
+    expect(b.row("ash")).toMatchObject({ streak: 1, best: 1 });
+  });
+
+  it("reads a row written before reads existed as one that has never called an agent", () => {
+    writeFileSync(file, JSON.stringify({ network: "fake", rows: [{ handle: "old", points: 50, picks: 2, correct: 1, streak: 0, best: 1 }], settled: ["r-0"] }));
+    expect(board().row("old")).toEqual({ handle: "old", points: 50, picks: 2, correct: 1, streak: 0, best: 1, reads: 0, readsRight: 0, perfect: 0 });
   });
 });

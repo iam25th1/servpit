@@ -11,19 +11,23 @@
 
 import { existsSync } from "node:fs";
 import { backingWindowSeconds } from "@/config/backing";
+import { bankEnabled } from "@/config/economy";
 import { PULL_POLL_MS } from "@/config/pulls";
+import { profileFor } from "@/config/replacements";
 import { toChips, weiPerChip } from "@/config/stake";
 import { ticksToMs } from "@/config/playback";
 import type { ServerContext } from "../context";
 import { log } from "../log";
 import { basescanTx } from "../money";
-import { planRound, runRound, type RoundPlan } from "../round/flow";
+import { UNREACHABLE_REASON, planRound, runRound, seatOccupants, type FlowContext, type RoundPlan, type RoundRun } from "../round/flow";
+import { totalOwed } from "../round/debt";
 import { scheduledReasoningOn, servReasoningOn } from "../serv/switch";
 import { budgetState } from "../pulls/budget";
 import { readPullSettings } from "../pulls/settings";
 import { settleBackingQuietly } from "../backing/settle";
+import { settleReadsQuietly } from "../calls/settle";
 import { settleFightersQuietly } from "../fighters/settle";
-import { ArenaStore, type ArenaPhase, type ArenaRound, type ArenaState, type PhaseMark } from "./state";
+import { ArenaStore, type ArenaPhase, type ArenaRound, type ArenaSeat, type ArenaState, type PhaseMark } from "./state";
 
 const sleepMs = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
 
@@ -124,9 +128,9 @@ export async function runArenaLoop(options: LoopOptions): Promise<{ played: numb
             options.pulls?.take(asked.id);
             log.info("arena round pulled", { handle: asked.handle });
           }
-          // A round that rests because nobody could cover a seat is not a
-          // round played, and counting it as one would make an empty pit look
-          // busy in the only numbers an operator sees.
+          // A play function may still report a rest rather than a round, and
+          // counting that as played would make an idle pit look busy in the
+          // only numbers an operator sees.
           const outcome = (await play(ctx, store, nextAt, asked?.handle ?? null)) ?? "played";
           if (asked) {
             const roundId = store.read().round?.roundId;
@@ -271,6 +275,10 @@ export async function playArenaRound(ctx: ServerContext, store: ArenaStore, next
     log.info("arena round on instinct", { spentMicroCents: budget.spentMicroCents, budgetMicroCents: budget.budgetMicroCents, switchOn: servReasoningOn(flow.servSwitchFile) });
   }
   const link = (hash: string | null | undefined): string | null => (ctx.chain.settles && hash ? basescanTx(ctx.chain.network, hash) : null);
+  // The round on file before this one publishes over it. Calls on this round
+  // were filed after it, because this round has no id until it starts and is
+  // locked the moment it does.
+  const after = store.read().round?.roundId ?? "";
 
   let round: ArenaRound = {
     roundId: "",
@@ -288,8 +296,15 @@ export async function playArenaRound(ctx: ServerContext, store: ArenaStore, next
     refusals: [],
     bank: null,
     entries: [],
+    // The claimed seats, from the first phase rather than from settling, so
+    // a visitor watching the agents decide can already see their fighter is
+    // in. Every claim is seated: the cap on claims leaves room for all six
+    // agents in a field of twenty four. The plan's own list replaces this one
+    // once it is built.
+    fighters: (flow.fighters?.() ?? []).map((f) => ({ handle: f.handle, name: f.name, face: f.face, entrantId: f.entrantId })),
     pulledBy,
     reasoning,
+    after,
   };
   const publish = (next: Partial<ArenaRound>, phase?: ArenaPhase, mark?: Omit<PhaseMark, "phase" | "at">): void => {
     round = { ...round, ...next };
@@ -331,13 +346,16 @@ export async function playArenaRound(ctx: ServerContext, store: ArenaStore, next
         "deciding",
       );
     },
-    (answer, name, bank) => {
+    (answer, name, bank, tappedOut) => {
       const entry = {
         agentId: answer.agentId,
         name,
         asked: 0,
         reason: answer.decision.reason,
         source: answer.source,
+        // Whether it was broke or wanted a bigger seat, which are two
+        // different asks and read as two different lines.
+        tappedOut,
         ...(answer.evidence ? { evidence: { matches: answer.evidence.matches, approved: answer.evidence.approved, typicalAmount: answer.evidence.typicalAmount } } : {}),
       };
       // The lender itself, alongside its answer. Until this the banking phase
@@ -377,25 +395,22 @@ export async function playArenaRound(ctx: ServerContext, store: ArenaStore, next
         debt: toChips(d.debtWei ?? 0n),
         ...(d.evidence ? { evidence: { matches: d.evidence.matches, entered: d.evidence.entered, typicalStake: d.evidence.typicalStake } } : {}),
       })),
-      loans: plan.loans.map((l) => ({ agentId: l.agentId, name: l.name, asked: toChips(l.askedWei), amount: toChips(l.principalWei), rateBps: l.rateBps, reason: l.reason, source: l.source, ...(l.evidence ? { evidence: { matches: l.evidence.matches, approved: l.evidence.approved, typicalAmount: l.evidence.typicalAmount } } : {}) })),
+      loans: plan.loans.map((l) => ({ agentId: l.agentId, name: l.name, asked: toChips(l.askedWei), amount: toChips(l.principalWei), rateBps: l.rateBps, reason: l.reason, source: l.source, tappedOut: l.tappedOut, ...(l.evidence ? { evidence: { matches: l.evidence.matches, approved: l.evidence.approved, typicalAmount: l.evidence.typicalAmount } } : {}) })),
       // The refusal's own source, which used to be published as serv
       // whatever answered: a refusal written by the fixed lender read as
       // though Marrow had reasoned its way to it.
-      refusals: plan.refusals.map((r) => ({ agentId: r.agentId, name: r.name, asked: toChips(r.askedWei), reason: r.reason, source: r.source, ...(r.evidence ? { evidence: { matches: r.evidence.matches, approved: r.evidence.approved, typicalAmount: r.evidence.typicalAmount } } : {}) })),
+      refusals: plan.refusals.map((r) => ({ agentId: r.agentId, name: r.name, asked: toChips(r.askedWei), reason: r.reason, source: r.source, tappedOut: r.tappedOut, ...(r.evidence ? { evidence: { matches: r.evidence.matches, approved: r.evidence.approved, typicalAmount: r.evidence.typicalAmount } } : {}) })),
       bank: plan.bank ? { treasury: toChips(plan.bank.treasuryWei), book: plan.bank.book.map((b) => ({ agentId: b.agentId, name: b.name, owed: toChips(b.principalWei + b.interestWei), principal: toChips(b.principalWei), rateBps: b.rateBps })) } : null,
     },
     "settling",
   );
 
-  if (plan.entering.length === 0) {
-    // Nobody is in, so there is nothing to settle and nothing to watch. The
-    // round is not a failure: it is an empty pit, and it says so.
-    publish({}, "resting", { reason: "Nobody could cover a seat this round." });
-    const current = store.read();
-    store.write({ round, last: current.last, paused: current.paused, nextRoundAt: new Date(nextAt).toISOString() });
-    log.info("arena rested, nobody entered", { roundId: plan.roundId });
-    return "rested";
-  }
+  // Nobody in is still a round. The claimed fighters and the house bots
+  // fight, a viewer has something to watch and back, and the settle runs:
+  // interest is charged, and an agent that is broke and was refused credit is
+  // wrecked and its seat refilled. Resting here used to skip all of that, so
+  // an empty pit stayed exactly as empty the next round, and the one after.
+  if (plan.entering.length === 0) log.info("arena round with no agents in, the house plays it", { roundId: plan.roundId });
 
   const run = await runRound(flow, plan, {
     onEntry: (agentId, outcome) => {
@@ -493,6 +508,11 @@ export async function playArenaRound(ctx: ServerContext, store: ArenaStore, next
         checks: run.reconciliation.checks,
         settles: ctx.chain.settles,
       },
+      // Who the next round will find in each seat and what they hold, for the
+      // visitor calling it. Written with the result because it is made of the
+      // result: balances after the settle, debts after the repayment, and
+      // whoever sat down in a wrecked seat.
+      table: seatTable(flow, plan, run),
     },
     "result",
   );
@@ -503,6 +523,15 @@ export async function playArenaRound(ctx: ServerContext, store: ArenaStore, next
   // winner the round already has. Never money, and never a reason for a
   // finished round to be recorded as failed.
   settleBackingQuietly(ctx.env.dataDir, ctx.chain.network, plan.roundId, run.round.placements[0]!);
+  // And the reads: every visitor's calls on this round, made before it
+  // started, scored against what the agents actually did. The final
+  // decisions, so an agent turned away for its balance counts as out.
+  settleReadsQuietly(ctx.env.dataDir, ctx.chain.network, {
+    after,
+    roundId: plan.roundId,
+    startedAt: Date.parse(round.startedAt),
+    decisions: plan.decisions.map((d) => ({ agentId: d.agentId, enter: d.decision.enter, source: d.source })),
+  });
   // And the fighters' own records, from the placements and the event log this
   // round already recorded. No new mechanism: a kill is a death whose killer
   // was that fighter, which is what the log says.
@@ -523,6 +552,37 @@ export async function playArenaRound(ctx: ServerContext, store: ArenaStore, next
   if (dwellMs > 0) await sleepMs(dwellMs);
   publish({}, "resting");
   return "played";
+}
+
+/**
+ * The seats as the next round will find them.
+ *
+ * Read after the settle, so each figure is one the next round starts from:
+ * the balance the chain reported once the money moved, the debt after
+ * interest and any repayment, and whoever sat down in a seat that was just
+ * emptied. A wallet the chain would not answer for this round is left without
+ * a figure rather than shown as broke.
+ */
+function seatTable(flow: FlowContext, plan: RoundPlan, run: RoundRun): ArenaSeat[] {
+  const stored = flow.store.get(plan.roundId)?.agents ?? [];
+  const winner = plan.entering.find((e) => e.entrantId === run.round.placements[0])?.agentId ?? null;
+  const replaced = new Set(run.replacements.map((r) => r.walletId));
+  const unread = new Set(plan.decisions.filter((d) => d.rejection === UNREACHABLE_REASON).map((d) => d.agentId));
+  return seatOccupants(flow).map((seat) => {
+    const identityId = flow.debts.currentIdentity(seat.agentId);
+    const profile = profileFor(seat.agentId, identityId, flow.debts.occupantOf(seat.agentId));
+    const record = stored.find((a) => a.agentId === seat.agentId);
+    const entered = plan.entering.some((e) => e.agentId === seat.agentId);
+    return {
+      agentId: seat.agentId,
+      name: seat.name,
+      face: seat.face,
+      strategy: profile.strategy,
+      chips: record && !unread.has(seat.agentId) ? toChips(BigInt(record.balanceAfterWei)) : null,
+      owes: bankEnabled() ? toChips(totalOwed(flow.debts.get(seat.agentId, identityId))) : 0,
+      last: replaced.has(seat.agentId) ? "new" : seat.agentId === winner ? "won" : entered ? "lost" : "held",
+    };
+  });
 }
 
 /** Entrant id to display name, for the fight's own nameplates. */

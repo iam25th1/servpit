@@ -2,9 +2,9 @@
 
 <img src="docs/hero.svg" alt="SERVPIT" width="880">
 
-**A slot machine decides who fights. Six agents decide whether to pay for a seat.**
+**A slot machine decides who fights. Six agents decide whether to pay for a seat. You call it before they do.**
 
-`SERV Reasoning` · `Coinbase AgentKit` · `Base Sepolia` · `Next.js` · `1190 tests`
+`SERV Reasoning` · `Coinbase AgentKit` · `Base Sepolia` · `Next.js` · `1610 tests`
 
 [![ci](https://github.com/iam25th1/servpit/actions/workflows/ci.yml/badge.svg)](https://github.com/iam25th1/servpit/actions/workflows/ci.yml)
 
@@ -35,6 +35,22 @@
 
 ## What this is
 
+**A live test of AI agents with money.** Six agents hold real wallets on Base Sepolia. Every
+round each one decides, through SERV Reasoning, whether to spend its chips on a seat in the
+pit, borrow from a lender that is itself an agent, or hold. Every decision is shown in the
+agent's own words with where it came from, and every chip that moves is a transaction with a
+hash. It is a small economy of autonomous agents that anybody can watch and audit, which is
+the use case: seeing how a reasoning model manages money it can actually lose.
+
+**And a game on top of it: read the agents.** Between rounds a visitor calls each agent in or
+out. Pulling the lever starts the round at once with every agent reasoning, and each call is
+marked right or wrong as its answer lands. Reading a model right is worth double. More in
+[Calling the agents](#calling-the-agents-which-is-the-game).
+
+<div align="center">
+<img src="docs/calls.svg" alt="Calling the agents: six agents called in or out, SERV decides, each call marked right or wrong" width="880">
+</div>
+
 You pull a lever. Three reels draw you a fighter. Twenty four fighters load into a pit and
 kill each other without anyone playing. One walks out with the pot.
 
@@ -49,8 +65,9 @@ and told which of the two it was short on.
 
 That is the lever flow, and it still works exactly as it did. With `SERVPIT_ARENA_MODE` on the
 pit runs itself instead: a worker plays a round every interval, the house pulls the lever, and
-everybody watching sees the same round at the same moment. The only thing a visitor does then
-is back an agent for points, which are points and never money.
+everybody watching sees the same round at the same moment. A visitor there calls the agents
+between rounds, pulls the lever to make them reason, backs one before the fight and can claim a
+house seat of their own, all for points, which are points and never money.
 
 ### The artifact
 
@@ -360,6 +377,16 @@ Nothing that decides the fight is readable before the fight is being shown. The 
 deterministic, so the seed is the winner, and it stays on the server until the moment the
 fight starts.
 
+**A pit that has run low still plays.** On instinct, the fixed rule used to hold any agent
+below its own bankroll floor, and only one that could not cover a single seat was sent to the
+lender. Balances only move when a round settles, so once every agent had drifted under its
+floor the round rested with nobody in, and the next one saw the same balances and rested
+again, for good. An agent the rule would hold for its floor now goes in at the minimum and asks
+Marrow for anything it is short; a hold the model, the learner or the dice chose stands. And a
+round with no agents in is played rather than rested: the claimed fighters and the house bots
+fight, interest is charged, broke agents refused credit are wrecked and replaced, and nothing is
+taken from the rollover.
+
 ### What a viewer sees
 
 Every viewer watches the same round at the same moment. The client subscribes to the phase
@@ -370,9 +397,15 @@ the draw, the backing window, the fight, the figures.
 - **Arriving mid round lands in the right moment.** The worker publishes when the fight began
   and how long it runs, so a viewer who arrives mid fight seeks the canvas Timeline to that
   offset. Two browsers opened minutes apart are on the same tick.
-- **The quiet between rounds is a screen, not a stale result.** A countdown, what the last
-  round paid, Marrow's book, the graveyard, the leaderboard, and the reason in the worker's
-  own words when it is resting on funds or paused.
+- **The quiet between rounds is where the game is.** On one side a countdown, what the last
+  round paid (a house win pays nobody and rolls the pot on, and says so), how the viewer's last
+  read went, the lever and Marrow's book. On the other, every agent with how it tends to play,
+  what it holds and owes and what it did last round, to be called in or out.
+- **The reveal is the round.** Each answer lands in the lineup beside the viewer's call,
+  marked right or wrong, and the result says how the read went and what SERV decided.
+- **Claimed fighters are named everywhere they are.** In the lineup from the first phase, on
+  their own plate in the fight, in the kill feed, and on the fighters board the moment they
+  are claimed. House bots are House 1 to House 24 rather than bot ids.
 - **The last round can be watched again**, from the recording the round left behind: the
   decisions, the lender, the draw, the fight and the figures, with no SERV call and no chain
   call. A replay says so in the badge and yields the moment a live round starts.
@@ -622,6 +655,12 @@ so a kill is a death whose killer was that fighter. The streak counts outlasting
 which means finishing in the top half of it, because everybody but the winner dies and a
 streak of survivals would be a streak of wins under another name.
 
+A claim is on the fighters board at once, with an empty record until its first round, and
+the lineup names every claimed fighter in a round under the agents. The board used to list
+records only, so a fighter claimed a moment before was nowhere on it, which read as the claim
+failing. The pit also used to rest on a round nobody could buy into, so on a pit that had run
+dry a claimed fighter never got to fight at all; a round with no agents in is played now.
+
 **The fighters board is its own board, and that is the point.** A fighter is one seat in
 twenty four with no decisions to make: its record is mostly luck. The backing board scores
 calling a round right, which is at least a judgement. Mixing them would make luck look like
@@ -659,6 +698,86 @@ leaderboard as a list of names that called rounds right, not as a ranking of peo
 
 Backing is arena mode only. In lever mode the plan route hands the player the round's seed and
 the resolver is deterministic, so a pick could be made knowing the winner.
+
+## Calling the agents, which is the game
+
+Backing a winner is mostly luck: the fight never reads a stake, so a pick is a pick on the
+reels. What the pit has that is not luck is six agents deciding what to do with money, so the
+game a visitor plays is reading them. Between rounds, call each agent **in** (it buys a seat)
+or **out** (it holds). The calls lock the moment the next round starts, the agents never see
+them, and each one is marked right or wrong as its answer lands.
+
+With $C$ the seats a visitor called, $c_a$ the call on seat $a$, $e_a$ whether that agent
+bought in once the chain had checked its balance, and $s_a$ whether its decision came from
+SERV rather than instinct or the learned record, a read scores
+
+$$\text{points} = \sum_{a \in C} [c_a = e_a]\,\bigl(10 + 10\,s_a\bigr) \;+\; 50 \cdot \bigl[\,C = \text{all six} \,\wedge\, c_a = e_a \;\forall a\,\bigr]$$
+
+so a right call on a reasoned decision is worth twenty, and a perfect read of a round where
+every agent reasoned is worth $6 \cdot 20 + 50 = 170$. Pulling the lever is what makes a
+round reason, so the loop is: call, pull, watch SERV answer, score.
+
+```mermaid
+sequenceDiagram
+    participant V as Visitor
+    participant C as /api/calls
+    participant W as Worker
+    participant S as SERV Reasoning
+    participant B as Board
+    V->>C: calls on the next round, filed after round R
+    Note over C: taken only while no round is being decided
+    V->>W: pulls the lever
+    W->>W: round S starts, after = R, calls lock
+    W->>S: six agents decide, Marrow lends
+    S-->>W: in or out, with a reason
+    W-->>V: each answer lands beside the call, right or wrong
+    W->>B: settle: calls made before S started, scored on its final decisions
+```
+
+<details>
+<summary><b>Why calls are filed after the round before, and cut off by the clock</b></summary>
+
+<br>
+
+A round has no id until it starts, and it is locked the moment it does, so the only name calls
+can be given that nobody could have chosen after seeing the answer is the round that was on
+file when they were made. The worker records that id on the new round as `after`, and the
+settle reads the calls filed under it.
+
+The route refuses calls while a round is being decided, and the settle does not trust that
+alone: it only counts lines written at or before the moment the round started. A call that
+somehow landed after the agents began deciding is in the log and is never scored. A round that
+fails never settles, so its calls are void rather than carried over.
+
+Calls live in the pick log, as a new kind of line, so a handle is one browser across picks,
+calls, pulls and claims without a second log that could disagree about who owns a name. They
+score onto the same board as backing, under their own settle key, so a round's backing and its
+reads are each applied exactly once however the two settles run. A read never touches the
+backing streak: calling agents and calling a winner are two different judgements.
+
+</details>
+
+<table>
+<tr>
+<td><img src="docs/media/calls-panel.png" alt="The quiet screen: the countdown and the lever on the left, six agents to call in or out on the right" width="420"></td>
+<td><img src="docs/media/calls-reveal.png" alt="The lineup as the answers land, each marked against the call: you called in, right" width="420"></td>
+</tr>
+<tr>
+<td align="center">Between rounds: every agent, how it plays, what it holds and did last round.</td>
+<td align="center">The reveal: each answer lands beside the call, right or wrong.</td>
+</tr>
+</table>
+
+Captured headlessly from a local pit on the test chain, which has no SERV key, so every round
+there is labelled as instinct.
+
+The seats a visitor calls from are written by the worker with each result: who sits in each
+seat after any wreck, the balance the chain reported after the settle, what is owed after
+interest and repayment, and what each did in the round just played. That table says who won,
+so it only travels with the finished round, and the spoiler test holds it to that.
+
+Points, never money, exactly as with backing: nothing a visitor calls reaches a wallet or an
+agent.
 
 ---
 
@@ -850,7 +969,9 @@ finishes the round it is in before it goes.
 
 **What is not served in production.** The wallet view at `/api/agents`, the seed box at
 `/arena`, and both lever routes, which write. In production a visitor can read the pit and
-write exactly one thing: a pick, rate limited and bound to a handle and a browser token.
+write four things, each a rate limited line in an append only log bound to a handle and a
+browser token, and none of them able to move a chip: a pick, a set of calls, an ask for a
+round, and a claim on a house seat.
 
 <details>
 <summary><b>Settling on Base Sepolia for real</b></summary>
@@ -869,7 +990,7 @@ and per account, so seven claims take days and one claim plus an on-chain fan-ou
 minutes. Six transfers cost about 0.0000008 ETH in total.
 
 Set `SERV_API_KEY` in `.env.local` for real reasoning. Without it every agent falls through to
-the heuristic and says so in its reason string.
+the heuristic, and every decision on screen is labelled as made on instinct.
 
 Configurable: `SERVPIT_FUND_TARGET_ETH`, `SERVPIT_STAKE_FRACTION`, `SERVPIT_GAS_RESERVE_ETH`,
 `BASE_SEPOLIA_RPC_URLS` (comma separated, or `BASE_SEPOLIA_RPC_URL` for a single endpoint),
@@ -899,7 +1020,7 @@ a money surface.
 | `npm run serv -- on\|off\|status` | Turns SERV reasoning on or off for the next round, in every process, without a restart |
 | `npm run extract-assets` | Pulls the roster, FX, UI kit, fonts and tilesets out of the asset pack into `public/assets` and writes the manifest |
 | `npm run gate` | typecheck, lint, test, build. What CI runs |
-| `npm test` | 1190 tests |
+| `npm test` | 1610 tests |
 
 </details>
 

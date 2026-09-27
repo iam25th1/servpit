@@ -108,8 +108,30 @@ export const REPLACEMENTS: readonly Replacement[] = Object.freeze([
   },
 ] as const);
 
-/** The faces the six originals wear, which no replacement may reuse. */
-export const ORIGINAL_FACES: readonly string[] = Object.freeze(["Boy", "Hunter", "Knight", "NinjaRed", "NinjaBlue"]);
+/**
+ * The face each of the six originals wears, by seat.
+ *
+ * Fixed rather than worked out from the id. It used to be a hash of the id
+ * into a short list, which gave Ember and Flint the same face, and the winner
+ * card hashed a different string and gave the same agent a third one. A
+ * viewer reading six agents side by side needs six faces.
+ */
+export const ORIGINAL_FACE_OF: Readonly<Record<string, string>> = Object.freeze({
+  atlas: "Boy",
+  blaze: "Hunter",
+  comet: "Knight",
+  delta: "NinjaRed",
+  ember: "NinjaBlue",
+  flint: "Caveman",
+});
+
+/** The faces the six originals wear, which no replacement or claimed fighter may reuse. */
+export const ORIGINAL_FACES: readonly string[] = Object.freeze(Object.values(ORIGINAL_FACE_OF));
+
+/** The face the panel draws for a seat: its occupant's, or the original's. */
+export function seatFace(walletId: string, face: string | null | undefined): string {
+  return face ?? ORIGINAL_FACE_OF[walletId] ?? "Boy";
+}
 
 const GENERATION = /-(\d+)$/;
 

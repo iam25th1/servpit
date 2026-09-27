@@ -26,8 +26,8 @@ export interface ArenaFeedRound {
   stakeChips: number;
   weiPerChip: string;
   decisions: Array<{ agentId: string; name: string; face: string | null; enter: boolean; stake: number; reason: string; source: string; balance: number; debt: number; evidence?: { matches: number; entered: number; typicalStake: number } }>;
-  loans: Array<{ agentId: string; name: string; asked: number; amount: number; rateBps: number; reason: string; source: string; evidence?: { matches: number; approved: number; typicalAmount: number } }>;
-  refusals: Array<{ agentId: string; name: string; asked: number; reason: string; source: string; evidence?: { matches: number; approved: number; typicalAmount: number } }>;
+  loans: Array<{ agentId: string; name: string; asked: number; amount: number; rateBps: number; reason: string; source: string; tappedOut?: boolean; evidence?: { matches: number; approved: number; typicalAmount: number } }>;
+  refusals: Array<{ agentId: string; name: string; asked: number; reason: string; source: string; tappedOut?: boolean; evidence?: { matches: number; approved: number; typicalAmount: number } }>;
   bank: { treasury: number; book: Array<{ agentId: string; name: string; owed: number; principal: number; rateBps: number }> } | null;
   entries: Array<{ agentId: string; amountWei: string; txHash: string | null; link: string | null }>;
   /** The seats visitors have claimed in this round, by name and face. */
@@ -35,6 +35,10 @@ export interface ArenaFeedRound {
   /** The handle that asked for this round, absent when the interval started it. */
   pulledBy?: string | null;
   reels?: Array<{ entrantId: string; symbols: string[]; characterId: string; tier: string; combo: string; bonusPct: number }>;
+  /** The round the calls on this one were filed after. Absent on an older round. */
+  after?: string;
+  /** The seats as the next round will find them, on a finished round. */
+  table?: Array<{ agentId: string; name: string; face: string | null; strategy: string; chips: number | null; owes: number; last: "won" | "lost" | "held" | "new" }>;
   fight?: { seed: string; durationMs: number; characters: unknown[]; log: unknown[]; placements: string[]; names: Record<string, string> };
   result?: Record<string, unknown>;
 }
@@ -146,6 +150,43 @@ export function reasoningLine(round: ArenaFeedRound | null, resting: boolean): s
   if (reasoned === 0 && learned === 0) return resting ? "Agents ran on instinct last round." : "Agents are running on instinct this round.";
   if (reasoned === 0) return `${learned} of ${total} agents played from what they learned ${tense} round.`;
   return `${reasoned} of ${total} agents reasoned with SERV ${tense} round.`;
+}
+
+/**
+ * The same fact in two or three words, for the top bar.
+ *
+ * The bar sits beside the connection badge and four buttons on a 1280 stage,
+ * and the sentence wrapped there. Counted from the same decisions as the
+ * sentence, so the two can never disagree.
+ */
+export function reasoningTag(round: ArenaFeedRound | null): string | null {
+  if (!round || round.decisions.length === 0) return null;
+  const total = round.decisions.length;
+  const reasoned = round.decisions.filter((d) => d.source === "serv").length;
+  const learned = round.decisions.filter((d) => d.source === "learned").length;
+  if (reasoned === total) return "reasoned by SERV";
+  if (learned === total) return "learned from SERV";
+  if (reasoned === 0 && learned === 0) return "on instinct";
+  if (reasoned === 0) return `${learned} of ${total} learned`;
+  return `${reasoned} of ${total} reasoned by SERV`;
+}
+
+/**
+ * What SERV did in a finished round, in one sentence, or null.
+ *
+ * Every decision that reached the model, the lender's included, counted from
+ * the sources the round published. A round that never asked says so and says
+ * how to make one that does, because that is the one thing a visitor can do
+ * about it.
+ */
+export function servLine(round: ArenaFeedRound | null): string | null {
+  if (!round || round.decisions.length === 0) return null;
+  const agents = round.decisions.filter((d) => d.source === "serv").length;
+  const lender = [...round.loans, ...round.refusals].filter((d) => d.source === "serv").length;
+  if (agents + lender === 0) return "An instinct round: no SERV calls. A pulled round reasons.";
+  const parts = [`${agents} of ${round.decisions.length} agents`];
+  if (lender > 0) parts.push(`Marrow ${lender === 1 ? "once" : `${lender} times`}`);
+  return `SERV Reasoning decided for ${parts.join(" and ")} this round.`;
 }
 
 /**

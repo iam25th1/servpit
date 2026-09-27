@@ -130,6 +130,21 @@ describe("before the fight", () => {
     expect("fight" in view).toBe(false);
   });
 
+  it("never carries the table of seats before the fight, because it says who won", () => {
+    // The worker writes it with the result. This is the second net: a round
+    // that carried it early still would not publish it in any phase before
+    // the fight, where the whole round is not yet allowed.
+    const table = [{ agentId: "flint", name: "Flint", face: null, strategy: "opportunist", chips: 80, owes: 0, last: "won" as const }];
+    for (const phase of BEFORE_THE_FIGHT) {
+      const view = roundView({ ...round(phase), table })!;
+      expect(Object.keys(view), phase).not.toContain("table");
+    }
+  });
+
+  it("carries the round the calls were filed after, which is only a name", () => {
+    expect(roundView({ ...round("deciding"), after: "r-before" })!.after).toBe("r-before");
+  });
+
   it("drops the whole fight and the whole result, not some fields of them", () => {
     const view = roundView(round("settling"))!;
     expect("fight" in view).toBe(false);
@@ -158,6 +173,27 @@ describe("from the fight onwards", () => {
     // The live round gives nothing away and the finished one is history.
     expect(JSON.stringify(view.round).includes(SEED)).toBe(false);
     expect(view.last?.result?.winner).toBe(WINNER);
+  });
+});
+
+describe("reading calls", () => {
+  it("answers with calls and counts, and nothing about the round", async () => {
+    const { mkdtempSync, rmSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { PickStore } = await import("@/server/backing/picks");
+    const { callsView } = await import("@/server/calls/service");
+    const dir = mkdtempSync(join(tmpdir(), "servpit-spoiler-calls-"));
+    try {
+      const store = new PickStore(join(dir, "picks-fake.ndjson"), "fake");
+      store.recordCalls("r-before", "ash", "h", { flint: true });
+      for (const phase of BEFORE_THE_FIGHT) {
+        const body = JSON.stringify(callsView({ ...state(phase), round: { ...round(phase), after: "r-before" } }, store, "ash", "11111111-1111-4111-8111-111111111111"));
+        for (const marker of [SEED, WINNER, LOG_MARKER, PLACEMENT]) expect(body, phase).not.toContain(marker);
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

@@ -81,6 +81,12 @@ export function roundView(round: ArenaRound | null): ArenaRoundView | null {
     // The draw, which does not decide the fight: the resolver runs the same
     // way whoever is in it. Everything that does decide it is left out above.
     ...(round.reels ? { reels: round.reels } : {}),
+    // The round the calls on this one were filed after. A name, set before
+    // anybody decides anything.
+    ...(round.after === undefined ? {} : { after: round.after }),
+    // Not the table of seats for the next round: it says who won this one,
+    // so it only travels with the finished round, in last, and in the phases
+    // above where the whole round is already allowed.
   };
 }
 
