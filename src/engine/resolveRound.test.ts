@@ -145,7 +145,7 @@ describe("resolveRound", () => {
       minEntrants: 2,
       maxEntrants: 4,
       simulate: (ctx) => ({
-        log: ctx.combatants.map((c) => ({ t: 0, type: "spawn" as const, actor: c.entrantId, target: null, value: c.stats.hp, facing: 0 as const, x: 0, y: 0 })),
+        log: ctx.combatants.map((c) => ({ t: 0, type: "spawn" as const, actor: c.entrantId, target: null, value: c.stats.hp, facing: 0 as const, x: 12, y: 12 })),
         placements: ctx.combatants.map((c) => c.entrantId),
       }),
       distribute: (prize, placements) => placements.map((id, i) => ({ entrantId: id, amount: i === 0 ? prize - 1 : i === 1 ? 1 : 0 })),

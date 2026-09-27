@@ -4,7 +4,7 @@
 
 **A slot machine decides who fights. Six agents decide whether to pay for a seat. You call it before they do.**
 
-`SERV Reasoning` · `Coinbase AgentKit` · `Base Sepolia` · `Next.js` · `1610 tests`
+`SERV Reasoning` · `Coinbase AgentKit` · `Base Sepolia` · `Next.js` · `1619 tests`
 
 [![ci](https://github.com/iam25th1/servpit/actions/workflows/ci.yml/badge.svg)](https://github.com/iam25th1/servpit/actions/workflows/ci.yml)
 
@@ -703,8 +703,8 @@ the resolver is deterministic, so a pick could be made knowing the winner.
 
 Backing a winner is mostly luck: the fight never reads a stake, so a pick is a pick on the
 reels. What the pit has that is not luck is six agents deciding what to do with money, so the
-game a visitor plays is reading them. Between rounds, call each agent **in** (it buys a seat)
-or **out** (it holds). The calls lock the moment the next round starts, the agents never see
+game a visitor plays is reading them. Between rounds, predict for each agent whether it
+**fights** (pays its stake for a seat) or **sits out** (keeps its chips). The calls lock the moment the next round starts, the agents never see
 them, and each one is marked right or wrong as its answer lands.
 
 With $C$ the seats a visitor called, $c_a$ the call on seat $a$, $e_a$ whether that agent
@@ -789,7 +789,7 @@ three a stat roll. Matching faces pay a combination bonus on top.
 With tier weights $w_t$ and per-tier win rates $p_t$, the blended probability that a given
 pull wins its round is
 
-$$P(\text{win}) = \sum_{t \in \{c,u,r\}} w_t \, p_t = 0.70(0.0325) + 0.25(0.0475) + 0.05(0.1255) \approx 0.0409$$
+$$P(\text{win}) = \sum_{t \in \{c,u,r\}} w_t \, p_t = 0.70(0.0346) + 0.25(0.0475) + 0.05(0.1079) \approx 0.0415$$
 
 against a flat baseline of $1/24 \approx 0.0417$ for a field of $n = 24$.
 
@@ -827,19 +827,20 @@ twice over: bots never hold wallets, and now they never add to a prize either.
 
 | tier | share of pulls | win rate | multiple of baseline |
 |---|---|---|---|
-| common | 70% | 2.8 to 3.7% | 0.80x |
-| uncommon | 25% | 4.0 to 5.5% | 1.16x |
-| rare | 5% | 10.5 to 14.6% | 2.9x |
-| three of a kind | 0.65% | 32.1% | 7.7x |
+| common | 70% | 2.5 to 4.8% | 0.83x |
+| uncommon | 25% | 4.2 to 5.2% | 1.14x |
+| rare | 5% | 9.7 to 13.0% | 2.6x |
+| three of a kind | 0.65% | 29.5% | 7.1x |
 
 Combination frequency: no match 78.55%, pair 20.80%, three of a kind 0.65%.
 
 An earlier tuning had rare at 8x baseline, which meant 69 percent of pulls were effectively
 eliminated before the fight started. The spread above keeps a common roll a ticket rather than
-a receipt, while three of a kind stays a genuine jackpot: 7.7x, but on two thirds of one
+a receipt, while three of a kind stays a genuine jackpot: 7.1x, but on two thirds of one
 percent of pulls, so roughly one round in seven contains one at all.
 
-Round length averages 37 ticks, about 11.9 seconds at the 320ms tick.
+Round length averages 35 ticks, about 11.1 seconds at the 320ms tick, measured in the round pit
+(a disc of 448 floor tiles inside the 24 by 24 grid, stands where the corners were).
 
 </details>
 
@@ -1020,7 +1021,7 @@ a money surface.
 | `npm run serv -- on\|off\|status` | Turns SERV reasoning on or off for the next round, in every process, without a restart |
 | `npm run extract-assets` | Pulls the roster, FX, UI kit, fonts and tilesets out of the asset pack into `public/assets` and writes the manifest |
 | `npm run gate` | typecheck, lint, test, build. What CI runs |
-| `npm test` | 1610 tests |
+| `npm test` | 1619 tests |
 
 </details>
 

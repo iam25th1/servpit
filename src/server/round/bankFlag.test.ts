@@ -310,7 +310,10 @@ describe("disbursement", () => {
       expect(l.status).toBe("complete");
     }
     const lent = run.loans.reduce((sum, l) => sum + l.amountWei, 0n);
-    expect(chain.balanceOf(wallets.bank!.address)).toBe(bankBefore - lent);
+    // A borrower that wins pays the bank back out of its prize in the same
+    // round, so what came back is counted as well as what went out.
+    const repaidWei = run.repayment?.outcome.applied ? run.repayment.outcome.amountWei : 0n;
+    expect(chain.balanceOf(wallets.bank!.address)).toBe(bankBefore - lent + repaidWei);
     expect(run.reconciliation.ok).toBe(true);
     expect(run.reconciliation.checks.map((c) => c.name)).toContain("bank delta");
     expect(run.reconciliation.checks.map((c) => c.name)).toContain("bank covers its loans");
@@ -541,6 +544,40 @@ describe("a broke agent does not get to sit out quietly", () => {
     expect(run.wrecks.length).toBe(6);
     for (const w of run.wrecks) expect(w.trigger).toBe("broke and denied credit");
     expect(wreckStore.all()).toHaveLength(6);
+    expect(run.reconciliation.ok).toBe(true);
+  });
+
+  it("is finished too when it holds a stake but not the gas beside it, and the bank says no", async () => {
+    // The pit that was one agent and the house: fifteen chips against a ten
+    // chip seat and a twenty chip reserve is not tapped out by the stake
+    // alone, so a refusal never counted, the agent was never wrecked, and
+    // every round turned it away for gas again.
+    process.env.SERVPIT_BANK_ENABLED = "true";
+    const seat = stakeWeiFrom();
+    dir = mkdtempSync(join(tmpdir(), "servpit-bankflag-"));
+    const chain = new FakeChain({ initialBalanceWei: seat + seat / 2n, gasReserveWei: seat * 2n });
+    const wallets = await openWallets(chain, new WalletRegistry(join(dir, "wallets.json")), { bank: true });
+    chain.fund(wallets.bank!.address, seat * 200n);
+    const wreckStore = new WreckStore(join(dir, "wrecks.json"));
+    const ctx = {
+      chain,
+      wallets,
+      ledger: new TransferLedger(join(dir, "ledger.json")),
+      store: new RoundStore(join(dir, "rounds.json")),
+      bankroll: new BankrollCache({ ttlMs: 0, now: () => 0 }),
+      meter: new CostMeter(DEFAULT_SERV.pricing),
+      rollover: new RolloverStore(join(dir, "rollover.json")),
+      debts: new DebtStore(join(dir, "debts.json")),
+      wreckStore,
+      serv: new ServClient({ ...DEFAULT_SERV, backoffMs: 0 }, duplexTransport(toChips(seat), { approve: false, amount: 0, rateBps: 500 })),
+      entrants: 24,
+    };
+    const plan = await planRound(ctx, "short-on-gas");
+    expect(plan.entering).toEqual([]);
+    expect(plan.deniedCredit.length).toBe(6);
+    const run = await runRound(ctx, plan);
+    expect(run.wrecks.length).toBe(6);
+    for (const w of run.wrecks) expect(w.trigger).toBe("broke and denied credit");
     expect(run.reconciliation.ok).toBe(true);
   });
 

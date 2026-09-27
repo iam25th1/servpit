@@ -136,10 +136,10 @@ export function seatCall(calls: Calls | null, agentId: string, decided: { enter:
 /** What a visitor has called so far, in one line. */
 export function callsLine(calls: Calls, seats: number): string {
   const made = Object.values(calls);
-  if (made.length === 0) return "Nothing called yet. Tap in or out for each agent.";
+  if (made.length === 0) return "No guesses yet. Pick Fights or Sits out for each agent.";
   const inCount = made.filter(Boolean).length;
-  return `${made.length} of ${seats} called: ${inCount} in, ${made.length - inCount} out.`;
+  return `${made.length} of ${seats} guessed: ${inCount} to fight, ${made.length - inCount} to sit out.`;
 }
 
 /** The terms, in one line, from the same constants the server scores with. */
-export const CALL_TERMS = `A right call scores ${READ_POINTS}, or ${REASONED_READ_POINTS} when SERV made the decision. Call all six right for ${PERFECT_READ_BONUS} more.`;
+export const CALL_TERMS = `A right guess scores ${READ_POINTS}, or ${REASONED_READ_POINTS} when SERV made the decision. Get all six right for ${PERFECT_READ_BONUS} more.`;

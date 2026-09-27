@@ -80,8 +80,8 @@ describe("how a read went", () => {
 
 describe("what the panel says", () => {
   it("counts the calls made", () => {
-    expect(callsLine({}, 6)).toMatch(/Nothing called yet/);
-    expect(callsLine({ atlas: true, blaze: false, comet: true }, 6)).toBe("3 of 6 called: 2 in, 1 out.");
+    expect(callsLine({}, 6)).toMatch(/No guesses yet/);
+    expect(callsLine({ atlas: true, blaze: false, comet: true }, 6)).toBe("3 of 6 guessed: 2 to fight, 1 to sit out.");
   });
 
   it("states the terms from the same constants the server scores with", () => {

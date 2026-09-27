@@ -10,6 +10,7 @@ import { WALK_FRAME_MS } from "@/config/playback";
 import type { Tier } from "@/config/roster";
 import type { Animation, AssetStore, DecodedImage, Slice } from "./assets";
 import { GLYPH, clampRun, glyphCell, plateLeft, textWidth } from "./bitmapFont";
+import { inArena, type Arena } from "@/engine/arenaShape";
 import { floorPlan, type FloorCell } from "./floorPlan";
 import type { DrawTarget } from "./draw";
 import type { ActorState } from "./timeline";
@@ -75,11 +76,19 @@ export const PALETTE = {
   grid: "#262a24",
   border: "#3a4035",
   hpBack: "#111311",
+  /** The colosseum: the wall around a round pit, and the stepped stands behind it. */
+  wall: "#8a7456",
+  wallShadow: "#4a3f31",
+  stands: ["#2c2723", "#342e29"] as readonly string[],
+  /** The crowd in the stands: skin, then shirts. Muted, so the fight stays the brightest thing. */
+  crowdSkin: ["#c69c7b", "#8d5f45", "#e0b894"] as readonly string[],
+  crowdShirt: ["#7a4b3a", "#4f6b5a", "#806a3c", "#4d5d73", "#6e6e6e"] as readonly string[],
   hp: { common: "#7cb342", uncommon: "#42a5f5", rare: "#ffb300" } as Record<Tier, string>,
 } as const;
 
 export interface ArenaOptions {
-  arena: { width: number; height: number };
+  /** The pit. Round draws a colosseum: floor inside, a wall, stands where the corners were. */
+  arena: Arena;
   /** Logical pixels per tile. Default 16, the sprite size. */
   tileSize?: number;
   /** Logical pixels of margin around the arena so top row hp bars and offsets stay visible. Default 8. */
@@ -109,7 +118,7 @@ export class ArenaRenderer {
   private readonly tile: number;
   private readonly padding: number;
   private readonly walkFrameMs: number;
-  private readonly arena: { width: number; height: number };
+  private readonly arena: Arena;
   private seed: string;
   private plan: FloorCell[][];
   private planSeed: string;
@@ -260,6 +269,7 @@ export class ArenaRenderer {
       });
       for (let j = 0; j < this.arena.height; j++) {
         for (let i = 0; i < this.arena.width; i++) {
+          if (!inArena(this.arena, i, j)) continue;
           const spec = this.plan[j][i];
           const [bc, br] = FLOOR_TILES[spec.base];
           target.drawSlice(cell(floor, bc, br), px + i * this.tile, py + j * this.tile);
@@ -270,9 +280,61 @@ export class ArenaRenderer {
         }
       }
     }
+    if (this.arena.shape === "round") {
+      this.drawStands(target, px, py);
+      return;
+    }
     target.fillRect(px - 1, py - 1, w + 2, 1, PALETTE.border);
     target.fillRect(px - 1, py + h, w + 2, 1, PALETTE.border);
     target.fillRect(px - 1, py - 1, 1, h + 2, PALETTE.border);
     target.fillRect(px + w, py - 1, 1, h + 2, PALETTE.border);
+  }
+
+  /**
+   * The colosseum around a round pit: stepped stands in the corners the floor
+   * gave up, a crowd in them, and a wall wherever the floor meets the stands.
+   *
+   * Every choice comes from the floor plan, which is a pure function of the
+   * round's seed, so the crowd sits still for the whole replay rather than
+   * flickering from frame to frame.
+   */
+  private drawStands(target: DrawTarget, px: number, py: number): void {
+    const t = this.tile;
+    const { width: aw, height: ah } = this.arena;
+    for (let j = 0; j < ah; j++) {
+      for (let i = 0; i < aw; i++) {
+        if (inArena(this.arena, i, j)) continue;
+        const x = px + i * t;
+        const y = py + j * t;
+        // Rows of seats step outward from the wall, so shade by how far out.
+        const out = Math.floor(Math.hypot((2 * i + 1 - aw) / aw, (2 * j + 1 - ah) / ah) * Math.max(aw, ah));
+        target.fillRect(x, y, t, t, PALETTE.stands[out % 2]);
+        target.fillRect(x, y + t - 2, t, 1, PALETTE.wallShadow);
+        const spec = this.plan[j][i];
+        // Most seats are taken. Two spectators to a tile, each a head over a shirt.
+        for (const [seat, dx] of [[0, 1], [1, 9]] as const) {
+          if ((spec.base + seat + i) % 4 === 0) continue;
+          const skin = PALETTE.crowdSkin[(spec.base + j + seat) % PALETTE.crowdSkin.length];
+          const shirt = PALETTE.crowdShirt[(spec.base * 3 + i + j + seat) % PALETTE.crowdShirt.length];
+          // A round head over square shoulders, which reads as a person at
+          // sixteen pixels where a single block read as a bottle on a shelf.
+          target.fillRect(x + dx + 2, y + 3, 2, 1, skin);
+          target.fillRect(x + dx + 1, y + 4, 4, 3, skin);
+          target.fillRect(x + dx, y + 8, 6, 5, shirt);
+        }
+      }
+    }
+    // The wall: every floor edge that faces the stands or the end of the grid.
+    for (let j = 0; j < ah; j++) {
+      for (let i = 0; i < aw; i++) {
+        if (!inArena(this.arena, i, j)) continue;
+        const x = px + i * t;
+        const y = py + j * t;
+        if (!inArena(this.arena, i, j - 1)) target.fillRect(x - 1, y - 2, t + 2, 2, PALETTE.wall);
+        if (!inArena(this.arena, i, j + 1)) target.fillRect(x - 1, y + t, t + 2, 2, PALETTE.wall);
+        if (!inArena(this.arena, i - 1, j)) target.fillRect(x - 2, y - 1, 2, t + 2, PALETTE.wall);
+        if (!inArena(this.arena, i + 1, j)) target.fillRect(x + t, y - 1, 2, t + 2, PALETTE.wall);
+      }
+    }
   }
 }

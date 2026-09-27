@@ -4,6 +4,7 @@
 // The mode is a strategy object; swap it here to change the game.
 
 import { battleRoyale } from "@/engine/modes/battleRoyale";
+import type { Arena } from "@/engine/arenaShape";
 import type { RoundMode } from "@/engine/modes/types";
 import { DEFAULT_REELS, type ReelConfig } from "./reels";
 import type { Tier } from "./roster";
@@ -21,7 +22,8 @@ export type StakeTier = "low" | "high";
 export interface RoundConfig {
   reels: ReelConfig;
   baseStats: Record<Tier, StatBlock>;
-  arena: { width: number; height: number };
+  /** The pit floor. Round: a colosseum, with stands where the corners would be. */
+  arena: Arena;
   /** Ticks before the storm starts. */
   maxTicks: number;
   /** Storm damage per tick, multiplied by ticks since it started. */
@@ -44,7 +46,7 @@ export const DEFAULT_ROUND: RoundConfig = {
     uncommon: { hp: 115, atk: 12, def: 2, spd: 1 },
     rare: { hp: 125, atk: 13, def: 3, spd: 1 },
   },
-  arena: { width: 24, height: 24 },
+  arena: { width: 24, height: 24, shape: "round" },
   maxTicks: 300,
   stormDamage: 5,
   damageVariancePct: 20,

@@ -46,7 +46,7 @@ const REASONING: OnboardingScreen = {
 const CALLS: OnboardingScreen = {
   title: "Your game: call it",
   lines: [
-    "Between rounds, call each agent in or out before it decides. You score when you read it right, and double when SERV made the decision.",
+    "Between rounds, predict which agents will pay to fight and which will sit out. You score when you guess right, and double when SERV made the decision.",
     "Then pull the lever to start the round now, with every agent reasoning, and watch your calls land. Points only, never money.",
   ],
 };

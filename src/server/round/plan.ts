@@ -202,6 +202,14 @@ export async function planRound(
   const bankOn = stakeMultiple > 1 && Boolean(ctx.wallets.bank);
   const tapped = bankOn ? snapshots.filter((s) => s.balanceWei < stakeWei) : [];
   const tappedIds = new Set(tapped.map((s) => s.profile.id));
+  // Denied credit, for the wreck, is any refusal that leaves an agent unable
+  // to take the cheapest seat on its own: the stake and the gas the chain
+  // keeps back. It used to be only a tapped out agent, one short of the stake
+  // alone, so an agent holding fifteen chips against a ten chip seat and a
+  // twenty chip reserve was asked, refused, turned away for gas, never
+  // wrecked, and never in a round again. Every agent but the richest ended up
+  // there, and the pit was one agent and the house.
+  const cannotSeat = (s: { profile: { id: string }; balanceWei: bigint }): boolean => tappedIds.has(s.profile.id) || s.balanceWei < stakeWei + ctx.chain.gasReserveWei;
   const asked = snapshots.filter((s) => !tappedIds.has(s.profile.id));
 
   // The record, for the rounds that are not reasoning. Read here rather than
@@ -340,7 +348,7 @@ export async function planRound(
           // lend, so this is the pit's own arithmetic rather than a decision
           // anybody made.
           refusals.push({ agentId: snapshot.profile.id, name: snapshot.profile.name, reason: "Nothing left to lend against that record.", askedWei: shortfallWei, tappedOut: tappedOutHere, source: "heuristic" });
-          if (tappedIds.has(snapshot.profile.id)) deniedCredit.push(snapshot.profile.id);
+          if (cannotSeat(snapshot)) deniedCredit.push(snapshot.profile.id);
         } else {
           const answer = await decideLoan({ client: serv, meter: ctx.meter, history: serv ? undefined : ctx.store.all() }, request, bounds);
           // With the answer, what the lender is holding as it gives it. The
@@ -382,7 +390,7 @@ export async function planRound(
               situation: answer.situation,
               evidence: answer.evidence,
             });
-            if (tappedIds.has(snapshot.profile.id)) deniedCredit.push(snapshot.profile.id);
+            if (cannotSeat(snapshot)) deniedCredit.push(snapshot.profile.id);
           }
         }
       }

@@ -37,6 +37,7 @@ import type { DecidedShape, OccupantShape } from "./screens/lineupRows";
 import { UiKitProvider } from "@/ui/UiKit";
 import { createResponsiveScope, playTransition } from "@/ui/transitions";
 import { Stage } from "@/ui/Stage";
+import { layoutFor } from "@/ui/layoutMode";
 import { readNdjson } from "./ndjson";
 import { getWithTimeout, requestWithTimeout, RequestTimeoutError } from "./request";
 import { pickPlayerDraw, type RunReel } from "./reelPick";
@@ -146,6 +147,10 @@ interface Engine {
 
 const SYMBOL_POOL = (manifest: Manifest): string[] => manifest.entries.map((e) => e.id);
 const MAX_SCALE = 3;
+/** The arena's largest side on the desktop stage, in stage pixels. */
+const ARENA_DESKTOP_PX = 600;
+/** The cabinet's frame and padding around the arena canvas, top and bottom together. */
+const ARENA_FRAME_PX = 56;
 /** Short unique token. Not a clock: this screen may not read time outside the loop. */
 const token = (): string => crypto.randomUUID().replace(/-/g, "").slice(0, 10);
 
@@ -462,14 +467,36 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
           setLeverNote("");
         });
 
+        // On a desktop the canvases live on the 1280 by 720 stage, which is
+        // scaled as a whole to the window. Sizing them from the window as well
+        // counted the window twice: a tall window asked for the arena at
+        // double size, 800 px of it inside a 720 px stage, and the top of the
+        // pit ran up under the bar. So on the stage they are sized from the
+        // room the stage gives them, and only a phone reads the window.
+        const playfield = arenaCanvas.closest<HTMLElement>("[data-playfield]");
         const fit = (): void => {
-          const slotScale = computeIntegerScale(Math.min(window.innerWidth - 48, 640), 520, slotRenderer.width, slotRenderer.height);
+          const desktop = layoutFor(window.innerWidth, window.innerHeight) === "desktop";
+          const slotScale = computeIntegerScale(desktop ? 640 : Math.min(window.innerWidth - 48, 640), 520, slotRenderer.width, slotRenderer.height);
           slotTarget.setScale(Math.min(MAX_SCALE, slotScale));
-          const arenaScale = computeIntegerScale(Math.min(window.innerWidth - 48, 900), window.innerHeight - 260, arenaRenderer.width, arenaRenderer.height);
-          arenaTarget.setScale(Math.min(2, arenaScale));
+          if (!desktop) {
+            const arenaScale = computeIntegerScale(Math.min(window.innerWidth - 48, 900), window.innerHeight - 260, arenaRenderer.width, arenaRenderer.height);
+            arenaTarget.setScale(Math.min(2, arenaScale));
+            return;
+          }
+          // Drawn at twice its size and shown at whatever square fits the
+          // playfield, less the cabinet's frame. The playfield is offstage
+          // (one pixel) until the pit is showing, so fall back to the size a
+          // 720 stage leaves until it is measured for real.
+          arenaTarget.setScale(2);
+          const room = playfield && playfield.clientHeight > 100 ? playfield.clientHeight - ARENA_FRAME_PX : ARENA_DESKTOP_PX;
+          const side = Math.max(arenaRenderer.height, Math.min(ARENA_DESKTOP_PX, room));
+          arenaCanvas.style.height = `${side}px`;
+          arenaCanvas.style.width = `${Math.round((side * arenaRenderer.width) / arenaRenderer.height)}px`;
         };
         fit();
         window.addEventListener("resize", fit);
+        const watchField = typeof ResizeObserver === "undefined" || !playfield ? null : new ResizeObserver(fit);
+        if (watchField && playfield) watchField.observe(playfield);
 
         const loop = startLoop((deltaMs) => {
           engine.elapsedMs += deltaMs;
@@ -508,6 +535,7 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
         stop = () => {
           loop.stop();
           window.removeEventListener("resize", fit);
+          watchField?.disconnect();
           sink.close();
         };
       } catch (e) {

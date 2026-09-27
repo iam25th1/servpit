@@ -37,7 +37,7 @@ const calls = (over: Partial<CallsShape> = {}): CallsShape => ({
   seats: callSeats(null),
   draft: {},
   open: true,
-  status: "Nothing called yet. Tap in or out for each agent.",
+  status: "No guesses yet. Pick Fights or Sits out for each agent.",
   callers: 0,
   onCall: () => {},
   ...over,
@@ -104,10 +104,10 @@ describe("the calls panel between rounds", () => {
   it("offers every seat in and out, with how it plays and the terms", () => {
     mount(shell({ calls: calls() }));
     for (const name of ["Atlas", "Blaze", "Comet", "Delta", "Ember", "Flint"]) {
-      expect(screen.getByRole("button", { name: `${name} buys in` })).toBeTruthy();
-      expect(screen.getByRole("button", { name: `${name} holds` })).toBeTruthy();
+      expect(screen.getByRole("button", { name: `${name} fights` })).toBeTruthy();
+      expect(screen.getByRole("button", { name: `${name} sits out` })).toBeTruthy();
     }
-    expect(document.body.textContent).toContain("Call the next round");
+    expect(document.body.textContent).toContain("Predict who fights next");
     expect(document.body.textContent).toContain("Careful. Wants a cushion before it plays.");
     expect(document.body.textContent).toMatch(/scores 10, or 20 when SERV made the decision/);
   });
@@ -115,16 +115,16 @@ describe("the calls panel between rounds", () => {
   it("hands a call up and shows it as a switch that stays down", () => {
     const onCall = vi.fn();
     mount(shell({ calls: calls({ onCall, draft: { atlas: true } }) }));
-    expect(screen.getByRole("button", { name: "Atlas buys in" }).getAttribute("aria-pressed")).toBe("true");
-    expect(screen.getByRole("button", { name: "Atlas holds" }).getAttribute("aria-pressed")).toBe("false");
-    fireEvent.click(screen.getByRole("button", { name: "Blaze holds" }));
+    expect(screen.getByRole("button", { name: "Atlas fights" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "Atlas sits out" }).getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(screen.getByRole("button", { name: "Blaze sits out" }));
     expect(onCall).toHaveBeenCalledWith("blaze", false);
   });
 
   it("closes the calls while they are not being taken", () => {
     const onCall = vi.fn();
     mount(shell({ calls: calls({ onCall, open: false }) }));
-    const button = screen.getByRole("button", { name: "Atlas buys in" }) as HTMLButtonElement;
+    const button = screen.getByRole("button", { name: "Atlas fights" }) as HTMLButtonElement;
     expect(button.disabled).toBe(true);
     fireEvent.click(button);
     expect(onCall).not.toHaveBeenCalled();
@@ -137,7 +137,7 @@ describe("the calls panel between rounds", () => {
 
   it("is not offered over a replay, where there is nothing to call", () => {
     mount(shell({ calls: calls(), watching: { ...watching, replay: true } }));
-    expect(screen.queryByRole("button", { name: "Atlas buys in" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Atlas fights" })).toBeNull();
   });
 });
 
@@ -155,11 +155,11 @@ describe("the reveal, as the answers land", () => {
         roundCalls: { atlas: true, blaze: true, comet: false },
       }),
     );
-    expect(document.body.textContent).toContain("you called in, wrong");
-    expect(document.body.textContent).toContain("you called in, right");
+    expect(document.body.textContent).toContain("you said fights, wrong");
+    expect(document.body.textContent).toContain("you said fights, right");
     // Comet has not answered, so its call is said without a verdict.
-    expect(document.body.textContent).toContain("you called out");
-    expect(document.body.textContent).not.toContain("you called out, ");
+    expect(document.body.textContent).toContain("you said sits out");
+    expect(document.body.textContent).not.toContain("you said sits out, ");
   });
 
   it("names the claimed fighters in the round, and which one is yours", () => {

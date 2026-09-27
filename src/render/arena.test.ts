@@ -289,3 +289,34 @@ describe("a nameplate against the arena edge", () => {
     expect(glyphs.every((g) => g.y >= 0)).toBe(true);
   });
 });
+
+describe("the round pit", () => {
+  const round = { width: 24, height: 24, shape: "round" as const };
+
+  it("lays floor tiles only inside the colosseum, never in its corners", () => {
+    const r = new ArenaRenderer(store, { arena: round });
+    const t = new RecordingTarget(r.width, r.height);
+    r.draw(t, { actors: [], timeMs: 0 });
+    const bases = t.floorSlices();
+    expect(bases.some((s) => s.x === 8 && s.y === 8)).toBe(false);
+    expect(bases.some((s) => s.x === 8 + 12 * 16 && s.y === 8 + 12 * 16)).toBe(true);
+  });
+
+  it("walls the floor off from the stands, and puts a crowd in them", () => {
+    const r = new ArenaRenderer(store, { arena: round });
+    const t = new RecordingTarget(r.width, r.height);
+    r.draw(t, { actors: [], timeMs: 0 });
+    expect(t.calls.some((c) => c.kind === "fill" && c.color === PALETTE.wall)).toBe(true);
+    expect(t.calls.some((c) => c.kind === "fill" && PALETTE.stands.includes(c.color))).toBe(true);
+    expect(t.calls.some((c) => c.kind === "fill" && PALETTE.crowdShirt.includes(c.color))).toBe(true);
+  });
+
+  it("seats the same crowd on every frame", () => {
+    const r = new ArenaRenderer(store, { arena: round });
+    const a = new RecordingTarget(r.width, r.height);
+    const b = new RecordingTarget(r.width, r.height);
+    r.draw(a, { actors: [], timeMs: 0 });
+    r.draw(b, { actors: [], timeMs: 5000 });
+    expect(b.calls).toEqual(a.calls);
+  });
+});
