@@ -45,7 +45,7 @@ describe("what the lever says", () => {
   });
 
   it("says whether the round will reason, before it is pulled", () => {
-    expect(leverLines(state()).reasoning).toBe("The agents will reason about this round.");
+    expect(leverLines(state()).reasoning).toBe("Starts the next round now, with all six agents reasoning through SERV.");
     const blocked = view({ willReason: false, reasonBlocked: "The pit has spent its reasoning budget for today, so this round runs on instinct." });
     expect(leverLines(state({ view: blocked })).reasoning).toMatch(/budget/);
   });
@@ -54,9 +54,9 @@ describe("what the lever says", () => {
     const at = new Date(NOW + 60 * 60_000).toISOString();
     expect(leverLines(state({ view: view({ left: 0, resetsAt: at }) })).blocked).toBe("No pulls left, the next in 1 hour.");
     expect(leverLines(state({ busy: true })).blocked).toMatch(/round is running/);
-    // Nothing in words for a missing handle: the field is on the same card
-    // and the control is already dead.
-    expect(leverLines(state({ handle: null })).blocked).toBeNull();
+    // A missing handle is said in words: a dead control with a pull count
+    // under it and nothing else read as a broken button.
+    expect(leverLines(state({ handle: null })).blocked).toBe("Pick a handle first. Pulls are counted against it.");
     expect(leverLines(state({ error: "Somebody just pulled it. That round is starting now." })).blocked).toMatch(/just pulled it/);
   });
 

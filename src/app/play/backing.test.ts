@@ -35,10 +35,12 @@ const round = (extra: Partial<ArenaFeedRound> = {}): ArenaFeedRound => ({
 });
 
 describe("who may be backed", () => {
-  it("is the agents that paid, with what they drew", () => {
+  it("is the agents that paid, with what they drew and what they staked", () => {
+    // The draw decides the odds and the stake is what the reasoning decided,
+    // so a pick is made on both.
     expect(backOptions(round(), { atlas: 3 })).toEqual([
-      { agentId: "atlas", name: "Atlas", face: "Knight", characterId: "Knight", tier: "rare", backers: 3 },
-      { agentId: "vex", name: "Vex", face: "NinjaFire", characterId: "Bear", tier: "common", backers: 0 },
+      { agentId: "atlas", name: "Atlas", face: "Knight", characterId: "Knight", tier: "rare", backers: 3, stake: 10, source: "serv" },
+      { agentId: "vex", name: "Vex", face: "NinjaFire", characterId: "Bear", tier: "common", backers: 0, stake: 10, source: "heuristic" },
     ]);
   });
 

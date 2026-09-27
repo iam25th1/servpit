@@ -67,6 +67,8 @@ export interface ArenaLoan {
   rateBps: number;
   reason: string;
   source: string;
+  /** True when the borrower could not cover a seat at all, rather than wanting a bigger one. */
+  tappedOut?: boolean;
   /** What a learned answer was drawn from. Counts, never outcomes. */
   evidence?: { matches: number; approved: number; typicalAmount: number };
 }
@@ -77,6 +79,8 @@ export interface ArenaRefusal {
   asked: number;
   reason: string;
   source: string;
+  /** True when the borrower could not cover a seat at all, rather than wanting a bigger one. */
+  tappedOut?: boolean;
   /** What a learned answer was drawn from. Counts, never outcomes. */
   evidence?: { matches: number; approved: number; typicalAmount: number };
 }
@@ -119,6 +123,28 @@ export interface ArenaResult {
   checks: Array<{ name: string; ok: boolean; expected: string; actual: string }>;
   /** True on a chain where a hash is worth linking. */
   settles: boolean;
+}
+
+/**
+ * A seat as the next round will find it, for the panel a visitor calls from.
+ *
+ * Written once the round before it is settled, so every figure is one the
+ * next round will actually start from: the balance read from the chain after
+ * the settle, what is owed after interest and any repayment, and whoever sits
+ * in the seat after any wreck. Nothing in it is an outcome of a round that
+ * has not happened.
+ */
+export interface ArenaSeat {
+  agentId: string;
+  name: string;
+  /** Null for an original, which the client draws its own face for. */
+  face: string | null;
+  strategy: string;
+  /** What it holds now, or null when the chain would not answer for its wallet. */
+  chips: number | null;
+  owes: number;
+  /** What the seat did in the round just played. New when somebody just sat down in it. */
+  last: "won" | "lost" | "held" | "new";
 }
 
 export interface ArenaRound {
@@ -168,6 +194,19 @@ export interface ArenaRound {
    * before the reveal only because there is nothing to show yet.
    */
   reels?: Array<{ entrantId: string; symbols: string[]; characterId: string; tier: string; combo: string; bonusPct: number }>;
+  /**
+   * The round the pit had on file when this one started.
+   *
+   * Calls on this round were filed under it, because this round had no id
+   * until it started and was locked the moment it did. Empty on a new pit.
+   * Absent on a round stored before calls existed.
+   */
+  after?: string;
+  /**
+   * The seats as the next round will find them. Written with the result, once
+   * this round is settled, and absent before that.
+   */
+  table?: ArenaSeat[];
   /** Absent until the fight phase begins. */
   fight?: ArenaFight;
   /** Absent until the round is settled. */

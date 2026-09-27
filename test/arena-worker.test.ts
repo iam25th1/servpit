@@ -102,4 +102,42 @@ describe("the worker with arena mode on", () => {
     // The lock is released on the way out, so the next worker can start.
     expect(existsSync(join(data, "arena-fake.lock"))).toBe(false);
   }, 300_000);
+
+  it("seats a claimed fighter, fights it, and scores the calls made before the round", async () => {
+    const data = dataDir();
+    const at = new Date(Date.now() - 60_000).toISOString();
+    // A claim and a set of calls, written the way the routes write them, a
+    // minute before the worker starts.
+    const lines = (rows: object[]): string => rows.map((row) => JSON.stringify(row)).join("\n") + "\n";
+    writeFileSync(join(data, "fighters-fake.ndjson"), lines([{ k: "head", network: "fake" }, { k: "claim", handle: "cupcake", tokenHash: "h1", name: "cupcake", face: "Monk", at }]));
+    const calls = { atlas: true, blaze: true, comet: true, delta: true, ember: true, flint: true };
+    writeFileSync(join(data, "picks-fake.ndjson"), lines([{ k: "head", network: "fake" }, { k: "claim", handle: "reader", tokenHash: "h2", at }, { k: "call", after: "", handle: "reader", calls, at }]));
+
+    const run = await runWorker({
+      SERVPIT_DATA_DIR: data,
+      WALLET_BACKEND: "fake",
+      SERVPIT_ARENA_MODE: "true",
+      SERVPIT_ROUND_INTERVAL_SECONDS: "5",
+      SERVPIT_BACKING_WINDOW_SECONDS: "5",
+      SERVPIT_ARENA_MAX_ROUNDS: "1",
+    });
+    expect(run.code).toBe(0);
+    const state = JSON.parse(readFileSync(join(data, "arena-fake.json"), "utf8"));
+    // Seated, published, and in the fight.
+    expect(state.round.fighters).toEqual([{ handle: "cupcake", name: "cupcake", face: "Monk", entrantId: "fighter-cupcake" }]);
+    expect(state.round.fight.placements).toContain("fighter-cupcake");
+    // The calls were filed after nothing, because this pit had never played.
+    expect(state.round.after).toBe("");
+    // The seats the next round will find, one per wallet.
+    expect(state.round.table).toHaveLength(6);
+    for (const seat of state.round.table) expect(["won", "lost", "held", "new"]).toContain(seat.last);
+    // The read is on the board, scored against what the agents did.
+    const board = JSON.parse(readFileSync(join(data, "leaderboard-fake.json"), "utf8"));
+    const reader = board.rows.find((row: { handle: string }) => row.handle === "reader");
+    const entered = state.round.decisions.filter((d: { enter: boolean }) => d.enter).length;
+    expect(reader).toMatchObject({ reads: 6, readsRight: entered });
+    // And the fighter has a career.
+    const careers = JSON.parse(readFileSync(join(data, "careers-fake.json"), "utf8"));
+    expect(careers.rows.map((row: { handle: string }) => row.handle)).toContain("cupcake");
+  }, 300_000);
 });

@@ -132,6 +132,22 @@ const PAIRS = [
 
   { what: "the next round line on the result screen", text: palette.amber, surface: palette.pit },
 
+  // Calling the agents, between rounds. On the dark frame, like the lineup.
+  { what: "an agent's name in the calls panel", text: palette.bone, surface: darkSurfaces.bg },
+  { what: "how an agent plays, under its name", text: palette.boneDim, surface: darkSurfaces.bg },
+  { what: "what an agent holds and did last round", text: palette.amber, surface: darkSurfaces.bg },
+  { what: "the calls saved line", text: palette.bone, surface: darkSurfaces.bg },
+  { what: "the terms of a call", text: palette.boneDim, surface: darkSurfaces.bg },
+  { what: "a call that held, in the lineup", text: palette.good, surface: darkSurfaces.bg },
+  { what: "a call that did not, in the lineup", text: palette.boneDim, surface: darkSurfaces.bg },
+  { what: "a claimed fighter named in the lineup", text: palette.bone, surface: darkSurfaces.bg },
+  { what: "this viewer's own fighter in the lineup", text: palette.amber, surface: darkSurfaces.bg },
+  { what: "a toggle chosen", text: palette.boneBright, surface: midSurfaces.buttonPressed },
+  { what: "a toggle not chosen", text: palette.ink, surface: lightSurfaces.button },
+  { what: "the title's three steps", text: palette.boneDim, surface: TITLE_FIELD },
+  { what: "how a read went, on the sage panel", text: palette.inkDim, surface: lightSurfaces.panelAlt },
+  { what: "what SERV did, under the bankrolls", text: palette.boneDim, surface: darkSurfaces.bg },
+
   // On the page itself.
   { what: "offchain notice", text: palette.boneDim, surface: palette.pit },
   { what: "lever note", text: palette.boneDim, surface: palette.pit },

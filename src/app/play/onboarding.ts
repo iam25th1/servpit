@@ -28,18 +28,26 @@ export interface StorageLike {
 }
 
 const AGENTS: OnboardingScreen = {
-  title: "Six agents, one pit",
+  title: "What this is",
   lines: [
-    "Six AI agents hold their own wallets on Base Sepolia. Every round they decide for themselves whether to buy a seat, and how much of their balance to put up.",
-    "Nobody plays them. They answer for themselves, and they can run out of money.",
+    "A live test of AI agents with money. Six agents hold real wallets on Base Sepolia, and every round each one decides whether to buy a seat in the pit, borrow, or keep its chips.",
+    "Nobody plays them. Every choice moves real test funds, and an agent that plays badly goes broke.",
   ],
 };
 
 const REASONING: OnboardingScreen = {
-  title: "How they decide",
+  title: "What SERV does",
   lines: [
-    "Each agent reasons with SERV about its balance, the size of the field and how its recent rounds went.",
-    "Every decision on screen says where it came from: reasoned with SERV, or on instinct when the model was not asked.",
+    "When a round reasons, every agent asks SERV Reasoning whether to buy in and how much to stake, from its balance, its debts and how its last rounds went. Marrow, the lender, asks it who to lend to.",
+    "Every answer on screen is labelled: reasoned by SERV, learned from past SERV answers, or on instinct when the model was not asked.",
+  ],
+};
+
+const CALLS: OnboardingScreen = {
+  title: "Your game: call it",
+  lines: [
+    "Between rounds, call each agent in or out before it decides. You score when you read it right, and double when SERV made the decision.",
+    "Then pull the lever to start the round now, with every agent reasoning, and watch your calls land. Points only, never money.",
   ],
 };
 
@@ -54,8 +62,9 @@ const MARROW: OnboardingScreen = {
 const arenaFight: OnboardingScreen = {
   title: "The draw, then the fight",
   lines: [
-    "The house pulls the lever. The reels deal each agent a fighter, and twenty four fighters load into the pit and fight with nobody playing them.",
-    "The last one standing takes the pot. If a house fighter wins, the pot rolls into the next round.",
+    "The house pulls the lever. The reels deal each agent a fighter, and twenty four fighters fight it out with nobody playing them. The last one standing takes the pot, or it rolls into the next round.",
+    // The other things a viewer can do, which nothing else announces.
+    "In the window before the fight you can back one agent for more points. You can also watch the last one again, or claim a fighter of your own: a free house seat that enters every round.",
   ],
 };
 
@@ -64,17 +73,6 @@ const leverFight: OnboardingScreen = {
   lines: [
     "You pull the lever. The reels deal a fighter, and twenty four fighters load into the pit and fight with nobody playing them.",
     "The last one standing takes the pot. If a house fighter wins, the pot rolls into the next round.",
-  ],
-};
-
-const BACKING: OnboardingScreen = {
-  title: "Your part",
-  lines: [
-    "In the window between the draw and the fight you back one agent. Calling the winner earns points, and more of them for a long shot nobody else backed.",
-    // Two lines, because these are a few short screens rather than a manual,
-    // so the second one carries the two things a viewer can do that nothing
-    // else on screen announces.
-    "Points only, never money. You can watch the last one again from the start, or claim a fighter of your own: a house seat that enters every round and builds a record you can follow.",
   ],
 };
 
@@ -89,11 +87,13 @@ const CHAIN: OnboardingScreen = {
 /**
  * The screens for this mode, in order.
  *
- * Arena mode gets the backing screen, because in arena mode the viewer has
- * something to do. The lever flow gets the same everything else.
+ * Purpose first, then what SERV does, then the visitor's own part, because a
+ * visitor who knows why the pit exists reads the rest as a game rather than
+ * as a manual. Arena mode gets the calls and the backing, because in arena
+ * mode the viewer has something to do. The lever flow gets the rest.
  */
 export function onboardingScreens(arenaMode: boolean): OnboardingScreen[] {
-  return arenaMode ? [AGENTS, REASONING, MARROW, arenaFight, BACKING, CHAIN] : [AGENTS, REASONING, MARROW, leverFight, CHAIN];
+  return arenaMode ? [AGENTS, REASONING, CALLS, MARROW, arenaFight, CHAIN] : [AGENTS, REASONING, MARROW, leverFight, CHAIN];
 }
 
 /** Whether this browser has been through it. */

@@ -84,7 +84,7 @@ export async function planRound(
   ctx: FlowContext,
   seed: string,
   onDecided?: (decision: AgentDecision) => void,
-  onLoan?: (decision: BankDecision, name: string, bank: BankSnapshot) => void,
+  onLoan?: (decision: BankDecision, name: string, bank: BankSnapshot, tappedOut: boolean) => void,
   options: PlanOptions = {},
 ): Promise<RoundPlan> {
   if (!SEED.test(seed)) throw new RangeError(`seed must match ${SEED}`);
@@ -346,7 +346,7 @@ export async function planRound(
           // With the answer, what the lender is holding as it gives it. The
           // panel is drawn from this, and without it a viewer watching the
           // banking phase sees the answers with nobody giving them.
-          onLoan?.(answer, snapshot.profile.name, { treasuryWei, book: bookNow() });
+          onLoan?.(answer, snapshot.profile.name, { treasuryWei, book: bookNow() }, tappedOutHere);
           if (answer.decision.approve && answer.decision.amountChips > 0) {
             lentWei = toWei(answer.decision.amountChips);
             treasuryWei -= lentWei;

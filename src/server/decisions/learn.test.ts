@@ -135,7 +135,7 @@ describe("drawing a decision from the record", () => {
     const rounds = [...many(6, { situation: situation() }), ...many(1, { situation: situation(), entered: false, stake: 0 })];
     const learned = learnedDecision("atlas", situation(), STAKE_CHIPS, rounds)!;
     expect(learned.evidence).toMatchObject({ matches: 7, entered: 6 });
-    expect(learned.decision.reason).toMatch(/learned: in 7 reasoned rounds/);
+    expect(learned.decision.reason).toMatch(/SERV had me in 6 of 7 spots like this, so I am in/);
     expect(learned.evidence.band).toBe(bandOf(situation(), STAKE_CHIPS));
   });
 });

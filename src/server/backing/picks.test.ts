@@ -89,3 +89,43 @@ describe("reading a log that another process is writing", () => {
     expect(head).toMatchObject({ k: "head", network: "fake" });
   });
 });
+
+describe("recording calls on the next round", () => {
+  it("reads back the latest calls each visitor made, under the round they were made after", () => {
+    const s = store();
+    expect(s.recordCalls("r-1", "ash", "h1", { atlas: true, blaze: false })).toBe("recorded");
+    s.recordCalls("r-1", "ash", "h1", { atlas: false });
+    s.recordCalls("r-1", "bowen", "h2", { comet: true });
+    expect(s.callsOf("r-1", "ash")).toEqual({ atlas: false });
+    expect(s.callsAfter("r-1").size).toBe(2);
+    expect(s.callsOf("r-2", "ash")).toBeNull();
+  });
+
+  it("shares its handles with picks, so a name is one browser in both", () => {
+    const s = store();
+    s.record("r-1", "ash", "h1", "atlas");
+    expect(s.recordCalls("r-1", "ash", "somebody-else", { atlas: true })).toBe("handle taken");
+    s.recordCalls("r-1", "cyan", "h3", { atlas: true });
+    expect(s.record("r-1", "cyan", "other", "atlas")).toBe("handle taken");
+  });
+
+  it("counts only calls made before the cutoff, which is when the called round started", () => {
+    const s = store();
+    appendFileSync(file, JSON.stringify({ k: "head", network: "fake" }) + "\n");
+    appendFileSync(file, JSON.stringify({ k: "call", after: "r-1", handle: "ash", calls: { atlas: true }, at: "2026-09-22T00:00:00.000Z" }) + "\n");
+    appendFileSync(file, JSON.stringify({ k: "call", after: "r-1", handle: "ash", calls: { atlas: false }, at: "2026-09-22T00:00:10.000Z" }) + "\n");
+    appendFileSync(file, JSON.stringify({ k: "call", after: "r-1", handle: "late", calls: { atlas: false }, at: "2026-09-22T00:00:10.000Z" }) + "\n");
+    const start = Date.parse("2026-09-22T00:00:05.000Z");
+    expect(s.callsOf("r-1", "ash", start)).toEqual({ atlas: true });
+    expect(s.callsAfter("r-1", start).has("late")).toBe(false);
+    expect(s.callsOf("r-1", "ash")).toEqual({ atlas: false });
+  });
+
+  it("skips a call line carrying anything but true or false", () => {
+    const s = store();
+    appendFileSync(file, JSON.stringify({ k: "head", network: "fake" }) + "\n");
+    appendFileSync(file, JSON.stringify({ k: "call", after: "r-1", handle: "ash", calls: { atlas: "yes" }, at: "2026-09-22T00:00:00.000Z" }) + "\n");
+    appendFileSync(file, JSON.stringify({ k: "call", after: "r-1", handle: "bee", calls: [true], at: "2026-09-22T00:00:00.000Z" }) + "\n");
+    expect(s.callsAfter("r-1").size).toBe(0);
+  });
+});

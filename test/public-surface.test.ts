@@ -44,6 +44,7 @@ describe("the route inventory", () => {
       "src/app/api/arena/route.ts GET",
       "src/app/api/arena/stream/route.ts GET",
       "src/app/api/backing/route.ts GET,POST",
+      "src/app/api/calls/route.ts GET,POST",
       "src/app/api/fighter/route.ts GET,POST",
       "src/app/api/fighters/route.ts GET",
       "src/app/api/graveyard/route.ts GET",
@@ -56,13 +57,15 @@ describe("the route inventory", () => {
     ]);
   });
 
-  it("has exactly five routes that accept a write at all", () => {
-    // Two of them are the lever, closed in production. The other three are
-    // the public ones: a pick, an ask for a round, and a claim on a house
-    // seat. Each writes a line in a log and none of them can move a chip.
+  it("has exactly six routes that accept a write at all", () => {
+    // Two of them are the lever, closed in production. The other four are
+    // the public ones: a pick, a set of calls on the next round, an ask for a
+    // round, and a claim on a house seat. Each writes a line in a log and
+    // none of them can move a chip.
     const writers = routes().filter((r) => r.methods.some((m) => m !== "GET"));
     expect(writers.map((r) => r.path)).toEqual([
       "src/app/api/backing/route.ts",
+      "src/app/api/calls/route.ts",
       "src/app/api/fighter/route.ts",
       "src/app/api/pull/route.ts",
       "src/app/api/round/plan/route.ts",
@@ -146,6 +149,7 @@ describe("in production", () => {
     bodies.push(await (await (await import("@/app/api/leaderboard/route")).GET(new NextRequest("http://localhost/api/leaderboard"))).text());
     bodies.push(await (await (await import("@/app/api/graveyard/route")).GET()).text());
     bodies.push(await (await (await import("@/app/api/health/route")).GET()).text());
+    bodies.push(await (await (await import("@/app/api/calls/route")).GET(new NextRequest("http://localhost/api/calls?handle=ash"))).text());
     for (const body of bodies) {
       // No key, no url with a credential in it, no path on the operator's
       // disk, no stack trace.

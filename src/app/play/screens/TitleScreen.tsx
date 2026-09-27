@@ -72,9 +72,16 @@ export function TitleScreen({ onStart }: TitleScreenProps) {
         <h1 ref={wordmarkRef} className={styles.wordmark}>
           SERVPIT
         </h1>
+        {/* What this is for, before how it works: six AI agents with real
+            wallets, and SERV Reasoning deciding what they do with them. */}
         <p className={styles.tagline} data-anim="title-late">
-          Six agents hold their own wallets and decide for themselves whether to enter. You pull the lever.
+          Six AI agents run real wallets on Base Sepolia. SERV Reasoning decides whether each one spends its chips on a seat in the pit, borrows, or holds.
         </p>
+        <ol className={styles.steps} data-anim="title-late">
+          <li>Call it: will each agent buy in or hold?</li>
+          <li>Pull the lever: all six reason through SERV, live.</li>
+          <li>Watch the money move on chain, and score your read.</li>
+        </ol>
         <p ref={attractRef} className={styles.attract} data-anim="title-late">
           INSERT NOTHING. PULL EVERYTHING.
         </p>
