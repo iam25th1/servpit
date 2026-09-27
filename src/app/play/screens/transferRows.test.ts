@@ -120,4 +120,9 @@ describe("a round a house bot won", () => {
       "flint was staked by the operator",
     ]);
   });
+
+  it("names each row by the agent's name when it has one, and by the seat when it does not", () => {
+    const rows = transferRows([entry("blaze", null), entry("atlas", null)], { blaze: "Vex" });
+    expect(rows.map((r) => r.label)).toEqual(["Vex paid in", "atlas paid in"]);
+  });
 });

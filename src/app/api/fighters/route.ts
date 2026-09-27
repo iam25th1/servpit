@@ -6,12 +6,18 @@
 //
 // A row is a name, a face and counts. Handles are unverified, so a row is a
 // claim about a name rather than about a person, which the README says.
+//
+// Every seat claimed right now is on the board, with an empty record until
+// its first round is over. It used to list records only, so a fighter claimed
+// a moment ago was nowhere on it and the board said nobody had claimed one.
 
 import { NextResponse, type NextRequest } from "next/server";
 import { normaliseHandle } from "@/config/backing";
 import { arenaReader } from "@/server/arena/read";
 import { readEnv } from "@/server/env";
+import { fighterBoardPage, fighterBoardRow } from "@/server/fighters/board";
 import { CareerStore, careerFile } from "@/server/fighters/careerStore";
+import { fighterReader } from "@/server/fighters/read";
 import { log } from "@/server/log";
 import { internalDetail, publicError } from "@/server/publicError";
 
@@ -33,11 +39,16 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     const network = arenaReader().chain.network;
     const page = Number(request.nextUrl.searchParams.get("page") ?? "1");
     const handle = normaliseHandle(request.nextUrl.searchParams.get("handle"));
-    const held = careers(network);
+    const records = careers(network).rows();
+    // Names and faces only. The claims log also holds a hash of each
+    // browser's token, and nothing of it leaves this route.
+    const claims = fighterReader()
+      .all()
+      .map((f) => ({ handle: f.handle, name: f.name, face: f.face }));
     return NextResponse.json({
-      ...held.page(Number.isFinite(page) ? page : 1, PAGE_SIZE),
+      ...fighterBoardPage(records, claims, page, PAGE_SIZE),
       // The viewer's own row, wherever it sits, so they need not page to it.
-      you: handle ? held.row(handle) : null,
+      you: handle ? fighterBoardRow(records, claims, handle) : null,
     });
   } catch (e) {
     const shown = publicError(e);
