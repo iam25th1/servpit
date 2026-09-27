@@ -14,7 +14,7 @@ import { RolloverStore } from "./rollover";
 import { DebtStore } from "./debt";
 import { WreckStore } from "./wrecks";
 import { planRound, runRound } from "./flow";
-import { UNREACHABLE_REASON } from "./plan";
+import { BELOW_FLOOR, UNREACHABLE_REASON } from "./plan";
 import { ChainUnreachableError } from "../errors";
 import { setServReasoning } from "../serv/switch";
 
@@ -455,5 +455,83 @@ describe("every decision says who is sitting there and what it owes", () => {
     const { ctx } = await harness({ transport: enterTransport() });
     const plan = await planRound(ctx, "demo");
     expect(plan.decisions.every((d) => d.debtWei === undefined)).toBe(true);
+  });
+});
+
+const holdTransport = () =>
+  ({
+    create: vi.fn().mockResolvedValue({
+      model: "claude-haiku-4.5",
+      choices: [{ index: 0, message: { role: "assistant", content: `{"enter":false,"stake":0,"reason":"Not this one, I am holding."}` }, finish_reason: "stop" }],
+      usage: { prompt_tokens: 800, completion_tokens: 60, total_tokens: 860 },
+    }),
+  }) as unknown as ChatTransport;
+
+describe("a pit on instinct never holds itself still", () => {
+  // Two seats each. Atlas keeps a six seat floor and Ember a three seat one,
+  // so the fixed rule held both of them every round, and nothing that
+  // happens on instinct would ever have lifted them back over it.
+  const twoSeats = () => stakeWeiFrom() * 2n;
+
+  it("sends an agent under its floor in at the minimum rather than holding it", async () => {
+    const { ctx } = await harness({ balanceWei: twoSeats() });
+    const plan = await planRound(ctx, "floor");
+    for (const id of ["atlas", "ember"]) {
+      const d = plan.decisions.find((x) => x.agentId === id)!;
+      expect(d.source).toBe("heuristic");
+      expect(d.decision).toEqual({ enter: true, stake: toChips(stakeWeiFrom()), reason: BELOW_FLOOR });
+      expect(d.rejection).toMatch(/below its floor/);
+      expect(plan.entering.find((e) => e.agentId === id)?.stakeWei).toBe(stakeWeiFrom());
+    }
+  });
+
+  it("tells the panel the same thing it settles on", async () => {
+    const { ctx } = await harness({ balanceWei: twoSeats() });
+    const seen: Array<{ agentId: string; enter: boolean }> = [];
+    await planRound(ctx, "floor", (d) => seen.push({ agentId: d.agentId, enter: d.decision.enter }));
+    expect(seen.find((d) => d.agentId === "atlas")?.enter).toBe(true);
+  });
+
+  it("leaves a hold a model chose exactly as it was", async () => {
+    const { ctx } = await harness({ balanceWei: twoSeats(), transport: holdTransport() });
+    const plan = await planRound(ctx, "floor");
+    expect(plan.decisions.every((d) => d.source === "serv" && !d.decision.enter)).toBe(true);
+    expect(plan.entering).toHaveLength(0);
+  });
+});
+
+describe("a round with no agents in", () => {
+  it("still plays, and passes the rollover on whole", async () => {
+    const { ctx, chain } = await harness({ transport: holdTransport() });
+    ctx.rollover.record("earlier", 0n, 1_000n);
+    const plan = await planRound(ctx, "empty");
+    expect(plan.entering).toHaveLength(0);
+    const applied = chain.applied;
+    const run = await runRound(ctx, plan);
+    expect(run.round.placements).toHaveLength(24);
+    expect(run.entries).toHaveLength(0);
+    expect(run.payout).toBeNull();
+    // Nothing came in, so nothing is raked and nothing goes to the bank.
+    expect(run.prize).toEqual({ poolWei: 1_000n, rakeWei: 0n, payoutWei: 0n, toBankWei: 0n, nextRolloverWei: 1_000n });
+    expect(ctx.rollover.carriedWei).toBe(1_000n);
+    expect(chain.applied).toBe(applied);
+    expect(run.reconciliation.ok).toBe(true);
+  });
+
+  it("sends the bank no share of a rollover nobody paid into", async () => {
+    // With the bank off and a house share set, a house win hands the bank part
+    // of the prize. An empty round would have done that too, and every round
+    // the pit ran empty would have shaved the jackpot a little further.
+    vi.stubEnv("SERVPIT_BANK_ENABLED", "false");
+    vi.stubEnv("SERVPIT_BANK_SHARE_ON_HOUSE_WIN", "0.5");
+    try {
+      const { ctx } = await harness({ transport: holdTransport() });
+      ctx.rollover.record("earlier", 0n, 1_000n);
+      const run = await runRound(ctx, await planRound(ctx, "empty"));
+      expect(run.prize.toBankWei).toBe(0n);
+      expect(ctx.rollover.carriedWei).toBe(1_000n);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });

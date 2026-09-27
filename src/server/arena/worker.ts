@@ -124,9 +124,9 @@ export async function runArenaLoop(options: LoopOptions): Promise<{ played: numb
             options.pulls?.take(asked.id);
             log.info("arena round pulled", { handle: asked.handle });
           }
-          // A round that rests because nobody could cover a seat is not a
-          // round played, and counting it as one would make an empty pit look
-          // busy in the only numbers an operator sees.
+          // A play function may still report a rest rather than a round, and
+          // counting that as played would make an idle pit look busy in the
+          // only numbers an operator sees.
           const outcome = (await play(ctx, store, nextAt, asked?.handle ?? null)) ?? "played";
           if (asked) {
             const roundId = store.read().round?.roundId;
@@ -387,15 +387,12 @@ export async function playArenaRound(ctx: ServerContext, store: ArenaStore, next
     "settling",
   );
 
-  if (plan.entering.length === 0) {
-    // Nobody is in, so there is nothing to settle and nothing to watch. The
-    // round is not a failure: it is an empty pit, and it says so.
-    publish({}, "resting", { reason: "Nobody could cover a seat this round." });
-    const current = store.read();
-    store.write({ round, last: current.last, paused: current.paused, nextRoundAt: new Date(nextAt).toISOString() });
-    log.info("arena rested, nobody entered", { roundId: plan.roundId });
-    return "rested";
-  }
+  // Nobody in is still a round. The claimed fighters and the house bots
+  // fight, a viewer has something to watch and back, and the settle runs:
+  // interest is charged, and an agent that is broke and was refused credit is
+  // wrecked and its seat refilled. Resting here used to skip all of that, so
+  // an empty pit stayed exactly as empty the next round, and the one after.
+  if (plan.entering.length === 0) log.info("arena round with no agents in, the house plays it", { roundId: plan.roundId });
 
   const run = await runRound(flow, plan, {
     onEntry: (agentId, outcome) => {

@@ -154,7 +154,12 @@ async function settleRound(ctx: FlowContext, plan: RoundPlan, progress: RunProgr
   // earned against the biggest stake in the field. The rest rolls over,
   // which is what stops a floor stake sweeping a pot bigger stakers built.
   const highestStakeWei = plan.entering.reduce((most, e) => (e.stakeWei > most ? e.stakeWei : most), 0n);
-  const prize = bankEnabled()
+  // A round no agent paid into takes nothing from the rollover. Raking it,
+  // or sending the bank a share, would shrink the jackpot every round the pit
+  // runs empty, for a round that brought nothing in.
+  const prize: PrizeSplit = plan.entering.length === 0
+    ? { poolWei: rolloverInWei, rakeWei: 0n, payoutWei: 0n, toBankWei: 0n, nextRolloverWei: rolloverInWei }
+    : bankEnabled()
     ? cappedAsSplit(splitCappedPrize({ poolWei: entriesWei + rolloverInWei, rakeBps: DEFAULT_ROUND.rakeBps, winnerStakeWei: winnerAgent ? winnerAgent.stakeWei : null, highestStakeWei }))
     : splitPrize({ entriesWei, rolloverWei: rolloverInWei, rakeBps: DEFAULT_ROUND.rakeBps, agentWon: Boolean(winnerAgent) });
   const prizeWei = prize.payoutWei;
