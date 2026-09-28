@@ -4,7 +4,7 @@
 
 **A slot machine decides who fights. Six agents decide whether to pay for a seat. You call it before they do.**
 
-`SERV Reasoning` · `Coinbase AgentKit` · `Base Sepolia` · `Next.js` · `1621 tests`
+`SERV Reasoning` · `Coinbase AgentKit` · `Base Sepolia` · `Next.js` · `1625 tests`
 
 [![ci](https://github.com/iam25th1/servpit/actions/workflows/ci.yml/badge.svg)](https://github.com/iam25th1/servpit/actions/workflows/ci.yml)
 
@@ -1021,7 +1021,7 @@ a money surface.
 | `npm run serv -- on\|off\|status` | Turns SERV reasoning on or off for the next round, in every process, without a restart |
 | `npm run extract-assets` | Pulls the roster, FX, UI kit, fonts and tilesets out of the asset pack into `public/assets` and writes the manifest |
 | `npm run gate` | typecheck, lint, test, build. What CI runs |
-| `npm test` | 1621 tests |
+| `npm test` | 1625 tests |
 
 </details>
 

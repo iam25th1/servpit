@@ -20,7 +20,14 @@
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  justify-content: center;
+  /* Safe, and scrolling: a screen taller than the stage used to overflow
+     both ways from the centre, and the result card of a round with a loan,
+     a fighter, a read and a failed check ran up over the top bar. Now it
+     starts under the bar and the body scrolls. */
+  justify-content: safe center;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--bone-dim, #8a8170) transparent;
   gap: var(--space-base);
 }
 
@@ -408,7 +415,9 @@
   margin: 0 auto;
   display: grid;
   grid-template-columns: minmax(260px, 0.9fr) minmax(320px, 1fr);
-  gap: var(--space-wide);
+  /* Rows closer than columns: the result is taller than it is wide on the
+     stage, and the wide row gap put the footer below the fold. */
+  gap: var(--space-base) var(--space-wide);
   align-items: start;
   position: relative;
 }
