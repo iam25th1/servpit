@@ -1,0 +1,15 @@
+{
+  "name": "servpit-trailer",
+  "private": true,
+  "type": "module",
+  "description": "The SERVPIT trailer: a motion-designed composition over real gameplay captured from the running pit.",
+  "scripts": {
+    "capture": "node capture.mjs",
+    "serve": "node serve.mjs",
+    "render": "node render.mjs out/video.mp4",
+    "mix": "node mix.mjs out/video.mp4 out/servpit-trailer.mp4"
+  },
+  "dependencies": {
+    "playwright-core": "^1.56.0"
+  }
+}
