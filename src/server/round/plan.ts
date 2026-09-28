@@ -8,7 +8,7 @@ import { NAMED_AGENTS } from "@/config/agents";
 import { faceFor, profileFor } from "@/config/replacements";
 import { bankEnabled, bankRateBounds, maxLoanStakes, maxStakeMultiple, CREDIT_TERMS } from "@/config/economy";
 import { clampStake } from "@/economy/prize";
-import { stakeWeiFrom, toChips } from "@/config/stake";
+import { stakeWeiFrom, toChips, toChipsUp } from "@/config/stake";
 import { toWei } from "../money";
 import type { PlannedLoan } from "./types";
 import { totalOwed } from "./debt";
@@ -337,7 +337,7 @@ export async function planRound(
             repaidChips: toChips(held.repaidWei),
           },
           stakeChips: toChips(chosenWei),
-          shortfallChips: toChips(shortfallWei),
+          shortfallChips: toChipsUp(shortfallWei),
         };
         // A loan that would breach the debt ceiling on its own, or that the
         // treasury cannot cover, is already zero here and the bank is not

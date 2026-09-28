@@ -75,3 +75,16 @@ export function toChips(wei: bigint, env: NodeJS.ProcessEnv = process.env): numb
   if (per <= 0n) return 0;
   return Number(wei / per);
 }
+
+/**
+ * Wei as chips, rounded up.
+ *
+ * For what an agent is short. Rounded down, a shortfall of 9.1 chips was
+ * asked for as 9, lent as 9, and left the agent a tenth of a chip under its
+ * seat, turned away for gas, every round.
+ */
+export function toChipsUp(wei: bigint, env: NodeJS.ProcessEnv = process.env): number {
+  const per = weiPerChip(env);
+  if (per <= 0n || wei <= 0n) return 0;
+  return Number((wei + per - 1n) / per);
+}
