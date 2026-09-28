@@ -427,6 +427,10 @@ export async function planRound(
         treasuryWei += lentWei;
         log.warn("loan withdrawn, the borrower is not entering", { agentId: decision.agentId, principalWei: lentWei.toString(), reason });
       }
+      // Lent too little to reach a seat is refused in all but name. Counted as
+      // one, or an agent the bank keeps saying a small yes to sits out every
+      // round and is never wrecked or refilled.
+      if (bankOn && lentWei > 0n && cannotSeat(snapshot) && !deniedCredit.includes(decision.agentId)) deniedCredit.push(decision.agentId);
       decisions.push({ ...decision, decision: { enter: false, stake: 0, reason: `excluded: ${reason}` }, rejection: decision.rejection ? `${decision.rejection}; ${reason}` : reason });
       continue;
     }

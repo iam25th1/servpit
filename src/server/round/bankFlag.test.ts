@@ -581,6 +581,20 @@ describe("a broke agent does not get to sit out quietly", () => {
     expect(run.reconciliation.ok).toBe(true);
   });
 
+  it("is finished too when the bank lends it too little to reach a seat", async () => {
+    // Approved, but for less than it was short. The loan is withdrawn and the
+    // agent sits out, and because the bank technically said yes it was never
+    // counted as refused: never wrecked, never refilled, never in again.
+    const { ctx } = await tapped({ approve: true, amount: 1, rateBps: 900 });
+    const plan = await planRound(ctx, "too-little");
+    expect(plan.entering).toEqual([]);
+    expect(plan.loans).toEqual([]);
+    expect(plan.deniedCredit.length).toBe(6);
+    const run = await runRound(ctx, plan);
+    expect(run.wrecks.length).toBe(6);
+    expect(run.reconciliation.ok).toBe(true);
+  });
+
   it("takes what is left and writes off the rest, into the bank's books", async () => {
     const { chain, wallets, debts, ctx, seat } = await tapped({ approve: false, amount: 0, rateBps: 500 });
     // Put a debt on them that their half seat cannot cover.
