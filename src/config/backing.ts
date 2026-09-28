@@ -10,8 +10,15 @@
 // player the round's seed, and the resolver is deterministic, so a pick made
 // in lever mode could be made knowing the winner.
 
-/** How long the pit waits for picks, between the draw and the fight. */
-export const DEFAULT_BACKING_WINDOW_SECONDS = 45;
+/**
+ * How long the pit waits for picks, between the draw and the fight.
+ *
+ * Fifteen. It was forty five, which was the longest single wait in a round
+ * and read as the pit having stalled: a viewer who has seen the draw knows
+ * who they want inside a few seconds, and everyone else was left watching a
+ * countdown with nothing on it.
+ */
+export const DEFAULT_BACKING_WINDOW_SECONDS = 15;
 /** Floors and ceilings. Long enough to read the draw, short enough to watch. */
 export const MIN_BACKING_WINDOW_SECONDS = 5;
 export const MAX_BACKING_WINDOW_SECONDS = 600;
