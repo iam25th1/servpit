@@ -581,6 +581,39 @@ describe("a broke agent does not get to sit out quietly", () => {
     expect(run.reconciliation.ok).toBe(true);
   });
 
+  it("lends a whole shortfall when the balance is not a whole number of chips", async () => {
+    // The live pit: 20.9 chips against a 10 chip seat and a 20 chip reserve
+    // is 9.1 short. Rounded down that was asked for as 9, lent as 9, and left
+    // every agent a tenth of a chip under its seat, every round.
+    process.env.SERVPIT_BANK_ENABLED = "true";
+    const seat = stakeWeiFrom();
+    const chip = seat / BigInt(toChips(seat));
+    dir = mkdtempSync(join(tmpdir(), "servpit-bankflag-"));
+    const chain = new FakeChain({ initialBalanceWei: chip * 20n + (chip * 9n) / 10n, gasReserveWei: chip * 20n });
+    const wallets = await openWallets(chain, new WalletRegistry(join(dir, "wallets.json")), { bank: true });
+    chain.fund(wallets.bank!.address, seat * 200n);
+    const ctx = {
+      chain,
+      wallets,
+      ledger: new TransferLedger(join(dir, "ledger.json")),
+      store: new RoundStore(join(dir, "rounds.json")),
+      bankroll: new BankrollCache({ ttlMs: 0, now: () => 0 }),
+      meter: new CostMeter(DEFAULT_SERV.pricing),
+      rollover: new RolloverStore(join(dir, "rollover.json")),
+      debts: new DebtStore(join(dir, "debts.json")),
+      wreckStore: new WreckStore(join(dir, "wrecks.json")),
+      serv: new ServClient({ ...DEFAULT_SERV, backoffMs: 0 }, duplexTransport(toChips(seat), { approve: true, amount: 100, rateBps: 900 })),
+      entrants: 24,
+    };
+    const plan = await planRound(ctx, "fractional");
+    expect(plan.loans.map((l) => toChips(l.principalWei))).toEqual([10, 10, 10, 10, 10, 10]);
+    expect(plan.entering).toHaveLength(6);
+    expect(plan.deniedCredit).toEqual([]);
+    const run = await runRound(ctx, plan);
+    expect(run.wrecks).toEqual([]);
+    expect(run.reconciliation.ok).toBe(true);
+  });
+
   it("is finished too when the bank lends it too little to reach a seat", async () => {
     // Approved, but for less than it was short. The loan is withdrawn and the
     // agent sits out, and because the bank technically said yes it was never
