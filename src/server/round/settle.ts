@@ -14,7 +14,7 @@ import { resolveRound } from "@/engine/resolveRound";
 import { heuristicDecision } from "../decisions/heuristic";
 import { log } from "../log";
 import { fromWei, sumWei } from "../money";
-import { reconcile } from "../reconcile";
+import { reconcile, type ReconcileResult } from "../reconcile";
 import { collectEntry, disburseLoan, payWinner, refillSeat, repayBank, seizeToBank, type TransferOutcome } from "../transfers";
 import { repay } from "@/economy/rules";
 import { totalOwed } from "./debt";
@@ -28,6 +28,33 @@ import { withSettleLock } from "./settleLock";
 import { splitCappedPrize } from "@/economy/prize";
 import type { FlowContext, RoundPlan, RoundRun } from "./types";
 import { type StoredAgentRound } from "./store";
+
+/** Reads of the chain before a mismatch is reported as one. */
+export const READBACK_ATTEMPTS = 4;
+/** Between them: about a Base block, so each read can see one more. */
+export const READBACK_DELAY_MS = 2_000;
+const sleepMs = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Reconciles, and on a live chain reads again while it does not match.
+ *
+ * Only a chain whose transfers settle is read again: a fake one answers from
+ * memory, so a mismatch there is a mismatch.
+ */
+export async function readBackUntilSettled(
+  readBack: () => Promise<ReconcileResult>,
+  settles: boolean,
+  onRetry: (attempt: number, failed: string[]) => void = () => {},
+  sleep: (ms: number) => Promise<void> = sleepMs,
+): Promise<ReconcileResult> {
+  let result = await readBack();
+  for (let attempt = 1; !result.ok && settles && attempt < READBACK_ATTEMPTS; attempt++) {
+    onRetry(attempt, result.checks.filter((c) => !c.ok).map((c) => c.name));
+    await sleep(READBACK_DELAY_MS);
+    result = await readBack();
+  }
+  return result;
+}
 
 /**
  * The capped split in the shape reconciliation already speaks.
@@ -346,61 +373,72 @@ async function settleRound(ctx: FlowContext, plan: RoundPlan, progress: RunProgr
     }
   }
 
-  ctx.bankroll.invalidate();
-  const after: Record<string, bigint> = {};
-  await ctx.bankroll.warm(ctx.chain, watchedWallets);
-  for (const s of plan.snapshots) after[s.address] = await ctx.bankroll.get(ctx.wallets.agents.get(s.profile.id)!);
-  after[pot.address] = await ctx.bankroll.get(pot);
-  if (bank) after[bank.address] = await ctx.bankroll.get(bank);
-  if (operator) after[operator.address] = await ctx.bankroll.get(operator);
-
-  const reconciliation = reconcile({
-    potAddress: pot.address,
-    before,
-    after,
-    entries: entries.map((e) => ({ address: e.from, amountWei: e.amountWei })),
-    payouts: payout ? [{ address: payout.to, amountWei: payout.amountWei }] : [],
-    appliedEntries: entries.filter((e) => e.applied).map((e) => ({ address: e.from, amountWei: e.amountWei })),
-    appliedPayouts: payout?.applied ? [{ address: payout.to, amountWei: payout.amountWei }] : [],
-    // Only what was actually sent in this window paid a fee. A replay of a
-    // settled round resends nothing, so it owes nothing, and its wallet
-    // deltas are zero on both sides.
-    //
-    // The fee is charged to the sender: an entry costs the agent, a payout
-    // costs the pot. The pot's fee matters on any round it actually pays a
-    // winner, which no settled round did until an agent finally won one.
-    feesWei: [
-      ...entries.filter((e) => e.applied).map((e) => ({ address: e.from, amountWei: e.feeWei ?? 0n })),
-      ...loans.filter((l) => l.applied).map((l) => ({ address: l.from, amountWei: l.feeWei ?? 0n })),
-      ...(payout?.applied ? [{ address: payout.from, amountWei: payout.feeWei ?? 0n }] : []),
-      ...(repayment?.outcome.applied ? [{ address: repayment.outcome.from, amountWei: repayment.outcome.feeWei ?? 0n }] : []),
-      ...seizures.filter((x) => x.applied).map((x) => ({ address: x.from, amountWei: x.feeWei ?? 0n })),
-      ...refills.filter((x) => x.applied).map((x) => ({ address: x.from, amountWei: x.feeWei ?? 0n })),
-    ],
-    loans: loans.map((l) => ({ address: l.to, amountWei: l.amountWei })),
-    appliedLoans: loans.filter((l) => l.applied).map((l) => ({ address: l.to, amountWei: l.amountWei })),
-    operatorAddress: operator?.address,
-    operatorFunding: refills.map((r) => ({ address: r.to, amountWei: r.amountWei })),
-    appliedOperatorFunding: refills.filter((r) => r.applied).map((r) => ({ address: r.to, amountWei: r.amountWei })),
-    repayments: [
-      ...(repayment ? [{ address: repayment.outcome.from, amountWei: repayment.outcome.amountWei }] : []),
-      // A seizure leaves an agent for the bank, exactly like a repayment.
-      // The only difference is who decided it.
-      ...seizures.map((x) => ({ address: x.from, amountWei: x.amountWei })),
-    ],
-    appliedRepayments: [
-      ...(repayment?.outcome.applied ? [{ address: repayment.outcome.from, amountWei: repayment.outcome.amountWei }] : []),
-      ...seizures.filter((x) => x.applied).map((x) => ({ address: x.from, amountWei: x.amountWei })),
-    ],
-    ...(bank ? { bankAddress: bank.address } : {}),
-    // No house contribution any more: a seat that did not pay adds nothing to
-    // the prize. What the pot brought in from previous rounds does, and it is
-    // money the pot is already holding.
-    rolloverInWei,
-    nextRolloverWei: prize.nextRolloverWei,
-    toBankWei: prize.toBankWei,
-    rakeWei: prize.rakeWei,
-  });
+  // Read back after the last transfer, and read again if the chain has not
+  // caught up. A receipt comes from one node and a balance can come from
+  // another: on Base Sepolia the refill of a wrecked seat, the round's last
+  // transfer, read back as though it had never been sent, on both sides, to
+  // the wei of its fee. A mismatch that survives every read is still a
+  // failure; one that clears on the next block never was.
+  let after: Record<string, bigint> = {};
+  const readBack = async () => {
+    ctx.bankroll.invalidate();
+    after = {};
+    await ctx.bankroll.warm(ctx.chain, watchedWallets);
+    for (const s of plan.snapshots) after[s.address] = await ctx.bankroll.get(ctx.wallets.agents.get(s.profile.id)!);
+    after[pot.address] = await ctx.bankroll.get(pot);
+    if (bank) after[bank.address] = await ctx.bankroll.get(bank);
+    if (operator) after[operator.address] = await ctx.bankroll.get(operator);
+    return reconcile({
+      potAddress: pot.address,
+      before,
+      after,
+      entries: entries.map((e) => ({ address: e.from, amountWei: e.amountWei })),
+      payouts: payout ? [{ address: payout.to, amountWei: payout.amountWei }] : [],
+      appliedEntries: entries.filter((e) => e.applied).map((e) => ({ address: e.from, amountWei: e.amountWei })),
+      appliedPayouts: payout?.applied ? [{ address: payout.to, amountWei: payout.amountWei }] : [],
+      // Only what was actually sent in this window paid a fee. A replay of a
+      // settled round resends nothing, so it owes nothing, and its wallet
+      // deltas are zero on both sides.
+      //
+      // The fee is charged to the sender: an entry costs the agent, a payout
+      // costs the pot. The pot's fee matters on any round it actually pays a
+      // winner, which no settled round did until an agent finally won one.
+      feesWei: [
+        ...entries.filter((e) => e.applied).map((e) => ({ address: e.from, amountWei: e.feeWei ?? 0n })),
+        ...loans.filter((l) => l.applied).map((l) => ({ address: l.from, amountWei: l.feeWei ?? 0n })),
+        ...(payout?.applied ? [{ address: payout.from, amountWei: payout.feeWei ?? 0n }] : []),
+        ...(repayment?.outcome.applied ? [{ address: repayment.outcome.from, amountWei: repayment.outcome.feeWei ?? 0n }] : []),
+        ...seizures.filter((x) => x.applied).map((x) => ({ address: x.from, amountWei: x.feeWei ?? 0n })),
+        ...refills.filter((x) => x.applied).map((x) => ({ address: x.from, amountWei: x.feeWei ?? 0n })),
+      ],
+      loans: loans.map((l) => ({ address: l.to, amountWei: l.amountWei })),
+      appliedLoans: loans.filter((l) => l.applied).map((l) => ({ address: l.to, amountWei: l.amountWei })),
+      operatorAddress: operator?.address,
+      operatorFunding: refills.map((r) => ({ address: r.to, amountWei: r.amountWei })),
+      appliedOperatorFunding: refills.filter((r) => r.applied).map((r) => ({ address: r.to, amountWei: r.amountWei })),
+      repayments: [
+        ...(repayment ? [{ address: repayment.outcome.from, amountWei: repayment.outcome.amountWei }] : []),
+        // A seizure leaves an agent for the bank, exactly like a repayment.
+        // The only difference is who decided it.
+        ...seizures.map((x) => ({ address: x.from, amountWei: x.amountWei })),
+      ],
+      appliedRepayments: [
+        ...(repayment?.outcome.applied ? [{ address: repayment.outcome.from, amountWei: repayment.outcome.amountWei }] : []),
+        ...seizures.filter((x) => x.applied).map((x) => ({ address: x.from, amountWei: x.amountWei })),
+      ],
+      ...(bank ? { bankAddress: bank.address } : {}),
+      // No house contribution any more: a seat that did not pay adds nothing to
+      // the prize. What the pot brought in from previous rounds does, and it is
+      // money the pot is already holding.
+      rolloverInWei,
+      nextRolloverWei: prize.nextRolloverWei,
+      toBankWei: prize.toBankWei,
+      rakeWei: prize.rakeWei,
+    });
+  };
+  const reconciliation = await readBackUntilSettled(readBack, ctx.chain.settles, (attempt, failed) =>
+    log.warn("reconciliation did not match, reading the chain again", { roundId: plan.roundId, attempt, checks: failed }),
+  );
   if (!reconciliation.ok) {
     log.error("reconciliation failed", { roundId: plan.roundId, checks: reconciliation.checks.filter((c) => !c.ok) });
   }

@@ -1857,7 +1857,7 @@ function ResultScreen({
         <p className={styles.notice}>
           {run.settles
             ? `Settled on ${networkName(run.network)}. Every hash above links to the block explorer.`
-            : "This round ran off chain against the local test chain. The hashes above are local, so there is nothing to look up on a block explorer. Set the wallet keys to settle on Base Sepolia."}
+            : "Played on the local test chain, so the hashes above are local. Set the wallet keys to settle on Base Sepolia."}
         </p>
         {/* Watching a pit that runs itself, nothing a viewer presses starts
             a round. The button becomes the schedule it is waiting on. */}
