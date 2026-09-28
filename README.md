@@ -14,8 +14,9 @@
 
 <!--
   TODO before submitting:
-  1. Drag the demo mp4 into this README on github.com so GitHub hosts it, then paste the
-     user-attachments URL below.
+  1. Drag docs/media/servpit-trailer.mp4 into this README on github.com so GitHub hosts it
+     and plays it inline, then paste the user-attachments URL below. Until then the poster
+     links to the file in the repo, which plays and downloads from its GitHub page.
   2. Done: the deployment URL is under "Play it".
   (The settlement hashes are already full and linked to Basescan.)
 -->
@@ -23,6 +24,49 @@
 ## Demo
 
 <!-- paste the GitHub user-attachments video URL here, above this line -->
+
+### Trailer
+
+<a href="docs/media/servpit-trailer.mp4"><img src="docs/media/trailer-poster.jpg" alt="SERVPIT trailer: 24 fighters, one colosseum" width="880"></a>
+
+**[Watch or download the trailer](docs/media/servpit-trailer.mp4)** (55 seconds, 1080p, with sound).
+Motion design over real gameplay: every shot of the game is a frame recorded from the running
+pit, and the soundtrack is the game's own music and effects.
+
+<details>
+<summary><b>How the trailer is made</b></summary>
+
+<br>
+
+It lives in [`trailer/`](trailer), with its own `package.json` and lockfile so the app's
+install never pulls it in.
+
+```mermaid
+flowchart LR
+    P[Running pit] -->|capture.mjs: a viewer plays one round| F[Frames + marks]
+    F --> C[index.html: renderAt t]
+    C -->|render.mjs: 30 fps screenshots| V[video.mp4]
+    V -->|mix.mjs: music + effects on cues| M[servpit-trailer.mp4]
+```
+
+The composition is a page whose every element is placed by `renderAt(t)`, a pure function of
+time. The renderer steps $t = i / 30$ for $i = 0 \ldots 1649$ and screenshots each frame, so the
+video is smooth however long a frame takes to draw. Footage cuts land on the marks the capture
+left (the pull, the reels, the backing window, the fight, the result).
+
+```sh
+cd trailer && npm ci --ignore-scripts
+node capture.mjs latest          # with the pit running on :3000 (PIT= to point elsewhere)
+node serve.mjs &                 # 127.0.0.1:8088, TAKE= for another take
+node render.mjs out/video.mp4    # needs ffmpeg on PATH (FFMPEG= to override)
+node mix.mjs out/video.mp4 out/servpit-trailer.mp4
+```
+
+A house bot wins most rounds, since 18 of the 24 seats are the house's, so a take with an agent
+winning can take several captures. The footage in the committed cut ran on the local test
+chain, which is why it plays on instinct and says so on the result screen.
+
+</details>
 
 ![The full player flow: lever, reels, handoff to the arena, result](docs/media/slot-flow.gif)
 
