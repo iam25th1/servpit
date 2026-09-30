@@ -38,6 +38,7 @@ export interface StorePaths {
   fighters: string;
   careers: string;
   leaderboard: string;
+  summaries: string;
 }
 
 export function storePaths(dataDir: string, network: string): StorePaths {
@@ -54,6 +55,7 @@ export function storePaths(dataDir: string, network: string): StorePaths {
     fighters: join(dataDir, `fighters-${network}.ndjson`),
     careers: join(dataDir, `careers-${network}.json`),
     leaderboard: join(dataDir, `leaderboard-${network}.json`),
+    summaries: join(dataDir, `summaries-${network}.ndjson`),
   };
 }
 
@@ -79,6 +81,8 @@ export interface Stores {
   fighters: LogLine[] | null;
   careers: CareerRow[] | null;
   leaderboard: BoardRow[] | null;
+  /** One permanent line per round, which is the only store that never rolls. */
+  summaries: LogLine[] | null;
 }
 
 /** Only the fields a stat reads. A store carrying more is not this file's business. */
@@ -250,5 +254,6 @@ export function loadStores(dataDir: string, network: string): Stores {
     fighters: readLog(paths.fighters),
     careers: rowsOf<CareerRow>(readJson(paths.careers), "rows"),
     leaderboard: rowsOf<BoardRow>(readJson(paths.leaderboard), "rows"),
+    summaries: readLog(paths.summaries),
   };
 }

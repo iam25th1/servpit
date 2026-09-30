@@ -19,6 +19,7 @@ import { collectEntry, disburseLoan, payWinner, refillSeat, repayBank, seizeToBa
 import { repay } from "@/economy/rules";
 import { totalOwed } from "./debt";
 import { feesFromChain, type AppliedTransfer } from "./fees";
+import { classOfSources } from "./summaries";
 import { overReached, type WreckRecord, type WreckTrigger } from "./wrecks";
 import { CREDIT_TERMS } from "@/config/economy";
 import { chooseOccupant, faceFor, generationOf } from "@/config/replacements";
@@ -532,6 +533,22 @@ async function settleRound(ctx: FlowContext, plan: RoundPlan, progress: RunProgr
     ...(plan.servTokensIn === undefined ? {} : { servTokensIn: plan.servTokensIn }),
     ...(plan.servTokensOut === undefined ? {} : { servTokensOut: plan.servTokensOut }),
     ...(loanRecord.length > 0 ? { loans: loanRecord } : {}),
+  });
+
+  // The permanent line, after the full record and never instead of it. The
+  // full record rolls at two hundred rounds; this is what is left afterwards.
+  ctx.summaries?.append({
+    roundId: plan.roundId,
+    at: new Date().toISOString(),
+    entrants: plan.entrants.length,
+    winner: winnerEntrantId,
+    potWei: prize.poolWei.toString(),
+    answers: classOfSources(plan.decisions.map((d) => d.source)),
+    servCalls: plan.servCalls,
+    servMicroCents: plan.servMicroCents ?? null,
+    tokensIn: plan.servTokensIn ?? null,
+    tokensOut: plan.servTokensOut ?? null,
+    reconciled: reconciliation.ok,
   });
 
   log.info("round complete", {

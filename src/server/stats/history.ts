@@ -124,6 +124,16 @@ export function lifetimeRounds(stores: Stores): LifetimeRounds {
     const verdict = classFromPlan(row);
     if (id !== null && verdict !== null && !classified.has(id)) classified.set(id, verdict);
   }
+  // The permanent summaries, which are the whole point: one line per round
+  // that never rolls, carrying what the round was and whether it reasoned.
+  for (const line of stores.summaries ?? []) {
+    if (line.k !== "round" || typeof line.roundId !== "string") continue;
+    note("the round summaries", line.roundId, typeof line.at === "string" ? line.at : null);
+    const answers = line.answers;
+    if ((answers === "reasoned" || answers === "learned" || answers === "instinct") && !classified.has(line.roundId)) {
+      classified.set(line.roundId, answers);
+    }
+  }
   // The round on screen and the one before it, in case both are outside
   // everything else. Cheap, and it keeps the newest round in the count.
   for (const round of [stores.arena?.round, stores.arena?.last]) {

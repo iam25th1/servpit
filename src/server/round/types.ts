@@ -14,6 +14,7 @@ import type { PlanStore } from "./planStore";
 import type { PrizeSplit } from "./prize";
 import type { RolloverStore } from "./rollover";
 import type { DebtStore } from "./debt";
+import type { SummaryStore } from "./summaries";
 import type { WreckRecord, WreckStore } from "./wrecks";
 import type { ReconcileResult } from "../reconcile";
 import type { CostMeter, ServClient } from "../serv/client";
@@ -51,6 +52,14 @@ export interface FlowContext {
   debts: DebtStore;
   /** Every agent the pit has finished, and what led there. */
   wreckStore: WreckStore;
+  /**
+   * One permanent line per round, appended and never trimmed.
+   *
+   * Optional, like the plan store: a test context can leave it out. Every
+   * context that plays a real round sets it, because the full record rolls at
+   * two hundred rounds and this is what is left afterwards.
+   */
+  summaries?: SummaryStore;
   chain: Chain;
   wallets: Wallets;
   ledger: TransferLedger;

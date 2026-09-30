@@ -199,6 +199,7 @@ describe("with nothing on file", () => {
       fighters: null,
       careers: null,
       leaderboard: null,
+  summaries: null,
     };
     const bare = collect(empty);
     const numbers = bare.groups.flatMap((g) => g.stats).filter((s) => s.text !== null && /^[0-9]/.test(s.text));

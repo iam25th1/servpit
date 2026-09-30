@@ -202,6 +202,7 @@ export interface Frame {
   logs: string;
   plans: string;
   boards: string;
+  summaries: string;
   lifetime: string;
 }
 
@@ -223,6 +224,7 @@ export function frameOf(stores: Stores): Frame {
     logs: covers("the append only logs, every line", at(logRows, (l: LogLine) => (typeof l.at === "string" ? l.at : null))),
     plans: covers("the plan store, the plans still in it", at(stores.plans, (p: PlanRow) => p.quotedAt)),
     boards: "the boards, which keep totals and no dates",
+    summaries: covers("the summary log, one line per round and never trimmed", at(stores.summaries, (l: LogLine) => (typeof l.at === "string" ? l.at : null))),
     lifetime: covers("every store that keeps a round id", life.span),
   };
 }
@@ -245,6 +247,11 @@ function pit(stores: Stores, frame: Frame): Group {
     stats.push(missing("rounds on file", "there is no round store for this network"));
   } else {
     stats.push(count("rounds on file in full detail", rounds.length, "", frame.rounds));
+    stats.push(
+      stores.summaries === null
+        ? missing("rounds kept for good", "there is no summary log for this network yet, so run the backfill")
+        : count("rounds kept for good", (stores.summaries ?? []).filter((line) => line.k === "round").length, "", frame.summaries),
+    );
     const ok = rounds.filter((r) => r.reconciled === true).length;
     const failed = rounds.filter((r) => r.reconciled === false).length;
     stats.push(said("rounds reconciled", `${ok.toLocaleString("en-US")} of ${rounds.length.toLocaleString("en-US")} on file`, ok, frame.rounds));
@@ -345,7 +352,10 @@ function reasoning(stores: Stores, frame: Frame): Group {
   // plan, and nowhere else, so a round older than both cannot be classed and
   // is counted as unclassified rather than quietly as instinct.
   const split = classSplit(frame.life);
-  const classifiable = covers("the rounds whose decisions survive, in the round store and the quoted plans", frame.life.span);
+  // Named for the stores that actually classed something, so the phrase is
+  // true of this deployment rather than of the code.
+  const classFrom = ["the round store", stores.summaries === null ? null : "the summaries", (stores.plans ?? []).length > 0 ? "the quoted plans" : null].filter((from): from is string => from !== null);
+  const classifiable = covers(`the rounds whose decisions survive, in ${classFrom.join(", ")}`, frame.life.span);
   if (frame.life.ids.size === 0) {
     stats.push(missing("rounds reasoned, learned or on instinct", "no store for this network holds a round to class"));
   } else {

@@ -19,6 +19,7 @@ const bare = (over: Partial<Stores> = {}): Stores => ({
   fighters: null,
   careers: null,
   leaderboard: null,
+  summaries: null,
   ...over,
 });
 

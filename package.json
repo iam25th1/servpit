@@ -22,6 +22,7 @@
     "pulls": "tsx scripts/pulls.ts",
     "fighters": "tsx scripts/fighters.ts",
     "stats": "tsx scripts/stats.ts",
+    "backfill-summaries": "tsx scripts/backfill-summaries.ts",
     "generate-wallets": "tsx scripts/generate-wallets.ts",
     "fund-wallets": "tsx scripts/fund-wallets.ts"
   },
