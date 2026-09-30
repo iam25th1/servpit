@@ -8,6 +8,23 @@ import { postLines } from "./post";
 
 const WIDTH = 42;
 
+/** Prose at a readable width, because a terminal is not a text editor. */
+function wrap(text: string, indent: number, columns = 96): string[] {
+  const pad = " ".repeat(indent);
+  const out: string[] = [];
+  let line = "";
+  for (const word of text.split(" ")) {
+    if (line.length > 0 && `${line} ${word}`.length > columns - indent) {
+      out.push(pad + line);
+      line = word;
+      continue;
+    }
+    line = line.length === 0 ? word : `${line} ${word}`;
+  }
+  if (line.length > 0) out.push(pad + line);
+  return out;
+}
+
 export function renderReport(report: Report): string {
   const out: string[] = [];
   out.push(`servpit, ${report.network}`);
@@ -31,6 +48,12 @@ export function renderReport(report: Report): string {
       if (stat.covers !== undefined) lastCovers = stat.covers;
       if (parts.length > 0) out.push(`${" ".repeat(6)}${parts.join("; ")}`);
     }
+  }
+
+  if (report.notes.length > 0) {
+    out.push("");
+    out.push("WHERE THESE FIGURES COME FROM");
+    for (const note of report.notes) out.push(...wrap(note, 2));
   }
 
   const lines = postLines(report);

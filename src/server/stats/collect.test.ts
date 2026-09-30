@@ -231,3 +231,21 @@ describe("counting the sources", () => {
     expect(sourcesOf([{ roundId: "a", agents: [{ source: "serv" }, { source: "serv", situation: {} }] }]).learnable).toBe(1);
   });
 });
+
+describe("where the figures come from", () => {
+  it("says the console is the authority on calls and spend, and this is not it", () => {
+    const notes = report.notes.join(" ");
+    expect(notes).toContain("SERV console is the authority");
+    expect(notes).toContain("Nothing in this report can see it");
+    expect(notes).toContain("game's own books");
+  });
+
+  it("gives the game's own call counts beside it", () => {
+    // Six calls in the fixture's window, and no permanent summaries in it.
+    expect(report.notes.join(" ")).toContain("6 calls in the round store's window of 4 rounds");
+  });
+
+  it("says the lifetime round count is a floor", () => {
+    expect(report.notes.join(" ")).toContain("which is a floor");
+  });
+});

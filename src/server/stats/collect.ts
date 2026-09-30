@@ -47,6 +47,8 @@ export interface Report {
   dataDir: string;
   at: string;
   groups: Group[];
+  /** Where the figures come from, and what this report cannot see. */
+  notes: string[];
 }
 
 /** The rolling window the round store keeps, as MAX_ROUNDS in store.ts. */
@@ -556,6 +558,35 @@ function players(stores: Stores, frame: Frame): Group {
   return { title: "the players", stats };
 }
 
+/**
+ * What this report is counting, and what it is not.
+ *
+ * The SERV console is the authority on calls and spend, and nothing here can
+ * see it: it counts every call this project has ever made, including the ones
+ * made from a script, from a probe, or in a round whose record has long rolled.
+ * These figures are the game's own books, and the two are worth reading side by
+ * side rather than one being taken for the other.
+ */
+export function provenance(stores: Stores, frame: Frame): string[] {
+  const rounds = stores.rounds ?? [];
+  const summaries = (stores.summaries ?? []).filter((line) => line.k === "round");
+  const withCount = summaries.filter((line) => typeof line.servCalls === "number").length;
+  const callsInWindow = sum(rounds.map((r) => r.servCalls ?? 0));
+  const callsKept = sum(summaries.map((line) => (typeof line.servCalls === "number" ? line.servCalls : 0)));
+  const ownCost = rounds.filter((r) => r.servTokensIn !== undefined || r.servTokensOut !== undefined);
+  const spend = sum(ownCost.map((r) => r.servMicroCents ?? 0));
+
+  return [
+    "Every figure above is counted from this deployment's own stores, and each one names the store it came from and the period it covers.",
+    "The SERV console is the authority on total calls and total spend. It sees every call this project has ever made, including calls from scripts and probes and calls in rounds whose records have rolled. Nothing in this report can see it, so read the two side by side.",
+    `The game's own books: ${callsInWindow.toLocaleString("en-US")} calls in the round store's window of ${rounds.length.toLocaleString("en-US")} rounds, ${callsKept.toLocaleString("en-US")} across the ${summaries.length.toLocaleString("en-US")} rounds kept for good, of which ${withCount.toLocaleString("en-US")} carry a count at all.`,
+    ownCost.length === 0
+      ? "No round on file records a spend of its own, so the game cannot total one. The cost field on older records is a meter reading for the process, not that round's cost."
+      : `Spend the game can total: $${(spend / 100_000_000).toFixed(6)} across ${ownCost.length.toLocaleString("en-US")} rounds that record their own cost. Older rounds carry a meter total and are left out.`,
+    `Rounds this report can name at all: ${frame.life.ids.size.toLocaleString("en-US")}, which is a floor. The console can say how many calls were made; no store can say how many rounds were played before the first one it kept.`,
+  ];
+}
+
 /** Every group, counted from the stores as they are. */
 export function collect(stores: Stores, now: Date = new Date()): Report {
   const frame = frameOf(stores);
@@ -564,5 +595,6 @@ export function collect(stores: Stores, now: Date = new Date()): Report {
     dataDir: stores.dataDir,
     at: now.toISOString(),
     groups: [pit(stores, frame), reasoning(stores, frame), moneyGroup(stores, frame), marrow(stores, frame), dead(stores, frame), roster(stores), players(stores, frame)],
+    notes: provenance(stores, frame),
   };
 }

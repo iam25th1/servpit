@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import type { Report, Stat } from "./collect";
 import { POST_LINES, postLines } from "./post";
 
-const report = (stats: Stat[]): Report => ({ network: "fake", dataDir: "/nowhere", at: "2026-09-30T00:00:00.000Z", groups: [{ title: "everything", stats }] });
+const report = (stats: Stat[]): Report => ({ network: "fake", dataDir: "/nowhere", at: "2026-09-30T00:00:00.000Z", groups: [{ title: "everything", stats }], notes: [] });
 
 describe("picking the lines", () => {
   it("leaves out a number that is not impressive", () => {
