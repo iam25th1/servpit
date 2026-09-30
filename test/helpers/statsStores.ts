@@ -33,7 +33,8 @@ export function writeFixture(dir: string, network = "fake"): string {
       network,
       version: 1,
       rounds: [
-        { roundId: "r-1", createdAt: at(0), entrants: 24, winner: "bot-04", potWei: "20000000000000", rakeWei: "0", servCalls: 6, servMicroCents: 12_500, reconciled: true, agents: [agent("atlas", "serv", true), agent("blaze", "serv", false)] },
+        // Its own cost, which the tokens are the marker for.
+        { roundId: "r-1", createdAt: at(0), entrants: 24, winner: "bot-04", potWei: "20000000000000", rakeWei: "0", servCalls: 6, servMicroCents: 1_485_000, servTokensIn: 7_200, servTokensOut: 900, reconciled: true, agents: [agent("atlas", "serv", true), agent("blaze", "serv", false)] },
         { roundId: "r-2", createdAt: at(30), entrants: 24, winner: "agent-atlas", potWei: "50000000000000", rakeWei: "0", servCalls: 0, servMicroCents: 0, reconciled: true, agents: [agent("atlas", "learned", true), agent("blaze", "heuristic", false)] },
         {
           roundId: "r-3",

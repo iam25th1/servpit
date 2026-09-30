@@ -525,7 +525,12 @@ async function settleRound(ctx: FlowContext, plan: RoundPlan, progress: RunProgr
       failed: reconciliation.checks.filter((c) => !c.ok).map((c) => ({ name: c.name, expected: c.expected, actual: c.actual })),
     },
     servCalls: plan.servCalls,
-    servMicroCents: ctx.meter.estimatedMicroCents,
+    // This round's own spend, from the plan that made the calls, rather than
+    // the meter's running total for the process. The tokens say which of the
+    // two a record carries.
+    servMicroCents: plan.servMicroCents ?? 0,
+    ...(plan.servTokensIn === undefined ? {} : { servTokensIn: plan.servTokensIn }),
+    ...(plan.servTokensOut === undefined ? {} : { servTokensOut: plan.servTokensOut }),
     ...(loanRecord.length > 0 ? { loans: loanRecord } : {}),
   });
 

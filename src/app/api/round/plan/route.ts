@@ -13,6 +13,7 @@
 import { toChips, weiPerChip } from "@/config/stake";
 import { getServerContext } from "@/server/context";
 import { LEVER_CLOSED, inProduction } from "@/server/production";
+import { summaryOf } from "@/server/serv/meter";
 import { log } from "@/server/log";
 import { internalDetail, publicError } from "@/server/publicError";
 import type { AgentDecision } from "@/server/decisions/types";
@@ -127,7 +128,10 @@ export async function POST(request: Request): Promise<Response> {
         // running the whole loop again against a model that may answer
         // differently the second time.
         ctx.flow.plans?.put(plan);
-        line({ type: "plan", plan: planShape(plan, ctx.chain.network, ctx.chain.kind, ctx.flow.meter.estimatedMicroCents, ctx.flow.meter.summary(), link) });
+        // This round's own cost, from the plan, rather than the meter's total
+        // for the life of this process.
+        const spent = { calls: plan.servCalls, promptTokens: plan.servTokensIn ?? 0, completionTokens: plan.servTokensOut ?? 0, microCents: plan.servMicroCents ?? 0 };
+        line({ type: "plan", plan: planShape(plan, ctx.chain.network, ctx.chain.kind, spent.microCents, summaryOf(spent), link) });
       } catch (e) {
         // The client needs a terminal line whatever happens, or it waits on a
         // stream that has already stopped producing. What it must never get

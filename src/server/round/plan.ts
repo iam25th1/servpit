@@ -19,6 +19,7 @@ import { decideLoan, lendableChips, type BankDecision, type LoanBounds, type Loa
 import type { AgentDecision, AgentSnapshot, RoundContext } from "../decisions/types";
 import { ChainUnreachableError } from "../errors";
 import { log, redact } from "../log";
+import { spentSince } from "../serv/meter";
 import type { BankSnapshot, EnteringAgent, FlowContext, RoundPlan } from "./types";
 import { roundIdFor } from "./types";
 
@@ -105,6 +106,9 @@ export async function planRound(
   // allows. A pulled round asks to reason and a scheduled one does not, but
   // neither reaches the model with the switch off.
   const serv = options.reasoning !== false && servReasoningOn(ctx.servSwitchFile) ? ctx.serv : undefined;
+  // Where the meter stands before this round asks anybody anything, so what
+  // the round records is its own spend rather than the process's total.
+  const meterBefore = ctx.meter.reading();
 
   ctx.bankroll.invalidate();
   // Every balance in one chain request. It used to be one request per agent,
@@ -463,7 +467,28 @@ export async function planRound(
   const order = new Map(NAMED_AGENTS.map((p, i) => [p.id, i]));
   decisions.sort((a, b) => (order.get(a.agentId) ?? 0) - (order.get(b.agentId) ?? 0));
 
-  return { roundId, seed, stakeWei, decisions, snapshots, entering, bots, fighters, entrants, servCalls: run.servCalls + loans.length + refusals.length, guardRefusals: run.guardRefusals, rejections: run.rejections, loans, refusals, deniedCredit, bank };
+  const spent = spentSince(meterBefore, ctx.meter.reading());
+  return {
+    roundId,
+    seed,
+    stakeWei,
+    decisions,
+    snapshots,
+    entering,
+    bots,
+    fighters,
+    entrants,
+    servCalls: run.servCalls + loans.length + refusals.length,
+    servMicroCents: spent.microCents,
+    servTokensIn: spent.promptTokens,
+    servTokensOut: spent.completionTokens,
+    guardRefusals: run.guardRefusals,
+    rejections: run.rejections,
+    loans,
+    refusals,
+    deniedCredit,
+    bank,
+  };
 }
 
 /** Told as each entry confirms on chain, so a caller can show it landing. */

@@ -75,13 +75,9 @@ describe("reasoning", () => {
     expect(stat("decisions the learning can draw on").text).toBe("2");
   });
 
-  it("bills only the rounds that actually called", () => {
-    expect(stat("spend on reasoning").text).toContain("$0.0001");
-    expect(stat("spend on reasoning").text).toContain("1 rounds that called");
-  });
-
-  it("says tokens are not recorded rather than zero", () => {
-    expect(stat("tokens in and out")).toMatchObject({ text: null });
+  it("totals only the rounds whose cost is their own, and says how many were left out", () => {
+    expect(stat("spend on reasoning").text).toBe("$0.014850 across 1 rounds that record their own cost, with 3 older rounds left out because theirs is a meter total");
+    expect(stat("tokens in and out").text).toBe("7,200 in, 900 out");
   });
 
   it("reads latency from the plans still on file", () => {

@@ -77,7 +77,18 @@ export interface StoredRound {
   /** Which checks ran and which failed. Absent on rounds stored before this. */
   reconciliation?: StoredReconciliation;
   servCalls: number;
+  /**
+   * What this round's reasoning cost, in micro cents.
+   *
+   * This round's own. Rounds stored before the token fields below carry the
+   * meter's running total instead, which is the process's spend stamped onto
+   * every round in it, so the two are told apart by whether the tokens are
+   * there.
+   */
   servMicroCents: number;
+  /** The tokens behind that cost. Absent on a round stored before it was per round. */
+  servTokensIn?: number;
+  servTokensOut?: number;
   /** What the lender answered this round. Absent when the bank is off. */
   loans?: StoredLoanDecision[];
 }

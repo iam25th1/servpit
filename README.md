@@ -273,6 +273,21 @@ round the L1 fee was not even constant:
 Any hardcoded constant would have failed. Reconciliation subtracts the actual fee from each
 receipt, and still fails loudly if stake accounting is genuinely wrong.
 
+**And the receipt has to be read again at reconcile time, which took 99 rounds to learn.** The
+fee was taken from the receipt as it came back the moment a transfer confirmed, and on Base
+Sepolia that reading is not final: over 70 consecutive live transfers, 39 recorded a fee larger
+than the one the same receipt reports once the block has settled, and none recorded a smaller
+one. The L2 component was identical every time, 21,000 gas at 6 gwei; the whole difference was
+in the L1 data fee. That was enough to mark 99 of the 200 rounds on file unreconciled, 95 on a
+wallet check and 4 on the pot check, each by exactly the gap between the fee recorded and the
+fee charged, while every entry, payout, loan, repayment and seizure was right to the wei.
+
+The settle path already read the chain again when a check failed, because a balance can lag a
+receipt, but it re-read the balances and reused the fee, so a wrong fee could never clear. It
+re-reads the fee too now, and the ledger keeps the chain's answer. Nothing was relaxed: the
+check is the same equality, and a fee that cannot be confirmed keeps the number that was
+written down and is allowed to fail on it.
+
 </details>
 
 <details>
@@ -460,19 +475,25 @@ the draw, the backing window, the fight, the figures.
 
 ### What a round costs
 
-About a cent of SERV: six agent decisions plus one for every loan the bank is asked about.
-Measured across the 29 settled rounds that actually called SERV, the median round costs
-**$0.0125**, and a round where nobody borrowed, so only the six agents were asked, costs
-**$0.0090**. Every one of those rounds reconciled across the agents, the pot, the bank and the
-operator, with conservation and both solvency checks passing.
+About a cent or two of SERV: six agent decisions plus one for every loan the bank is asked
+about, priced at $1.25 per million tokens in and $6.50 per million out.
 
-Left running, that is the whole bill:
+**The per round figures that used to be here have been withdrawn, and why is worth saying.**
+They were read off each round's `servMicroCents`, and that field held the cost meter's running
+total for the process the round was played in rather than the round's own spend. The first
+round in a process was right and every round after it carried the ones before it, so a median
+taken across them was an overstatement of unknown size. On the live pit it showed as the same
+2,088,850 micro cents stamped on all 200 rounds on file while every one of them recorded zero
+calls, which a naive total read as a $41.78 bill for rounds that never asked anybody anything.
 
-| a round every | rounds a day | SERV a day |
-|---|---|---|
-| 10 minutes | 144 | $1.80 |
-| 30 minutes | 48 | $0.60 |
-| 60 minutes | 24 | $0.30 |
+What is on file and true: that figure is the whole metered spend of the worker process running
+the live pit, **$0.0209**, across the reasoned rounds it has played. Nothing else can be
+re-derived, because no round in the window called SERV at all.
+
+A round now records its own cost and the tokens behind it, and the tokens are how a record
+that carries its own spend is told from one that carries a meter total. `npm run stats` totals
+the first kind and says how many of the second it left out. Figures per round and per day will
+be published from those records once there are enough of them to be worth quoting.
 
 And it can be turned off without stopping the pit. `npm run serv -- off` writes one file that
 every process reads at the start of every round, so nothing restarts and nothing is billed:

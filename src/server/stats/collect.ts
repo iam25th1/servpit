@@ -252,22 +252,34 @@ function reasoning(stores: Stores): Group {
 
   const calls = sum(rounds.map((r) => r.servCalls ?? 0));
   stats.push(count("SERV calls on file", calls));
-  stats.push(missing("tokens in and out", "a round record keeps the number of calls and a cost, not the tokens"));
 
-  const costed = rounds.filter((r) => (r.servCalls ?? 0) > 0);
-  if (costed.length === 0) {
-    const stamped = new Set(rounds.filter((r) => (r.servMicroCents ?? 0) > 0).map((r) => r.servMicroCents));
+  // A round whose cost is its own carries the tokens behind it. One stored
+  // before that carries the meter's running total for the process it was
+  // played in, stamped onto every round in that process, which is not this
+  // round's spend and is not summable.
+  const ownCost = rounds.filter((r) => r.servTokensIn !== undefined || r.servTokensOut !== undefined);
+  const stamped = rounds.length - ownCost.length;
+  if (ownCost.length === 0) {
+    stats.push(missing("tokens in and out", `every round on file was stored before the tokens were recorded${stamped > 0 ? `, all ${stamped} of them` : ""}`));
+    const values = new Set(rounds.filter((r) => (r.servMicroCents ?? 0) > 0).map((r) => r.servMicroCents));
     stats.push(
       missing(
         "spend on reasoning",
-        stamped.size === 0
+        values.size === 0
           ? "no round on file called SERV, so there is nothing to bill"
-          : `no round on file called SERV, and the cost field carries the same ${[...stamped][0]?.toLocaleString("en-US")} micro cents on every one of them, which is a meter reading rather than a bill`,
+          : `every round on file carries the meter's running total rather than its own spend${values.size === 1 ? `, the same ${[...values][0]?.toLocaleString("en-US")} micro cents on all of them` : ""}, so it cannot be totalled`,
       ),
     );
   } else {
-    const micro = sum(costed.map((r) => r.servMicroCents ?? 0));
-    stats.push(said("spend on reasoning", `$${(micro / 1_000_000 / 100).toFixed(4)} across ${costed.length} rounds that called`, micro));
+    stats.push(said("tokens in and out", `${sum(ownCost.map((r) => r.servTokensIn ?? 0)).toLocaleString("en-US")} in, ${sum(ownCost.map((r) => r.servTokensOut ?? 0)).toLocaleString("en-US")} out`, sum(ownCost.map((r) => (r.servTokensIn ?? 0) + (r.servTokensOut ?? 0)))));
+    const micro = sum(ownCost.map((r) => r.servMicroCents ?? 0));
+    stats.push(
+      said(
+        "spend on reasoning",
+        `$${(micro / 100_000_000).toFixed(6)} across ${ownCost.length.toLocaleString("en-US")} rounds that record their own cost${stamped > 0 ? `, with ${stamped.toLocaleString("en-US")} older rounds left out because theirs is a meter total` : ""}`,
+        micro,
+      ),
+    );
   }
 
   const { reasoned, learned, instinct, learnable } = sourcesOf(rounds);
