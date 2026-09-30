@@ -65,6 +65,8 @@ export interface PullDeps {
   reasoningConfigured?: boolean;
   /** The handle owner from the pick log, so one handle is one browser everywhere. */
   backingOwner?: (handle: string) => string | null;
+  /** Whether this request's place in the world may pull. Already keyed to it. */
+  crowd?: () => boolean;
   now?: () => number;
 }
 
@@ -140,6 +142,12 @@ export function requestPull(state: ArenaStateLike, input: PullInput, deps: PullD
   if (left !== null && left <= 0) {
     const when = resetsAt === null ? "later" : `after ${new Date(resetsAt).toISOString()}`;
     return { ok: false, status: 429, message: `That is your ${deps.settings.perIdentity} pulls for now. The next one is ${when}.` };
+  }
+  // The allowance above is kept in the log under a token the browser made
+  // for itself, so it counts nothing against somebody presenting a new one
+  // every time. This counts where the request came from instead.
+  if (deps.crowd !== undefined && !deps.crowd()) {
+    return { ok: false, status: 429, message: "The lever has been pulled a lot from where you are. Give it a while." };
   }
 
   if (deps.store.takenSince(now - HOUR_MS) >= deps.settings.perHour) {

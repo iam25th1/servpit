@@ -9,9 +9,13 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { arenaMode } from "@/config/arena";
+import { PICKS_PER_MINUTE_PER_PLACE } from "@/config/backing";
 import { arenaReader } from "@/server/arena/read";
 import { pickReader } from "@/server/backing/read";
+import { RateLimiter } from "@/server/backing/limit";
 import { backingView, pickLimiter, submitPick } from "@/server/backing/service";
+import { TOO_LARGE, readBody } from "@/server/net/body";
+import { visitorKey } from "@/server/net/visitor";
 import { fighterReader } from "@/server/fighters/read";
 import { ownerAcross } from "@/server/identity/service";
 import { pullReader } from "@/server/pulls/read";
@@ -23,6 +27,9 @@ export const dynamic = "force-dynamic";
 
 /** Longer than a pick and far shorter than an attack. */
 const MAX_BODY_BYTES = 2_000;
+
+/** Picks from one place, for the limit a browser's own token cannot carry. */
+const placeLimiter = new RateLimiter(PICKS_PER_MINUTE_PER_PLACE);
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
   try {
@@ -37,11 +44,13 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
-    const body = await request.text();
-    if (body.length > MAX_BODY_BYTES) return NextResponse.json({ error: "That is not a pick." }, { status: 413 });
+    // Read with a ceiling rather than read and then measure: the measuring
+    // version held every byte an attacker chose to send before refusing it.
+    const body = await readBody(request, MAX_BODY_BYTES);
+    if (!body.ok) return NextResponse.json({ error: TOO_LARGE }, { status: 413 });
     let input: unknown;
     try {
-      input = JSON.parse(body);
+      input = JSON.parse(body.text);
     } catch {
       return NextResponse.json({ error: "That is not a pick." }, { status: 400 });
     }
@@ -50,7 +59,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const answer = submitPick(
       arenaReader().state(),
       { handle, token, agentId },
-      { store: pickReader(), limiter: pickLimiter, arenaMode: arenaMode(), otherOwner: ownerAcross([pullReader(), fighterReader()]) },
+      {
+        store: pickReader(),
+        limiter: pickLimiter,
+        crowd: () => placeLimiter.allow(visitorKey(request.headers)),
+        arenaMode: arenaMode(),
+        otherOwner: ownerAcross([pullReader(), fighterReader()]),
+      },
     );
     if (!answer.ok) return NextResponse.json({ error: answer.message }, { status: answer.status });
     return NextResponse.json(answer.view);

@@ -6,6 +6,7 @@ import type { ArenaPhase, ArenaState } from "../arena/state";
 import { DEFAULT_PULL_SETTINGS, type PullSettings } from "./settings";
 import { PullStore } from "./log";
 import { requestPull } from "./service";
+import { RateLimiter } from "../backing/limit";
 
 /** Everything the service needs besides the log, with the defaults in force. */
 const deps = (store: PullStore, over: { settings?: Partial<PullSettings>; spentCents?: number; reasoningOn?: boolean; now?: () => number; backingOwner?: (handle: string) => string | null } = {}) => {
@@ -238,3 +239,24 @@ describe("what the lever promises about reasoning", () => {
     if (answer.ok) expect(answer.view.willReason).toBe(true);
   });
 });
+
+describe("a flood of pulls from one place", () => {
+  // The allowance in the log is kept under the browser's own token, so it
+  // counts nothing against somebody presenting a new one every time.
+  const fresh = () => `${crypto.randomUUID()}${crypto.randomUUID()}`;
+
+  it("stops the lever being worked from one machine under new names", () => {
+    const log = store();
+    const crowd = new RateLimiter(1);
+    const place = () => crowd.allow("one-address");
+    const ask = (n: number) =>
+      requestPull(state("resting"), { handle: `atk${n}`, token: fresh() }, { ...deps(log), crowd: place });
+
+    expect(ask(1)).toMatchObject({ ok: true });
+    const second = ask(2);
+    expect(second).toMatchObject({ ok: false, status: 429 });
+    if (second.ok) return;
+    expect(second.message).toBe("The lever has been pulled a lot from where you are. Give it a while.");
+  });
+});
+

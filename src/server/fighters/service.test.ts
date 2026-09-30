@@ -134,3 +134,25 @@ describe("asking about a fighter", () => {
     expect(view.message).toMatch(/Claim a fighter/);
   });
 });
+
+describe("a flood of claims from one place", () => {
+  // Faces are few and a claim holds one for days, so the limit that matters
+  // is not per token, which a private window mints for free, but per place.
+  const fresh = () => `${crypto.randomUUID()}${crypto.randomUUID()}`;
+
+  it("stops one machine taking every free face", () => {
+    const log = store();
+    const crowd = new RateLimiter(2);
+    const place = () => crowd.allow("one-address");
+    const take = (n: number, face: string) =>
+      claimFighter({ handle: `atk${n}`, token: fresh(), name: `Atk${n}`, face }, { ...deps(log), crowd: place });
+
+    expect(take(1, "Monk")).toMatchObject({ ok: true });
+    expect(take(2, "Bear")).toMatchObject({ ok: true });
+    expect(take(3, "Dragon")).toMatchObject({ ok: false, status: 429, message: "That is a lot of claiming from one place. Give it a moment." });
+    // The third seat is still there for somebody else.
+    expect(log.freeFaces()).toContain("Dragon");
+    expect(log.all()).toHaveLength(2);
+  });
+});
+

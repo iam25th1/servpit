@@ -36,6 +36,16 @@ export const DEFAULT_PULLS_PER_WINDOW = 3;
 export const DEFAULT_PULL_WINDOW_HOURS = 6;
 
 /**
+ * How many pulls may come from one place in an hour.
+ *
+ * The window above is kept in the log and keyed by the browser's own token,
+ * which a private window can mint again for free. This one is kept in memory
+ * and keyed by where the request came from, so a machine asking over and over
+ * is stopped before the log is, whatever tokens it presents.
+ */
+export const PULLS_PER_PLACE_PER_HOUR = 3;
+
+/**
  * What the pit may spend on reasoning in a day, in cents.
  *
  * Measured from what rounds actually recorded, not estimated from a rate: the

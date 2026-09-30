@@ -65,6 +65,18 @@ export function fighterFile(dataDir: string, network: string): string {
 export const CLAIMS_PER_MINUTE = 5;
 
 /**
+ * How many seats may be claimed from one place, and over how long.
+ *
+ * A browser mints its own token, so the limit above cannot stop one machine
+ * taking every free face in a few seconds and holding them for three days.
+ * This one is keyed by where the request came from: two claims in ten minutes
+ * is a visitor who made a mistake and fixed it, and it is useless for filling
+ * the pit.
+ */
+export const CLAIMS_PER_PLACE = 2;
+export const CLAIM_PLACE_WINDOW_MS = 10 * 60_000;
+
+/**
  * Most seats that may be claimed at once.
  *
  * Eight of the twenty four, which leaves the six agents their seats and keeps
