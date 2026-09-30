@@ -14,7 +14,8 @@
 // boolean and not the checks behind it, so a failure can be counted and not
 // explained.
 
-import type { CareerRow, LogLine, RoundRow, Stores, TransferRow, WreckRow } from "./read";
+import type { CareerRow, LogLine, PlanRow, RoundRow, Stores, TransferRow, WreckRow } from "./read";
+import { classSplit, covers, lifetimeRounds, spanOf, type LifetimeRounds, type Span } from "./history";
 
 /** One line of the report. */
 export interface Stat {
@@ -25,6 +26,15 @@ export interface Stat {
   why?: string;
   /** The bare number behind the text, for the lines worth posting. */
   number?: number;
+  /**
+   * Which store the figure came from and what period it covers.
+   *
+   * On every figure that has one, because the bug this report was built to
+   * avoid is a windowed number read as a lifetime one.
+   */
+  covers?: string;
+  /** A caveat about the figure, printed under it rather than in its label. */
+  note?: string;
 }
 
 export interface Group {
@@ -42,7 +52,6 @@ export interface Report {
 /** The rolling window the round store keeps, as MAX_ROUNDS in store.ts. */
 export const ROUND_WINDOW = 200;
 
-const WHY_WINDOW = `the round store keeps the last ${ROUND_WINDOW} rounds, so anything older is gone`;
 const WHY_NO_LOG = "a fight log is kept for the round on screen only, not for the rounds behind it";
 const WHY_NO_REELS = "a round record keeps the winning entrant id, not the characters the reels drew";
 
@@ -53,13 +62,15 @@ const WHY_NO_REELS = "a round record keeps the winning entrant id, not the chara
  * value: "fights on file (one per round)" reads as a fact, and "200 one per
  * round" reads as a typo.
  */
-const count = (label: string, value: number, caveat = ""): Stat => ({
-  label: caveat ? `${label} (${caveat})` : label,
+const count = (label: string, value: number, caveat = "", covers?: string): Stat => ({
+  label,
   text: value.toLocaleString("en-US"),
   number: value,
+  covers,
+  ...(caveat ? { note: caveat } : {}),
 });
 
-const said = (label: string, text: string, number?: number): Stat => ({ label, text, number });
+const said = (label: string, text: string, number?: number, covers?: string): Stat => ({ label, text, number, covers });
 
 const missing = (label: string, why: string): Stat => ({ label, text: null, why });
 
@@ -92,10 +103,10 @@ function chips(wei: bigint, rate: bigint | null): string | null {
   return `${Number(wei / rate).toLocaleString("en-US")} chips`;
 }
 
-const money = (label: string, wei: bigint, rate: bigint | null): Stat =>
+const money = (label: string, wei: bigint, rate: bigint | null, covers?: string): Stat =>
   rate === null
-    ? { label, text: `${wei.toLocaleString("en-US")} wei`, number: Number(wei) }
-    : { label, text: chips(wei, rate)!, number: Number(wei / rate) };
+    ? { label, text: `${wei.toLocaleString("en-US")} wei`, number: Number(wei), covers }
+    : { label, text: chips(wei, rate)!, number: Number(wei / rate), covers };
 
 /** Wei as ETH, which needs no rate and no environment. */
 function eth(wei: bigint): string {
@@ -181,18 +192,63 @@ export function failureCauses(rounds: readonly RoundRow[]): { causes: Map<string
   return { causes, undetailed, worstGap };
 }
 
-function pit(stores: Stores, rate: bigint | null): Group {
+/** Where each store reaches, worked out once and printed beside every figure. */
+export interface Frame {
+  rate: bigint | null;
+  life: LifetimeRounds;
+  rounds: string;
+  ledger: string;
+  wrecks: string;
+  logs: string;
+  plans: string;
+  boards: string;
+  lifetime: string;
+}
+
+export function frameOf(stores: Stores): Frame {
+  const life = lifetimeRounds(stores);
+  const at = (rows: readonly unknown[] | null, timeOf: (row: never) => string | undefined | null): Span =>
+    spanOf((rows ?? []).map((row) => {
+      const raw = timeOf(row as never);
+      const t = raw === undefined || raw === null ? NaN : Date.parse(raw);
+      return Number.isFinite(t) ? t : null;
+    }));
+  const logRows = [...(stores.picks ?? []), ...(stores.pulls ?? []), ...(stores.fighters ?? [])];
+  return {
+    rate: chipRate(stores),
+    life,
+    rounds: covers(`the round store, the last ${ROUND_WINDOW} rounds`, at(stores.rounds, (r: RoundRow) => r.createdAt)),
+    ledger: covers("the ledger, every transfer it has", at(stores.transfers, (t: TransferRow) => t.createdAt)),
+    wrecks: covers("the wreck store, every wreck it has", at(stores.wrecks, (w: WreckRow) => w.at)),
+    logs: covers("the append only logs, every line", at(logRows, (l: LogLine) => (typeof l.at === "string" ? l.at : null))),
+    plans: covers("the plan store, the plans still in it", at(stores.plans, (p: PlanRow) => p.quotedAt)),
+    boards: "the boards, which keep totals and no dates",
+    lifetime: covers("every store that keeps a round id", life.span),
+  };
+}
+
+function pit(stores: Stores, frame: Frame): Group {
+  const rate = frame.rate;
   const rounds = stores.rounds;
   const stats: Stat[] = [];
+  // The lifetime figure first, because it is the one a reader wants, and it is
+  // a floor rather than a count: a round that moved no money, wrecked nobody
+  // and nobody backed leaves no trace once its own record ages out.
+  if (frame.life.ids.size === 0) {
+    stats.push(missing("rounds the pit has played", "no store for this network holds a round id"));
+  } else {
+    stats.push(count("rounds the pit has played, at least", frame.life.ids.size, "a floor: a round that left no trace cannot be counted", frame.lifetime));
+    stats.push(said("where those round ids came from", [...Object.entries(frame.life.bySource)].sort((a, b) => b[1] - a[1]).map(([from, n]) => `${n.toLocaleString("en-US")} first seen in ${from}`).join(", ")));
+  }
+
   if (rounds === null) {
     stats.push(missing("rounds on file", "there is no round store for this network"));
   } else {
-    stats.push(count("rounds on file", rounds.length));
-    stats.push(missing("rounds played in total", WHY_WINDOW));
+    stats.push(count("rounds on file in full detail", rounds.length, "", frame.rounds));
     const ok = rounds.filter((r) => r.reconciled === true).length;
     const failed = rounds.filter((r) => r.reconciled === false).length;
-    stats.push(said("rounds reconciled", `${ok.toLocaleString("en-US")} of ${rounds.length.toLocaleString("en-US")} on file`, ok));
-    stats.push(said("rounds that failed reconciliation", failed === 0 ? "none of the rounds on file" : `${failed.toLocaleString("en-US")} of ${rounds.length.toLocaleString("en-US")} on file`, failed));
+    stats.push(said("rounds reconciled", `${ok.toLocaleString("en-US")} of ${rounds.length.toLocaleString("en-US")} on file`, ok, frame.rounds));
+    stats.push(said("rounds that failed reconciliation", failed === 0 ? "none of the rounds on file" : `${failed.toLocaleString("en-US")} of ${rounds.length.toLocaleString("en-US")} on file`, failed, frame.rounds));
     if (failed > 0) {
       const { causes, undetailed, worstGap } = failureCauses(rounds);
       const parts = [...causes].sort((a, b) => b[1] - a[1]).map(([cause, n]) => `${n} ${cause}`);
@@ -200,22 +256,22 @@ function pit(stores: Stores, rate: bigint | null): Group {
       stats.push(said("why they failed", parts.join(", ")));
       stats.push(worstGap === null ? missing("worst disagreement", "no failure on file carries the two figures") : said("worst disagreement", `${worstGap.toLocaleString("en-US")} wei`, Number(worstGap)));
     }
-    stats.push(count("fights on file", rounds.length, "one per round"));
+    stats.push(count("fights on file", rounds.length, "one per round", frame.rounds));
     const pots = rounds.map((r) => big(r.potWei));
     const biggest = pots.reduce((a, b) => (b > a ? b : a), 0n);
-    stats.push({ ...money("largest pot on file", biggest, rate), label: "largest pot on file" });
+    stats.push(money("largest pot on file", biggest, rate, frame.rounds));
     const winners = new Map<string, number>();
     for (const round of rounds) {
       const kind = (round.winner ?? "").split("-")[0] || "unknown";
       winners.set(kind, (winners.get(kind) ?? 0) + 1);
     }
-    stats.push(said("who won them", [...winners].map(([kind, n]) => `${n} ${kind}`).join(", ")));
+    stats.push(said("who won them", [...winners].map(([kind, n]) => `${n} ${kind}`).join(", "), undefined, frame.rounds));
     // How long the window on file covers, which is the one thing the round
     // record's timestamps can say exactly.
     const times = rounds.map((r) => Date.parse(r.createdAt ?? "")).filter((t) => Number.isFinite(t));
     if (times.length > 1) {
       const hours = (Math.max(...times) - Math.min(...times)) / 3_600_000;
-      stats.push(said("what those rounds cover", `${hours.toFixed(1)} hours, ending ${new Date(Math.max(...times)).toISOString()}`, hours));
+      stats.push(said("what those rounds cover", `${hours.toFixed(1)} hours, ending ${new Date(Math.max(...times)).toISOString()}`, hours, frame.rounds));
     }
   }
 
@@ -224,15 +280,17 @@ function pit(stores: Stores, rate: bigint | null): Group {
   } else {
     const settled = new Set(stores.transfers.filter((t) => t.txHash && t.status === "complete").map((t) => t.roundId ?? ""));
     settled.delete("");
-    stats.push(count("rounds that settled on chain", settled.size, "the ledger keeps every one"));
+    stats.push(count("rounds that settled on chain", settled.size, "", frame.ledger));
+    const biggestPayout = stores.transfers.filter((t) => t.kind === "payout" && t.status === "complete").reduce((a, t) => (big(t.amountWei) > a ? big(t.amountWei) : a), 0n);
+    stats.push(money("largest payout on chain", biggestPayout, rate, frame.ledger));
   }
 
   const fight = stores.arena?.last?.fight;
   const deaths = (fight?.log ?? []).filter((e) => e.type === "death").length;
   stats.push(missing("eliminations in total", WHY_NO_LOG));
   if (fight?.log) {
-    stats.push(count("eliminations in the round on screen", deaths));
-    stats.push(said("that round lasted", fight.durationMs ? `${(fight.durationMs / 1000).toFixed(1)} seconds` : "not recorded"));
+    stats.push(count("eliminations in the round on screen", deaths, "", "the arena state, which keeps one fight"));
+    stats.push(said("that round lasted", fight.durationMs ? `${(fight.durationMs / 1000).toFixed(1)} seconds` : "not recorded", undefined, "the arena state, which keeps one fight"));
   }
   stats.push(missing("longest and shortest round", "a round record carries when it was created, not how long it ran"));
 
@@ -240,12 +298,12 @@ function pit(stores: Stores, rate: bigint | null): Group {
     stats.push(missing("chips paid out", "there is no ledger for this network"));
   } else {
     const paid = stores.transfers.filter((t) => t.kind === "payout" && t.status === "complete").reduce((a, t) => a + big(t.amountWei), 0n);
-    stats.push(money("chips paid out to winners", paid, rate));
+    stats.push(money("chips paid out to winners", paid, rate, frame.ledger));
   }
   return { title: "the pit", stats };
 }
 
-function reasoning(stores: Stores): Group {
+function reasoning(stores: Stores, frame: Frame): Group {
   const stats: Stat[] = [];
   const rounds = stores.rounds;
   if (rounds === null) return { title: "reasoning", stats: [missing("SERV calls", "there is no round store for this network")] };
@@ -282,11 +340,27 @@ function reasoning(stores: Stores): Group {
     );
   }
 
-  const { reasoned, learned, instinct, learnable } = sourcesOf(rounds);
-  stats.push(count("rounds reasoned", reasoned));
-  stats.push(count("rounds drawn from what it learned", learned));
-  stats.push(count("rounds on instinct", instinct));
-  stats.push(count("decisions the learning can draw on", learnable, "with the spot that produced them"));
+  // Counted over every round any store can still speak for, not just the
+  // window. A decision's source lives in the round record and in a quoted
+  // plan, and nowhere else, so a round older than both cannot be classed and
+  // is counted as unclassified rather than quietly as instinct.
+  const split = classSplit(frame.life);
+  const classifiable = covers("the rounds whose decisions survive, in the round store and the quoted plans", frame.life.span);
+  if (frame.life.ids.size === 0) {
+    stats.push(missing("rounds reasoned, learned or on instinct", "no store for this network holds a round to class"));
+  } else {
+    stats.push(count("rounds reasoned", split.reasoned, "", classifiable));
+    stats.push(count("rounds drawn from what it learned", split.learned));
+    stats.push(count("rounds on instinct", split.instinct));
+    stats.push(count("rounds nobody can class", split.unclassified, "their record aged out, and no transfer, wreck, pick or pull carries a decision's source", frame.lifetime));
+  }
+  stats.push(
+    stores.pulls === null
+      ? missing("rounds the lever started", "there is no pull log for this network")
+      : count("rounds the lever started", frame.life.pulled.size, "a pull asks for reasoning; whether the round reasoned is not recorded", frame.logs),
+  );
+  const { learnable } = sourcesOf(rounds);
+  stats.push(count("decisions the learning can draw on", learnable, "with the spot that produced them, in the round store's window", frame.rounds));
 
   const latencies = (stores.plans ?? []).flatMap((p) => (p.plan?.decisions ?? []).map((d) => d.latencyMs)).filter((ms): ms is number => typeof ms === "number" && ms > 0);
   if (latencies.length === 0) {
@@ -298,12 +372,14 @@ function reasoning(stores: Stores): Group {
   return { title: "reasoning", stats };
 }
 
-function moneyGroup(stores: Stores, rate: bigint | null): Group {
+function moneyGroup(stores: Stores, frame: Frame): Group {
+  const rate = frame.rate;
   const transfers = stores.transfers;
   if (transfers === null) return { title: "the money", stats: [missing("transfers", "there is no ledger for this network")] };
 
   const kinds = kindsOf(transfers);
   const stats: Stat[] = [];
+  const life = frame.ledger;
   for (const [label, kind] of [
     ["entries", "entry"],
     ["payouts", "payout"],
@@ -313,14 +389,14 @@ function moneyGroup(stores: Stores, rate: bigint | null): Group {
     ["operator refills", "refill"],
   ] as const) {
     const held = kinds.get(kind);
-    stats.push(held === undefined ? count(label, 0) : count(label, held.n));
+    stats.push(held === undefined ? count(label, 0, "", life) : count(label, held.n, "", life));
   }
   const onChain = transfers.filter((t) => t.txHash && t.status === "complete").length;
-  stats.push(count("transactions on chain", onChain));
+  stats.push(count("transactions on chain", onChain, "", life));
   const unfinished = transfers.filter((t) => t.status !== "complete");
-  stats.push(said("transfers that did not complete", unfinished.length === 0 ? "none" : `${unfinished.length} (${[...new Set(unfinished.map((t) => `${t.kind} ${t.status}`))].join(", ")})`, unfinished.length));
-  stats.push(money("moved in total", transfers.reduce((a, t) => a + big(t.amountWei), 0n), rate));
-  stats.push(said("gas spent", eth(transfers.reduce((a, t) => a + big(t.feeWei), 0n))));
+  stats.push(said("transfers that did not complete", unfinished.length === 0 ? "none" : `${unfinished.length} (${[...new Set(unfinished.map((t) => `${t.kind} ${t.status}`))].join(", ")})`, unfinished.length, life));
+  stats.push(money("moved in total", transfers.reduce((a, t) => a + big(t.amountWei), 0n), rate, life));
+  stats.push(said("gas spent", eth(transfers.reduce((a, t) => a + big(t.feeWei), 0n)), undefined, life));
 
   const rounds = stores.rounds;
   if (rounds === null) stats.push(missing("has reconciliation ever failed", "there is no round store for this network"));
@@ -337,25 +413,27 @@ function moneyGroup(stores: Stores, rate: bigint | null): Group {
             ? `yes, on ${failed} of the ${rounds.length} rounds on file, all of them stored before the checks were kept, so the cause is not recorded`
             : `yes, on ${failed} of the ${rounds.length} rounds on file: ${why.join(", ")}${undetailed > 0 ? `, and ${undetailed} stored before the checks were kept` : ""}`,
         failed,
+        frame.rounds,
       ),
     );
   }
   return { title: "the money", stats };
 }
 
-function marrow(stores: Stores, rate: bigint | null): Group {
+function marrow(stores: Stores, frame: Frame): Group {
+  const rate = frame.rate;
   const stats: Stat[] = [];
   const transfers = stores.transfers;
   if (transfers === null) {
     stats.push(missing("loans approved", "there is no ledger for this network"));
   } else {
     const loans = transfers.filter((t) => t.kind === "loan");
-    stats.push(count("loans approved", loans.length));
-    stats.push(money("lent in total", loans.reduce((a, t) => a + big(t.amountWei), 0n), rate));
+    stats.push(count("loans approved", loans.length, "", frame.ledger));
+    stats.push(money("lent in total", loans.reduce((a, t) => a + big(t.amountWei), 0n), rate, frame.ledger));
     const biggest = loans.reduce((a, t) => (big(t.amountWei) > a ? big(t.amountWei) : a), 0n);
-    stats.push(money("biggest single loan", biggest, rate));
+    stats.push(money("biggest single loan", biggest, rate, frame.ledger));
     const repaid = transfers.filter((t) => t.kind === "repayment");
-    stats.push(money("repaid in total", repaid.reduce((a, t) => a + big(t.amountWei), 0n), rate));
+    stats.push(money("repaid in total", repaid.reduce((a, t) => a + big(t.amountWei), 0n), rate, frame.ledger));
   }
   stats.push(missing("loans refused", "a refusal lives in the plan the player was shown, and the plan store keeps only the last few rounds"));
   stats.push(missing("interest earned", "a repayment records the amount that moved, not what part of it was interest"));
@@ -365,7 +443,7 @@ function marrow(stores: Stores, rate: bigint | null): Group {
     stats.push(missing("owed to the bank now", "there is no debt store for this network"));
   } else {
     const rows = Object.values(debts);
-    stats.push(money("principal on the book now", rows.reduce((a, d) => a + big(d.principalWei), 0n), rate));
+    stats.push(money("principal on the book now", rows.reduce((a, d) => a + big(d.principalWei), 0n), rate, "the debt store, which holds only what is owed now"));
     stats.push(money("interest on the book now", rows.reduce((a, d) => a + big(d.interestWei), 0n), rate));
     const rates = rows.map((d) => d.rateBps ?? 0).filter((bps) => bps > 0);
     stats.push(rates.length === 0 ? said("highest rate on the book now", "nothing is out on loan") : said("highest rate on the book now", `${(Math.max(...rates) / 100).toFixed(2)} percent a round`, Math.max(...rates)));
@@ -375,17 +453,18 @@ function marrow(stores: Stores, rate: bigint | null): Group {
   const wrecks = stores.wrecks;
   if (wrecks === null) stats.push(missing("written off", "there is no wreck store for this network"));
   else {
-    stats.push(money("written off", wrecks.reduce((a, w) => a + big(w.writtenOffWei), 0n), rate));
+    stats.push(money("written off", wrecks.reduce((a, w) => a + big(w.writtenOffWei), 0n), rate, frame.wrecks));
     stats.push(money("seized", wrecks.reduce((a, w) => a + big(w.seizedWei), 0n), rate));
   }
   return { title: "marrow, the lender", stats };
 }
 
-function dead(stores: Stores, rate: bigint | null): Group {
+function dead(stores: Stores, frame: Frame): Group {
+  const rate = frame.rate;
   const wrecks = stores.wrecks;
   if (wrecks === null) return { title: "the dead", stats: [missing("agents wrecked", "there is no wreck store for this network")] };
 
-  const stats: Stat[] = [count("agents wrecked", wrecks.length)];
+  const stats: Stat[] = [count("agents wrecked", wrecks.length, "", frame.wrecks)];
   const triggers = new Map<string, number>();
   for (const w of wrecks) triggers.set(w.trigger ?? "not recorded", (triggers.get(w.trigger ?? "not recorded") ?? 0) + 1);
   stats.push(said("what finished them", [...triggers].map(([t, n]) => `${n} ${t}`).join(", ")));
@@ -414,24 +493,24 @@ function roster(stores: Stores): Group {
   if (reels.length > 0) {
     const three = reels.filter((c) => c.combo === "threeOfAKind").length;
     const pairs = reels.filter((c) => c.combo === "pair").length;
-    stats.push(said("in the round on screen", `${reels.length} draws, ${three} three of a kind, ${pairs} pairs`, three));
+    stats.push(said("in the round on screen", `${reels.length} draws, ${three} three of a kind, ${pairs} pairs`, three, "the arena state, which keeps one round's draw"));
   }
   return { title: "the roster", stats };
 }
 
-function players(stores: Stores): Group {
+function players(stores: Stores, frame: Frame): Group {
   const stats: Stat[] = [];
   const handles = new Set([...claimsIn(stores.picks), ...claimsIn(stores.pulls), ...claimsIn(stores.fighters)].filter((h) => h.length > 0));
-  stats.push(count("handles claimed", handles.size));
+  stats.push(count("handles claimed", handles.size, "", frame.logs));
 
   const picks = (stores.picks ?? []).filter((line) => line.k === "pick").length;
-  stats.push(stores.picks === null ? missing("picks made", "there is no pick log for this network") : count("picks made", picks));
+  stats.push(stores.picks === null ? missing("picks made", "there is no pick log for this network") : count("picks made", picks, "", frame.logs));
 
   const board = stores.leaderboard;
   if (board === null) {
     stats.push(missing("correct picks", "there is no leaderboard for this network"));
   } else {
-    stats.push(count("correct picks", sum(board.map((r) => r.correct ?? 0))));
+    stats.push(count("correct picks", sum(board.map((r) => r.correct ?? 0)), "", frame.boards));
     stats.push(count("points scored", sum(board.map((r) => r.points ?? 0))));
     const best = maxBy(board, (r) => r.best ?? 0);
     const streak = best?.best ?? 0;
@@ -459,7 +538,7 @@ function players(stores: Stores): Group {
     stats.push(
       best === null
         ? missing("best fighter career", "no fighter has been in a round yet")
-        : said("best fighter career", `${best.name ?? best.handle ?? "unnamed"}, ${best.wins ?? 0} wins in ${(best.rounds ?? 0).toLocaleString("en-US")} rounds, ${(best.kills ?? 0).toLocaleString("en-US")} kills, longest run of ${best.longest ?? 0}`, best.wins ?? 0),
+        : said("best fighter career", `${best.name ?? best.handle ?? "unnamed"}, ${best.wins ?? 0} wins in ${(best.rounds ?? 0).toLocaleString("en-US")} rounds, ${(best.kills ?? 0).toLocaleString("en-US")} kills, longest run of ${best.longest ?? 0}`, best.wins ?? 0, frame.boards),
     );
     stats.push(count("kills recorded for claimed fighters", sum(careers.map((r) => r.kills ?? 0)), "the only kills any store keeps"));
     stats.push(count("rounds a claimed fighter has been in", Math.max(0, ...careers.map((r) => r.rounds ?? 0)), "a floor under rounds played"));
@@ -469,11 +548,11 @@ function players(stores: Stores): Group {
 
 /** Every group, counted from the stores as they are. */
 export function collect(stores: Stores, now: Date = new Date()): Report {
-  const rate = chipRate(stores);
+  const frame = frameOf(stores);
   return {
     network: stores.network,
     dataDir: stores.dataDir,
     at: now.toISOString(),
-    groups: [pit(stores, rate), reasoning(stores), moneyGroup(stores, rate), marrow(stores, rate), dead(stores, rate), roster(stores), players(stores)],
+    groups: [pit(stores, frame), reasoning(stores, frame), moneyGroup(stores, frame), marrow(stores, frame), dead(stores, frame), roster(stores), players(stores, frame)],
   };
 }

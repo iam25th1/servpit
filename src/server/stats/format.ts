@@ -17,11 +17,19 @@ export function renderReport(report: Report): string {
   for (const group of report.groups) {
     out.push("");
     out.push(group.title.toUpperCase());
+    // Where the last figure came from, so a run of figures out of the same
+    // store says it once rather than on every line.
+    let lastCovers = "";
     for (const stat of group.stats) {
       // A label longer than the column gets two spaces rather than none, so a
       // long one never runs into its own value.
       const label = stat.label.length >= WIDTH ? `${stat.label}  ` : stat.label.padEnd(WIDTH, " ");
       out.push(stat.text === null ? `  ${label}not recorded: ${stat.why}` : `  ${label}${stat.text}`);
+      const parts: string[] = [];
+      if (stat.note !== undefined) parts.push(stat.note);
+      if (stat.covers !== undefined && stat.covers !== lastCovers) parts.push(`from ${stat.covers}`);
+      if (stat.covers !== undefined) lastCovers = stat.covers;
+      if (parts.length > 0) out.push(`${" ".repeat(6)}${parts.join("; ")}`);
     }
   }
 

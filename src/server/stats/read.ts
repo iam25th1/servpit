@@ -121,6 +121,8 @@ export interface TransferRow {
 }
 
 export interface WreckRow {
+  /** The round it died in, which is how a wreck dates a round that aged out. */
+  roundId?: string;
   walletId?: string;
   identityId?: string;
   name?: string;
@@ -167,7 +169,9 @@ export interface BoardRow {
 }
 
 export interface PlanRow {
-  plan?: { decisions?: Array<{ source?: string; latencyMs?: number; model?: string; rejection?: string | null }> };
+  /** When the plan was quoted, which dates the round it was quoted for. */
+  quotedAt?: string;
+  plan?: { roundId?: string; decisions?: Array<{ source?: string; latencyMs?: number; model?: string; rejection?: string | null }> };
 }
 
 export interface ArenaFile {
