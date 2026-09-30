@@ -1064,6 +1064,7 @@ a money surface.
 | `npm run arena` | The worker that plays a round every interval. `-- pause`, `-- resume` and `-- status` answer without starting anything |
 | `npm run serv -- on\|off\|status` | Turns SERV reasoning on or off for the next round, in every process, without a restart |
 | `npm run extract-assets` | Pulls the roster, FX, UI kit, fonts and tilesets out of the asset pack into `public/assets` and writes the manifest |
+| `npm run stats` | Everything worth posting about, counted from the stores. Read only, takes the network as an argument |
 | `npm run gate` | typecheck, lint, test, build. What CI runs |
 | `npm test` | 1625 tests |
 
