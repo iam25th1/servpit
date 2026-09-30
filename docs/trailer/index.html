@@ -1,0 +1,53 @@
+<!doctype html>
+<!--
+  The SERVPIT trailer.
+
+  One timeline, driven by frame number rather than the clock: render.mjs asks
+  for frame 0, 1, 2 and so on, and every frame comes out the same every time.
+  The fight is a real round replayed through the game's own resolver and
+  renderer (round.json, from extract.ts); everything said on screen is in
+  src/cut.ts with where it came from.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>SERVPIT trailer</title>
+<link rel="icon" href="data:,">
+<style>
+@font-face { font-family: "Tiny5"; src: url("/assets/fonts/Tiny5.ttf") format("truetype"); font-display: block; }
+@font-face { font-family: "ServpitNormal"; src: url("/assets/ui/fontNormal.ttf") format("truetype"); font-display: block; }
+:root {
+  --pit: #14170f; --pit-deep: #0d0f0a; --interior: #1d2117;
+  --bone: #e8e2cf; --bone-dim: #b5afa0; --bone-bright: #f0ebdb;
+  --ink: #0d0f0a; --ink-dim: #1d2117;
+  --amber: #ffb300; --edge: #3d4133;
+  --good: #8bc34a; --bad: #e05a3a;
+  --tier-common: #7cb342; --tier-uncommon: #42a5f5; --tier-rare: #ffb300;
+  --font-ui: "Tiny5", "Courier New", monospace;
+  --font-display: "ServpitNormal", "Tiny5", monospace;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { background: var(--pit-deep); overflow: hidden; }
+body { color: var(--bone); font-family: var(--font-ui); -webkit-font-smoothing: none; font-smooth: never; }
+#stage { position: relative; overflow: hidden; background: var(--pit-deep); }
+.abs { position: absolute; }
+.px { image-rendering: pixelated; }
+.display { font-family: var(--font-display); }
+.amber { color: var(--amber); } .good { color: var(--good); } .bad { color: var(--bad); } .dim { color: var(--bone-dim); }
+.t16 { font-size: 16px; line-height: 24px; } .t24 { font-size: 24px; line-height: 32px; } .t32 { font-size: 32px; line-height: 40px; }
+.t48 { font-size: 48px; line-height: 56px; } .t64 { font-size: 64px; line-height: 72px; } .t96 { font-size: 96px; line-height: 104px; }
+.t128 { font-size: 128px; line-height: 136px; }
+.center { text-align: center; }
+.scene { position: absolute; inset: 0; opacity: 0; }
+.nine { position: absolute; }
+.parchment { position: absolute; width: 948px; height: 180px; background-size: 948px 180px; image-rendering: pixelated; color: var(--ink); display: flex; align-items: center; padding: 0 56px; }
+.facebox { position: absolute; width: 144px; height: 144px; background-size: 144px 144px; image-rendering: pixelated; }
+.facebox img { position: absolute; left: 15px; top: 15px; width: 114px; height: 114px; image-rendering: pixelated; }
+.row { display: flex; align-items: baseline; gap: 24px; }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<script src="dist/trailer.js"></script>
+</body>
+</html>
