@@ -1,0 +1,15 @@
+{
+  "name": "servpit-trailer-page",
+  "private": true,
+  "type": "module",
+  "description": "The SERVPIT trailer as one deterministic page: a real round replayed through the game's own renderer, rendered frame by frame.",
+  "scripts": {
+    "serve": "node serve.mjs",
+    "render": "node render.mjs"
+  },
+  "dependencies": {
+    "@fontsource/inter": "5.3.0",
+    "esbuild": "0.28.2",
+    "playwright-core": "^1.56.0"
+  }
+}
