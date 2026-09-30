@@ -3,10 +3,11 @@
 //   /                  docs/trailer/index.html
 //   /round.json        docs/trailer/round.json, the replayed round
 //   /dist/trailer.js   src/main.ts, bundled in memory by esbuild at start
-//   /assets/...        public/assets/... (sprites, faces, fonts, nine-patches)
+//   /assets/...        public/assets/... (sprites, faces, the slot, the sounds)
+//   /fonts/...         Inter, from @fontsource/inter (OFL), pinned by the lockfile
 //
-// Nothing else is reachable. Every asset path is resolved and checked to still
-// sit inside public/assets, so "../" gets a 404, not a file. The bundle is
+// Nothing else is reachable. Every asset and font path is resolved and checked
+// to still sit inside its root, so "../" gets a 404, not a file. The bundle is
 // never written to disk, so there is no generated code in the tree to lint or
 // to drift from its source.
 //
@@ -21,8 +22,9 @@ import { build } from "esbuild";
 const here = dirname(fileURLToPath(import.meta.url));
 const repo = resolve(here, "..", "..");
 const assets = join(repo, "public", "assets");
+const fonts = join(here, "node_modules", "@fontsource", "inter", "files");
 const port = Number(process.env.PORT ?? 8089);
-const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".json": "application/json", ".png": "image/png", ".ttf": "font/ttf" };
+const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".json": "application/json", ".png": "image/png", ".ttf": "font/ttf", ".woff2": "font/woff2" };
 
 const bundle = await build({
   entryPoints: [join(here, "src", "main.ts")],
@@ -35,16 +37,17 @@ const bundle = await build({
 });
 const script = bundle.outputFiles[0].contents;
 
-/** The file an asset URL names, or null when it would leave public/assets. */
-function inAssets(rest) {
-  const target = resolve(assets, normalize(decodeURIComponent(rest)).replace(/^([/\\])+/, ""));
-  return target.startsWith(assets + sep) ? target : null;
+/** The file a URL path names inside a root, or null when it would leave it. */
+function inside(root, rest) {
+  const target = resolve(root, normalize(decodeURIComponent(rest)).replace(/^([/\\])+/, ""));
+  return target.startsWith(root + sep) ? target : null;
 }
 
 function locate(pathname) {
   if (pathname === "/" || pathname === "/index.html") return join(here, "index.html");
   if (pathname === "/round.json") return join(here, "round.json");
-  if (pathname.startsWith("/assets/")) return inAssets(pathname.slice("/assets/".length));
+  if (pathname.startsWith("/assets/")) return inside(assets, pathname.slice("/assets/".length));
+  if (pathname.startsWith("/fonts/")) return inside(fonts, pathname.slice("/fonts/".length));
   return null;
 }
 

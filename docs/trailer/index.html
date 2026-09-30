@@ -6,7 +6,8 @@
   for frame 0, 1, 2 and so on, and every frame comes out the same every time.
   The fight is a real round replayed through the game's own resolver and
   renderer (round.json, from extract.ts); everything said on screen is in
-  src/cut.ts with where it came from.
+  src/cut.ts with where it came from. Text is set in Inter so it reads at a
+  glance; the game's pixel art stays pixel art, at whole number scales.
 -->
 <html lang="en">
 <head>
@@ -14,36 +15,35 @@
 <title>SERVPIT trailer</title>
 <link rel="icon" href="data:,">
 <style>
-@font-face { font-family: "Tiny5"; src: url("/assets/fonts/Tiny5.ttf") format("truetype"); font-display: block; }
-@font-face { font-family: "ServpitNormal"; src: url("/assets/ui/fontNormal.ttf") format("truetype"); font-display: block; }
+@font-face { font-family: "Inter"; font-weight: 400; src: url("/fonts/inter-latin-400-normal.woff2") format("woff2"); font-display: block; }
+@font-face { font-family: "Inter"; font-weight: 500; src: url("/fonts/inter-latin-500-normal.woff2") format("woff2"); font-display: block; }
+@font-face { font-family: "Inter"; font-weight: 700; src: url("/fonts/inter-latin-700-normal.woff2") format("woff2"); font-display: block; }
+@font-face { font-family: "Inter"; font-weight: 800; src: url("/fonts/inter-latin-800-normal.woff2") format("woff2"); font-display: block; }
 :root {
-  --pit: #14170f; --pit-deep: #0d0f0a; --interior: #1d2117;
+  --pit-deep: #0d0f0a;
   --bone: #e8e2cf; --bone-dim: #b5afa0; --bone-bright: #f0ebdb;
-  --ink: #0d0f0a; --ink-dim: #1d2117;
-  --amber: #ffb300; --edge: #3d4133;
-  --good: #8bc34a; --bad: #e05a3a;
+  --amber: #ffb300; --good: #8bc34a; --bad: #e05a3a;
   --tier-common: #7cb342; --tier-uncommon: #42a5f5; --tier-rare: #ffb300;
-  --font-ui: "Tiny5", "Courier New", monospace;
-  --font-display: "ServpitNormal", "Tiny5", monospace;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { background: var(--pit-deep); overflow: hidden; }
-body { color: var(--bone); font-family: var(--font-ui); -webkit-font-smoothing: none; font-smooth: never; }
+body { color: var(--bone); font-family: "Inter", sans-serif; font-weight: 500; }
 #stage { position: relative; overflow: hidden; background: var(--pit-deep); }
-.abs { position: absolute; }
-.px { image-rendering: pixelated; }
-.display { font-family: var(--font-display); }
-.amber { color: var(--amber); } .good { color: var(--good); } .bad { color: var(--bad); } .dim { color: var(--bone-dim); }
-.t16 { font-size: 16px; line-height: 24px; } .t24 { font-size: 24px; line-height: 32px; } .t32 { font-size: 32px; line-height: 40px; }
-.t48 { font-size: 48px; line-height: 56px; } .t64 { font-size: 64px; line-height: 72px; } .t96 { font-size: 96px; line-height: 104px; }
-.t128 { font-size: 128px; line-height: 136px; }
-.center { text-align: center; }
-.scene { position: absolute; inset: 0; opacity: 0; }
-.nine { position: absolute; }
-.parchment { position: absolute; width: 948px; height: 180px; background-size: 948px 180px; image-rendering: pixelated; color: var(--ink); display: flex; align-items: center; padding: 0 56px; }
-.facebox { position: absolute; width: 144px; height: 144px; background-size: 144px 144px; image-rendering: pixelated; }
-.facebox img { position: absolute; left: 15px; top: 15px; width: 114px; height: 114px; image-rendering: pixelated; }
-.row { display: flex; align-items: baseline; gap: 24px; }
+.px { image-rendering: pixelated; display: block; }
+.scene { position: absolute; inset: 0; opacity: 0; display: flex; flex-direction: column; justify-content: center; padding: 0 var(--gutter); gap: var(--gap); }
+.head { font-size: var(--head); font-weight: 700; color: var(--bone-dim); }
+.line { font-size: var(--text); line-height: 1.2; }
+.num { font-size: var(--num); font-weight: 800; color: var(--amber); letter-spacing: -0.01em; font-feature-settings: "tnum" 1; }
+.note { font-size: var(--note); font-weight: 400; color: var(--bone-dim); margin-top: 6px; }
+.amber { color: var(--amber); } .good { color: var(--good); } .bad { color: var(--bad); }
+.quote { display: flex; gap: 32px; align-items: flex-start; }
+.quote .said { font-size: var(--text); font-weight: 500; color: var(--bone-bright); line-height: 1.25; }
+.quote .who { font-size: var(--note); font-weight: 700; color: var(--bone-dim); margin-bottom: 6px; }
+.quote .did { font-size: var(--note); font-weight: 700; margin-top: 8px; }
+.face { flex: none; width: 144px; height: 144px; background-size: 144px 144px; image-rendering: pixelated; position: relative; }
+.face img { position: absolute; left: 15px; top: 15px; width: 114px; height: 114px; image-rendering: pixelated; }
+.tiers { display: grid; grid-template-columns: max-content max-content; column-gap: 40px; row-gap: 8px; font-size: var(--text); }
+.tiers .v { font-weight: 800; }
 </style>
 </head>
 <body>
