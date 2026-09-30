@@ -65,6 +65,9 @@ const T = {
   duration: 90,
 };
 
+/** Sound cues, in seconds, for render.mjs to lay the pack's own sounds on. */
+const BEATS: { at: number; sfx: string }[] = [];
+
 // ================================================================ helpers
 const stage = document.getElementById("stage") as HTMLDivElement;
 stage.style.width = `${W}px`;
@@ -120,23 +123,32 @@ function inTurn<X extends { hold: number }>(a: number, b: number, items: X[]): (
   return out;
 }
 
-/** Fades a whole scene in at a and out at b, in seconds. */
-function sceneWindow(tl: AnimeTimeline, e: HTMLElement, a: number, b: number): void {
-  tl.add(e, { opacity: [0, 1], duration: 240, ease: "linear" }, a * 1000);
-  tl.add(e, { opacity: [1, 0], duration: 240, ease: "linear" }, b * 1000 - 240);
+// Every element gets one animation, its whole life in keyframes: in, held,
+// and out if it goes. Two separate tweens on one element's opacity resolve in
+// the wrong order when the timeline is seeked backwards, and a frame has to
+// come out the same whichever way it was reached.
+
+/** Fades a whole scene in at a and out at b, in seconds. Null b: it stays. */
+function sceneWindow(tl: AnimeTimeline, e: HTMLElement, a: number, b: number | null): void {
+  const opacity: { from?: number; to: number; duration: number; delay?: number; ease: string }[] = [{ from: 0, to: 1, duration: 240, ease: "linear" }];
+  if (b !== null) opacity.push({ to: 0, delay: (b - a) * 1000 - 480, duration: 240, ease: "linear" });
+  tl.add(e, { opacity }, a * 1000);
 }
-/** A line that rises into place and stays for its scene. Whole pixels only. */
-function rise(tl: AnimeTimeline, e: HTMLElement, at: number, dist = 24): void {
-  tl.add(e, { opacity: [0, 1], translateY: [dist, 0], duration: 420, ease: "outCubic", modifier: round }, at * 1000);
-}
-function out(tl: AnimeTimeline, e: HTMLElement, at: number): void {
-  tl.add(e, { opacity: [1, 0], duration: 240, ease: "linear" }, at * 1000);
+/**
+ * A line that rises into place at `at`, and fades at `until` if it goes.
+ * Opacity eases freely; the rise snaps to whole pixels.
+ */
+function show(tl: AnimeTimeline, e: HTMLElement, at: number, until: number | null = null, dist = 24): void {
+  const IN = 420, OUT = 240;
+  const opacity: { from?: number; to: number; duration: number; delay?: number; ease: string }[] = [{ from: 0, to: 1, duration: IN, ease: "outCubic" }];
+  if (until !== null) opacity.push({ to: 0, delay: (until - at) * 1000 - IN, duration: OUT, ease: "linear" });
+  tl.add(e, { opacity, translateY: { from: dist, to: 0, duration: IN, ease: "outCubic", modifier: round } }, at * 1000);
 }
 
 class Fight {
   readonly canvas: HTMLCanvasElement;
   private readonly timeline: Timeline;
-  private readonly juice: Juice;
+  private juice!: Juice;
   private readonly renderer: ArenaRenderer;
   private readonly target: CanvasDrawTarget;
   private readonly feed: string[] = [];
@@ -152,12 +164,6 @@ class Fight {
     const names: Record<string, string> = {};
     for (const d of round.decisions) if (d.entered) names[`agent-${d.agentId}`] = d.name;
     this.timeline = new Timeline({ log: round.log, characters: round.characters, names });
-    // The game's own effects, with every scale held at one: pixel art is
-    // drawn at whole number scales only in this piece.
-    const rng = createRng(`trailer-${round.roundId}`);
-    const emitter = new ParticleEmitter(() => rng.nextU32() / 0x1_0000_0000);
-    const impactByTier = Object.fromEntries(Object.entries(DEFAULT_JUICE.impactByTier).map(([k, v]) => [k, { ...v, sheetScale: 1 }])) as typeof DEFAULT_JUICE.impactByTier;
-    this.juice = new Juice(store, emitter, (x, y) => this.renderer.tileToPixel(x, y), { ...DEFAULT_JUICE, punchScale: 1, impactByTier });
     this.timeline.onBatch((batch, silent) => {
       this.juice.onBatch(batch, silent, (id) => this.timeline.actor(id));
       for (const ev of batch.events ?? []) if (ev.type === "death") this.feed.push(ev.actor);
@@ -167,8 +173,14 @@ class Fight {
   }
 
   private reset(): void {
+    // The game's own effects, with every scale held at one: pixel art is
+    // drawn at whole number scales only in this piece. Rebuilt with a fresh
+    // seed on every reset, so a replay from the start draws the same sparks.
+    const rng = createRng(`trailer-${this.round.roundId}`);
+    const emitter = new ParticleEmitter(() => rng.nextU32() / 0x1_0000_0000);
+    const impactByTier = Object.fromEntries(Object.entries(DEFAULT_JUICE.impactByTier).map(([k, v]) => [k, { ...v, sheetScale: 1 }])) as typeof DEFAULT_JUICE.impactByTier;
+    this.juice = new Juice(this.store, emitter, (x, y) => this.renderer.tileToPixel(x, y), { ...DEFAULT_JUICE, punchScale: 1, impactByTier });
     this.timeline.seek(0);
-    this.juice.reset();
     this.feed.length = 0;
     this.frame = -1;
   }
@@ -286,7 +298,8 @@ async function build(): Promise<Built> {
   const winText = el("abs", win, `<div class="t64 amber">${escape(winnerName)} wins</div><div class="t32" style="margin-top:8px">${roundFile.potChips} chips, the whole pot</div>`);
   place(winText, 176, 8);
   winText.style.opacity = "1";
-  rise(tl, win, T.win);
+  show(tl, win, T.win);
+  BEATS.push({ at: T.win, sfx: "winSting" });
 
   // ------------------------------------------------------------ six agents
   const six = el("scene");
@@ -301,17 +314,17 @@ async function build(): Promise<Built> {
     const x0 = (W - (perRow * 144 + (perRow - 1) * (gap - 144))) / 2;
     place(b, x0 + (i % perRow) * gap, (V ? 960 : 640) + Math.floor(i / perRow) * 184);
     b.style.opacity = "0";
-    rise(tl, b, T.six + 1.0 + i * 0.12, 16);
+    show(tl, b, T.six + 1.0 + i * 0.12, null, 16);
   });
-  rise(tl, sixHead, T.six + 0.1);
-  rise(tl, sixSub, T.six + 0.7);
+  show(tl, sixHead, T.six + 0.1);
+  show(tl, sixSub, T.six + 0.7);
   sceneWindow(tl, six, T.six, T.serv);
 
   // ------------------------------------------------------------ SERV deciding
   const serv = el("scene");
   const servHead = el("abs center t48", serv, `Every round, each one asks <span class="amber">SERV Reasoning</span>: in or out.`);
   place(servHead, V ? 60 : 0, V ? 200 : 110, V ? W - 120 : W);
-  rise(tl, servHead, T.serv + 0.1);
+  show(tl, servHead, T.serv + 0.1, T.serv + 9.6);
   const px0 = (W - 948) / 2 + (V ? 0 : 88);
   const quote = (name: string, face: string, line: string, said: string, where: string, at: number, until: number, saidClass: string): void => {
     const g = el("abs", serv);
@@ -328,20 +341,18 @@ async function build(): Promise<Built> {
     place(w, V ? 0 : px0, fy + 284, V ? W : 948);
     if (V) w.classList.add("center");
     w.style.opacity = "1";
-    rise(tl, g, at, 16);
-    out(tl, g, until - 0.25);
+    show(tl, g, at, until - 0.25, 16);
+    BEATS.push({ at, sfx: "uiSelect" });
   };
   const vex = AGENT_LINES[0], rime = AGENT_LINES[1];
   quote(vex.name, faceset(vex.face), vex.line, vex.said, `live round ${vex.round}, answered by SERV`, T.serv + 1.0, T.serv + 5.4, "good");
   quote(rime.name, faceset(rime.face), rime.line, rime.said, `live round ${rime.round}, answered by SERV`, T.serv + 5.4, T.serv + 9.8, "dim");
   const lenderHead = el("abs center t48", serv, `And the lender, <span class="amber">Marrow</span>, asks it too.`);
   place(lenderHead, V ? 60 : 0, V ? 200 : 110, V ? W - 120 : W);
-  out(tl, servHead, T.serv + 9.6);
-  rise(tl, lenderHead, T.serv + 9.9);
+  show(tl, lenderHead, T.serv + 9.9, T.serv + 19.2);
   const m0 = MARROW_LINES[0], m1 = MARROW_LINES[1];
   quote("Marrow", marrowFace, m0.line, m0.said, `${m0.round}, answered by SERV`, T.serv + 10.2, T.serv + 14.6, "bad");
   quote("Marrow", marrowFace, m1.line, m1.said, `live round ${m1.round}, answered by SERV, settled ${shortHash(HASHES[0].url)}`, T.serv + 14.6, T.serv + 19.4, "good");
-  out(tl, lenderHead, T.serv + 19.2);
   // SERV's own figures, one at a time.
   const servFigures = inTurn(T.serv + 19.4, T.base, [
     { html: figureHtml(RUN.servCalls, `SERV calls, ${RUN.servSpend}`, "from the SERV console, not the game's books"), hold: 2.6 },
@@ -353,8 +364,8 @@ async function build(): Promise<Built> {
   for (const f of servFigures) {
     const g = el("abs center", serv, f.html);
     place(g, V ? 60 : 80, V ? 780 : 420, W - (V ? 120 : 160));
-    rise(tl, g, f.at);
-    out(tl, g, f.until - 0.25);
+    show(tl, g, f.at, f.until - 0.25);
+    BEATS.push({ at: f.at, sfx: "uiSelect" });
   }
   sceneWindow(tl, serv, T.serv, T.base);
 
@@ -362,7 +373,7 @@ async function build(): Promise<Built> {
   const base = el("scene");
   const baseHead = el("abs center t48", base, `Every chip moves on <span class="amber">${escape(SETTLE.network)}</span>.<br>Nobody signs anything.`);
   place(baseHead, V ? 60 : 0, V ? 200 : 96, V ? W - 120 : W);
-  rise(tl, baseHead, T.base + 0.1);
+  show(tl, baseHead, T.base + 0.1, T.base + 6.5);
   const rowsTop = V ? 520 : 290;
   HASHES.forEach((h, i) => {
     const r = el("nine", base);
@@ -370,8 +381,8 @@ async function build(): Promise<Built> {
     r.style.padding = "18px 24px";
     place(r, V ? 60 : 280, rowsTop + i * (V ? 190 : 150), V ? W - 120 : 1360);
     r.innerHTML = `<div class="row t32"><span>${escape(h.what)}</span></div><div class="row t24" style="margin-top:6px"><span class="amber">${shortHash(h.url)}</span><span class="dim">live round ${escape(h.round)}</span></div>`;
-    rise(tl, r, T.base + 1.2 + i * 1.2, 16);
-    out(tl, r, T.base + 6.6);
+    show(tl, r, T.base + 1.2 + i * 1.2, T.base + 6.6, 16);
+    BEATS.push({ at: T.base + 1.2 + i * 1.2, sfx: "payoutTransient" });
   });
   const baseFigures = inTurn(T.base + 6.8, T.numbers, [
     { html: figureHtml(SETTLE.transfers, `transfers. ${SETTLE.seconds}.`, `one live round, ${SETTLE.settleRound}, settling`), hold: 2.4 },
@@ -381,13 +392,12 @@ async function build(): Promise<Built> {
   for (const f of baseFigures) {
     const g = el("abs center", base, f.html);
     place(g, V ? 60 : 80, V ? 780 : 420, W - (V ? 120 : 160));
-    rise(tl, g, f.at);
-    out(tl, g, f.until - 0.25);
+    show(tl, g, f.at, f.until - 0.25);
+    BEATS.push({ at: f.at, sfx: "uiSelect" });
   }
-  out(tl, baseHead, T.base + 6.5);
   const reconHead = el("abs center t48", base, `${RUN.reconFailures} reconciliation failures. <span class="good">${RUN.reconReal} of them real.</span><br>Every transfer correct to the wei.`);
   place(reconHead, V ? 60 : 0, V ? 200 : 96, V ? W - 120 : W);
-  rise(tl, reconHead, T.base + 6.8);
+  show(tl, reconHead, T.base + 6.8);
   sceneWindow(tl, base, T.base, T.numbers);
 
   // ------------------------------------------------------------ the run, one number at a time
@@ -407,8 +417,8 @@ async function build(): Promise<Built> {
   for (const f of runFigures) {
     const g = el("abs center", nums, f.html);
     place(g, V ? 60 : 120, V ? 720 : 330, W - (V ? 120 : 240));
-    rise(tl, g, f.at + 0.1);
-    out(tl, g, f.until - 0.25);
+    show(tl, g, f.at + 0.1, f.until - 0.25);
+    BEATS.push({ at: f.at + 0.1, sfx: "uiSelect" });
   }
   sceneWindow(tl, nums, T.numbers, T.end);
 
@@ -426,9 +436,10 @@ async function build(): Promise<Built> {
   place(slotBox, Math.round((W - slot.width) / 2), endTop);
   const word = el("abs center", endScene, `<div class="display t128 amber">SERVPIT</div><div class="t48" style="margin-top:16px">${escape(END.url)}</div>`);
   place(word, 0, endTop + slot.height + 40, W);
-  rise(tl, word, T.end + 2.0);
+  show(tl, word, T.end + 2.0);
+  BEATS.push({ at: T.end + 0.7, sfx: "leverPull" }, { at: T.end + 2.0, sfx: "jackpotSting" });
   // It ends on this card, held: no fade to black after it.
-  tl.add(endScene, { opacity: [0, 1], duration: 240, ease: "linear" }, T.end * 1000);
+  sceneWindow(tl, endScene, T.end, null);
 
   return { tl, fight, slot };
 }
@@ -464,7 +475,7 @@ const ready = (async () => {
 
 declare global {
   interface Window {
-    TRAILER: { ready: Promise<void>; fps: number; frames: number; width: number; height: number; renderFrame: (n: number) => void; cues: () => Record<string, number> };
+    TRAILER: { ready: Promise<void>; fps: number; frames: number; width: number; height: number; renderFrame: (n: number) => void; cues: () => Record<string, number>; beats: () => { at: number; sfx: string }[] };
   }
 }
 window.TRAILER = {
@@ -476,4 +487,5 @@ window.TRAILER = {
   renderFrame,
   // For the audio: when each thing happens, in seconds.
   cues: () => ({ fightAt: T.fightAt, win: T.win, six: T.six, serv: T.serv, base: T.base, numbers: T.numbers, end: T.end, lever: T.end + 0.7, word: T.end + 2.0, duration: T.duration }),
+  beats: () => [...BEATS].sort((a, b) => a.at - b.at),
 };
