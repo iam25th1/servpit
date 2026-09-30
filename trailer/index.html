@@ -1,0 +1,522 @@
+<!doctype html>
+<!--
+  The SERVPIT trailer, as a page.
+
+  Every element is placed by renderAt(t), a pure function of time, over frames
+  of real gameplay recorded by capture.mjs. render.mjs steps t at 30 fps and
+  screenshots each frame; mix.mjs lays the game's own music and sounds under
+  it. Served by serve.mjs, which maps /assets to the game's public assets and
+  /footage to one recorded take.
+-->
+<html>
+<head>
+<meta charset="utf-8">
+<title>SERVPIT trailer</title>
+<style>
+@font-face { font-family: "Tiny5"; src: url("/assets/fonts/Tiny5.ttf"); font-display: block; }
+@font-face { font-family: "SPDisplay"; src: url("/assets/ui/fontNormal.ttf"); font-display: block; }
+:root {
+  --pit: #14170f; --pit-deep: #0d0f0a; --interior: #1d2117; --edge: #3d4133;
+  --bone: #e8e2cf; --bone-dim: #b5afa0; --amber: #ffb300; --amber-deep: #c98200;
+  --good: #8bc34a; --bad: #e05a3a; --sage: #8a9a7b;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 1920px; height: 1080px; overflow: hidden; background: var(--pit-deep); }
+body { font-family: "Tiny5", monospace; color: var(--bone); -webkit-font-smoothing: none; }
+#stage { position: absolute; inset: 0; overflow: hidden; background: var(--pit-deep); }
+.layer { position: absolute; inset: 0; will-change: transform, opacity; }
+.px { image-rendering: pixelated; }
+.center { display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.display { font-family: "SPDisplay", "Tiny5", monospace; }
+.amber { color: var(--amber); }
+
+/* Background: floor tiles, dim, drifting slowly, embers over it. */
+#floor { position: absolute; inset: -64px; opacity: 0;
+  background-image: linear-gradient(rgba(255,179,0,0.5) 2px, transparent 2px), linear-gradient(90deg, rgba(255,179,0,0.5) 2px, transparent 2px);
+  background-size: 64px 64px; }
+#vignette { position: absolute; inset: 0; background: radial-gradient(ellipse at center, rgba(13,15,10,0) 30%, rgba(13,15,10,0.92) 85%); }
+.ember { position: absolute; width: 6px; height: 6px; background: var(--amber); }
+
+/* Logo */
+#logo { gap: 28px; }
+#logoWord { display: flex; gap: 10px; font-size: 176px; letter-spacing: 6px; color: var(--amber); }
+#logoWord span { display: inline-block; text-shadow: 8px 8px 0 #5a3a00; }
+#tagline { font-size: 40px; letter-spacing: 6px; color: var(--bone); min-height: 48px; }
+.caret { display: inline-block; width: 22px; height: 36px; background: var(--amber); vertical-align: -4px; margin-left: 6px; }
+
+/* Headline used by the explainer scenes */
+.head { position: absolute; left: 0; right: 0; top: 120px; text-align: center; font-size: 64px; letter-spacing: 4px; }
+.sub { position: absolute; left: 0; right: 0; text-align: center; font-size: 36px; letter-spacing: 3px; color: var(--bone-dim); }
+
+/* Agents */
+.agent { position: absolute; width: 230px; display: flex; flex-direction: column; align-items: center; gap: 14px; }
+.agent .face { width: 190px; height: 190px; border: 6px solid var(--edge); background: var(--interior); box-shadow: 8px 8px 0 #000; }
+.agent .name { font-size: 40px; letter-spacing: 2px; }
+.choice { position: absolute; top: 700px; width: 680px; height: 120px; border: 6px solid; display: flex; align-items: center; justify-content: center; gap: 22px; font-size: 44px; letter-spacing: 3px; box-shadow: 10px 10px 0 #000; }
+#choiceIn { left: 200px; border-color: var(--amber); color: var(--pit-deep); background: var(--amber); }
+#choiceOut { right: 200px; border-color: var(--bone-dim); color: var(--bone); background: var(--interior); }
+.chip { display: inline-block; width: 36px; height: 36px; border-radius: 50%; background: var(--amber); border: 5px solid var(--amber-deep); box-shadow: inset -5px -5px 0 rgba(0,0,0,0.25); }
+#choiceIn .chip { border-color: #5a3a00; }
+
+/* Reasoning bubbles */
+.thinker { position: absolute; left: 230px; display: flex; align-items: center; gap: 40px; }
+.thinker .face { width: 144px; height: 144px; border: 6px solid var(--edge); background: var(--interior); box-shadow: 8px 8px 0 #000; }
+.bubble { position: relative; background: var(--bone); color: var(--pit-deep); font-size: 40px; letter-spacing: 1px; padding: 26px 36px; min-width: 200px; max-width: 1180px; box-shadow: 10px 10px 0 #000; white-space: nowrap; }
+.bubble::before { content: ""; position: absolute; left: -28px; top: 44px; border: 14px solid transparent; border-right-color: var(--bone); border-right-width: 16px; }
+.bubble .who { font-size: 26px; color: var(--amber-deep); display: block; margin-bottom: 6px; }
+.servTag { display: inline-block; background: var(--good); color: var(--pit-deep); font-size: 24px; padding: 4px 12px; margin-left: 14px; vertical-align: 4px; }
+
+/* Marrow */
+#marrowFace { position: absolute; left: 330px; top: 360px; width: 260px; height: 260px; border: 8px solid var(--amber-deep); background: var(--interior); box-shadow: 12px 12px 0 #000; }
+#marrowName { position: absolute; left: 330px; top: 650px; width: 260px; text-align: center; font-size: 44px; color: var(--amber); }
+#borrower, #heir { position: absolute; left: 1330px; top: 380px; width: 220px; height: 220px; border: 8px solid var(--edge); background: var(--interior); box-shadow: 12px 12px 0 #000; }
+#borrowerName, #heirName { position: absolute; left: 1330px; top: 630px; width: 220px; text-align: center; font-size: 40px; }
+#wreckX { position: absolute; left: 1300px; top: 470px; width: 280px; height: 18px; background: var(--bad); transform-origin: left center; }
+.flyChip { position: absolute; width: 44px; height: 44px; }
+
+/* Footage */
+#foot { position: absolute; inset: 0; overflow: hidden; background: #0d0f0a; }
+#footCam { position: absolute; left: 0; top: 0; width: 1280px; height: 720px; transform-origin: 0 0; }
+#footImg { position: absolute; left: 0; top: 0; width: 1280px; height: 720px; image-rendering: pixelated; }
+#reelFx { position: absolute; left: 97px; top: 141px; width: 323px; height: 229px; display: none; }
+.reelCol { position: absolute; top: 0; height: 229px; overflow: hidden; background: #1a1d17; }
+.reelStrip { position: absolute; left: 0; width: 100%; }
+.reelStrip img { display: block; width: 76px; height: 76px; margin: 0 auto; image-rendering: pixelated; }
+.reelFlash { position: absolute; inset: 0; background: #fff3cf; opacity: 0; }
+#footShade { position: absolute; inset: 0; background: linear-gradient(to top, rgba(13,15,10,0.92) 0%, rgba(13,15,10,0.55) 22%, rgba(13,15,10,0) 42%); }
+#live { position: absolute; left: 64px; top: 56px; display: flex; align-items: center; gap: 14px; background: rgba(13,15,10,0.85); border: 4px solid var(--edge); padding: 10px 18px; font-size: 26px; letter-spacing: 3px; }
+#liveDot { width: 16px; height: 16px; background: var(--bad); }
+#cap { position: absolute; left: 96px; bottom: 96px; right: 96px; }
+#capMain { font-size: 64px; letter-spacing: 4px; color: var(--bone); text-shadow: 6px 6px 0 #000; }
+#capMain .hl { color: var(--amber); }
+#capSub { margin-top: 18px; font-size: 36px; letter-spacing: 2px; color: var(--bone-dim); text-shadow: 4px 4px 0 #000; }
+#capBar { position: absolute; left: 96px; bottom: 76px; height: 8px; background: var(--amber); }
+#step { position: absolute; right: 64px; top: 56px; font-size: 26px; letter-spacing: 3px; background: var(--amber); color: var(--pit-deep); padding: 10px 18px; }
+
+/* Wipe */
+#wipe { position: absolute; inset: 0; pointer-events: none; }
+#wipe div { position: absolute; background: var(--amber); }
+
+/* End card */
+#end { gap: 34px; }
+#endWord { font-size: 190px; color: var(--amber); letter-spacing: 6px; text-shadow: 10px 10px 0 #5a3a00; }
+#endCta { font-size: 52px; letter-spacing: 8px; background: var(--amber); color: var(--pit-deep); padding: 20px 44px; box-shadow: 10px 10px 0 #000; }
+#endUrl { font-size: 44px; letter-spacing: 4px; color: var(--bone); }
+#endCredits { font-size: 28px; letter-spacing: 3px; color: var(--bone-dim); }
+#endFaces { display: flex; gap: 22px; }
+#endFaces img { width: 96px; height: 96px; border: 5px solid var(--edge); background: var(--interior); }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div class="layer" id="bgLayer"><div id="floor"></div><div id="embers"></div><div id="vignette"></div></div>
+
+  <div class="layer center" id="logo">
+    <div id="logoWord" class="display"></div>
+    <div id="tagline"><span id="tagText"></span><span class="caret" id="tagCaret"></span></div>
+  </div>
+
+  <div class="layer" id="decide">
+    <div class="head display" id="decideHead">EVERY ROUND, EACH AGENT <span class="amber">DECIDES</span></div>
+    <div id="agents"></div>
+    <div class="choice" id="choiceIn"><span class="chip"></span>FIGHT: PAY 10 CHIPS</div>
+    <div class="choice" id="choiceOut">SIT OUT: KEEP THEM</div>
+  </div>
+
+  <div class="layer" id="reason">
+    <div class="head display" id="reasonHead"><span class="amber">SERV</span> REASONING MAKES THE CALL</div>
+    <div id="thinkers"></div>
+  </div>
+
+  <div class="layer" id="marrow">
+    <div class="head display" id="marrowHead"></div>
+    <div class="sub" id="marrowSub" style="top: 230px"></div>
+    <img id="marrowFace" class="px" src="/assets/Marrow/Faceset.png">
+    <div id="marrowName" class="display">MARROW</div>
+    <div id="chips"></div>
+    <img id="borrower" class="px" src="/assets/Caveman/Faceset.png">
+    <div id="borrowerName" class="display">FLINT</div>
+    <div id="wreckX"></div>
+    <img id="heir" class="px" src="/assets/GladiatorBlue/Faceset.png">
+    <div id="heirName" class="display amber">NEW SEAT</div>
+  </div>
+
+  <div class="layer" id="foot">
+    <div id="footCam"><img id="footImg"><div id="reelFx"></div></div>
+    <div id="footShade"></div>
+    <div id="live"><div id="liveDot"></div>REAL GAMEPLAY</div>
+    <div id="step"></div>
+    <div id="capBar"></div>
+    <div id="cap"><div id="capMain" class="display"></div><div id="capSub"></div></div>
+  </div>
+
+  <div class="layer center" id="end">
+    <div id="endFaces"></div>
+    <div id="endWord" class="display">SERVPIT</div>
+    <div id="endCta" class="display">ENTER THE PIT</div>
+    <div id="endUrl">servpit.25th.dev</div>
+    <div id="endCredits">SERV REASONING &middot; COINBASE AGENTKIT &middot; BASE SEPOLIA</div>
+  </div>
+
+  <div class="layer" id="wipe"></div>
+</div>
+
+<script>
+// ------------------------------------------------------------ helpers
+const $ = (id) => document.getElementById(id);
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const prog = (t, a, b) => clamp((t - a) / (b - a));
+const lerp = (a, b, p) => a + (b - a) * p;
+const easeOut = (p) => 1 - Math.pow(1 - p, 3);
+const easeIn = (p) => p * p * p;
+const easeInOut = (p) => (p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2);
+const easeBack = (p) => { const c1 = 1.9, c3 = c1 + 1; return 1 + c3 * Math.pow(p - 1, 3) + c1 * Math.pow(p - 1, 2); };
+// Stepped, so motion reads as pixel art rather than video smoothness.
+const step = (p, n) => Math.floor(p * n) / n;
+function hash(n) { let x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }
+/** Visible between a and b, fading over f seconds at each end. */
+function window_(t, a, b, f = 0.3) { return Math.min(prog(t, a, a + f), 1 - prog(t, b - f, b)); }
+function show(el, on) { el.style.display = on ? "" : "none"; }
+
+// ------------------------------------------------------------ timeline
+// Scene boundaries in seconds. Every footage scene names the capture mark it
+// starts from, so the cut lands on the real moment in the recording.
+const T = {
+  logo: [0, 4.6],
+  decide: [4.6, 10.4],
+  reason: [10.4, 15.2],
+  predict: [15.2, 20.6],
+  marrow: [20.6, 25.4],
+  lever: [25.4, 31.2],
+  backing: [31.2, 34.8],
+  fight: [34.8, 44.6],
+  result: [44.6, 49.4],
+  end: [49.4, 55],
+};
+const DURATION = 55;
+const CUTS = [4.6, 10.4, 15.2, 20.6, 25.4, 31.2, 34.8, 44.6, 49.4];
+
+// ------------------------------------------------------------ footage
+let FOOT = null; // { frames: [{name, t}], marks: [{label, t}] }
+const mark = (label) => (FOOT.marks.find((m) => m.label === label) || { t: 0 }).t;
+function frameAt(sec) {
+  const f = FOOT.frames; let lo = 0, hi = f.length - 1;
+  while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (f[mid].t <= sec) lo = mid; else hi = mid - 1; }
+  return "/footage/" + f[lo].name;
+}
+/** Camera: shows rect [x, y, w, h] of the 1280x720 capture filling the screen. */
+function camera(r) {
+  const s = Math.min(1920 / r[2], 1080 / r[3]);
+  const x = -r[0] * s + (1920 - r[2] * s) / 2;
+  const y = -r[1] * s + (1080 - r[3] * s) / 2;
+  return `translate(${x}px, ${y}px) scale(${s})`;
+}
+const mixRect = (a, b, p) => a.map((v, i) => lerp(v, b[i], p));
+const FULL = [0, 0, 1280, 720];
+/** Seconds of the lever press before the cut, and where the reels are showing after the pull. */
+const LEVER_PRESS = 1.1;
+const REELS_AFTER_PULL = 2.0;
+
+// ------------------------------------------------------------ build
+const AGENTS = [
+  { name: "ATLAS", face: "Boy", in: false },
+  { name: "BLAZE", face: "Hunter", in: true },
+  { name: "COMET", face: "Knight", in: true },
+  { name: "DELTA", face: "NinjaRed", in: false },
+  { name: "EMBER", face: "NinjaBlue", in: true },
+  { name: "FLINT", face: "Caveman", in: true },
+];
+const REASONS = [
+  { name: "BLAZE", face: "Hunter", text: "Fresh start. I am taking the max and pushing hard.", tag: "FIGHTS" },
+  { name: "ATLAS", face: "Boy", text: "Pool is thin for the risk. I'll wait.", tag: "SITS OUT" },
+  { name: "EMBER", face: "NinjaBlue", text: "First round, minimum stake to learn the field.", tag: "FIGHTS" },
+];
+function build() {
+  const word = $("logoWord");
+  for (const ch of "SERVPIT") { const s = document.createElement("span"); s.textContent = ch; word.appendChild(s); }
+  const agents = $("agents");
+  AGENTS.forEach((a, i) => {
+    const d = document.createElement("div"); d.className = "agent"; d.id = "ag" + i;
+    d.innerHTML = `<img class="face px" src="/assets/${a.face}/Faceset.png"><div class="name display">${a.name}</div>`;
+    agents.appendChild(d);
+  });
+  const th = $("thinkers");
+  REASONS.forEach((r, i) => {
+    const d = document.createElement("div"); d.className = "thinker"; d.id = "th" + i; d.style.top = 270 + i * 230 + "px";
+    d.innerHTML = `<img class="face px" src="/assets/${r.face}/Faceset.png"><div class="bubble"><span class="who">${r.name}</span><span class="txt"></span><span class="servTag" style="display:none">${r.tag}</span></div>`;
+    th.appendChild(d);
+  });
+  const chips = $("chips");
+  for (let i = 0; i < 5; i++) { const c = document.createElement("div"); c.className = "flyChip chip"; c.id = "chip" + i; chips.appendChild(c); }
+  const embers = $("embers");
+  for (let i = 0; i < 40; i++) { const e = document.createElement("div"); e.className = "ember"; e.id = "em" + i; embers.appendChild(e); }
+  const wipe = $("wipe");
+  for (let i = 0; i < 12; i++) { const b = document.createElement("div"); b.id = "wp" + i; wipe.appendChild(b); }
+  const fx = $("reelFx");
+  const REEL_FACES = ["Boy", "Hunter", "Knight", "NinjaRed", "NinjaBlue", "Caveman", "Eskimo", "Monk", "Cyclope", "Bear", "NinjaDark", "GladiatorBlue"];
+  const colX = [0, 106, 218], colW = [106, 112, 105];
+  for (let c = 0; c < 3; c++) {
+    const col = document.createElement("div"); col.className = "reelCol"; col.id = "rc" + c;
+    col.style.left = colX[c] + "px"; col.style.width = colW[c] + "px";
+    const strip = document.createElement("div"); strip.className = "reelStrip"; strip.id = "rs" + c;
+    for (let k = 0; k < 24; k++) { const im = document.createElement("img"); im.src = `/assets/${REEL_FACES[(k * 5 + c * 3) % REEL_FACES.length]}/Faceset.png`; strip.appendChild(im); }
+    const flash = document.createElement("div"); flash.className = "reelFlash"; flash.id = "rf" + c;
+    col.appendChild(strip); col.appendChild(flash); fx.appendChild(col);
+  }
+  const ef = $("endFaces");
+  for (const f of ["Boy", "Hunter", "Knight", "Marrow", "NinjaRed", "NinjaBlue", "Caveman"]) { const im = document.createElement("img"); im.className = "px"; im.src = `/assets/${f}/Faceset.png`; ef.appendChild(im); }
+}
+
+function typed(text, t, a, cps) { const n = Math.floor(clamp((t - a) * cps, 0, text.length)); return text.slice(0, n); }
+
+// ------------------------------------------------------------ scenes
+function renderBg(t, level) {
+  $("floor").style.opacity = String(0.07 * level);
+  $("floor").style.transform = `translate(${-Math.round((t * 12) % 64)}px, ${-Math.round((t * 6) % 64)}px)`;
+  for (let i = 0; i < 40; i++) {
+    const e = $("em" + i);
+    const speed = 40 + hash(i) * 90, x0 = hash(i + 50) * 1920, life = 1080 + 200;
+    const y = 1080 + 40 - ((t * speed + hash(i + 9) * life) % life);
+    const sway = Math.sin(t * (0.6 + hash(i + 3)) + i) * 26;
+    e.style.transform = `translate(${Math.round(x0 + sway)}px, ${Math.round(y)}px)`;
+    e.style.opacity = String(level * (0.25 + 0.6 * hash(i + 7)) * clamp((1080 - y) / 300 + 0.2));
+    e.style.width = e.style.height = (hash(i + 21) > 0.7 ? 8 : 4) + "px";
+  }
+}
+
+function renderLogo(t) {
+  const [a, b] = T.logo; const on = t >= a && t < b + 0.01; show($("logo"), on); if (!on) return;
+  const spans = $("logoWord").children;
+  for (let i = 0; i < spans.length; i++) {
+    const p = prog(t, 0.25 + i * 0.1, 0.25 + i * 0.1 + 0.45);
+    const y = lerp(-420, 0, easeBack(p));
+    const flash = p > 0 && p < 1 ? 1 : 0;
+    spans[i].style.transform = `translateY(${Math.round(y / 6) * 6}px)`;
+    spans[i].style.opacity = p > 0 ? "1" : "0";
+    spans[i].style.color = flash && p > 0.85 ? "#fff3cf" : "";
+  }
+  const line = "SIX AI AGENTS. REAL WALLETS. ONE PIT.";
+  $("tagText").textContent = typed(line, t, 1.5, 26);
+  $("tagCaret").style.opacity = Math.floor(t * 3) % 2 ? "0" : "1";
+  const out = prog(t, b - 0.45, b);
+  $("logo").style.opacity = String(1 - out);
+  $("logo").style.transform = `scale(${1 + easeIn(out) * 0.35})`;
+}
+
+function renderDecide(t) {
+  const [a, b] = T.decide; const on = t >= a - 0.01 && t < b; show($("decide"), on); if (!on) return;
+  const lt = t - a;
+  $("decide").style.opacity = String(window_(t, a, b, 0.25));
+  $("decideHead").style.transform = `translateY(${Math.round(lerp(-60, 0, easeOut(prog(lt, 0, 0.5))))}px)`;
+  $("decideHead").style.opacity = String(prog(lt, 0, 0.35));
+  // Faces: pop in a row, then drop to their choice.
+  const inList = AGENTS.filter((x) => x.in), outList = AGENTS.filter((x) => !x.in);
+  AGENTS.forEach((ag, i) => {
+    const el = $("ag" + i);
+    const pop = easeBack(prog(lt, 0.35 + i * 0.12, 0.35 + i * 0.12 + 0.45));
+    const rowX = 960 - (6 * 270) / 2 + i * 270 + 20, rowY = 300;
+    // Where it lands under its choice.
+    const group = ag.in ? inList : outList, k = group.indexOf(ag);
+    const baseX = ag.in ? 200 + 340 : 1920 - 200 - 340;
+    const landX = baseX - (group.length * 150) / 2 + k * 150 - 40, landY = 830;
+    const move = easeInOut(prog(lt, 2.9 + i * 0.1, 3.7 + i * 0.1));
+    const x = lerp(rowX, landX, move), y = lerp(rowY, landY, move) - Math.sin(move * Math.PI) * 160;
+    const s = lerp(1, 0.55, move) * pop;
+    el.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px) scale(${s})`;
+    el.style.opacity = pop > 0 ? "1" : "0";
+    // A bob while it thinks.
+    const face = el.firstChild;
+    face.style.transform = move === 0 ? `translateY(${Math.round(Math.sin((lt - i * 0.3) * 5) * 5 / 3) * 3}px)` : "";
+    face.style.borderColor = move >= 1 ? (ag.in ? "var(--amber)" : "var(--bone-dim)") : "";
+  });
+  const ci = easeOut(prog(lt, 1.9, 2.4)), co = easeOut(prog(lt, 2.1, 2.6));
+  $("choiceIn").style.transform = `translate(${Math.round(lerp(-900, 0, ci))}px, -40px)`;
+  $("choiceOut").style.transform = `translate(${Math.round(lerp(900, 0, co))}px, -40px)`;
+}
+
+function renderReason(t) {
+  const [a, b] = T.reason; const on = t >= a - 0.01 && t < b; show($("reason"), on); if (!on) return;
+  const lt = t - a;
+  $("reason").style.opacity = String(window_(t, a, b, 0.25));
+  $("reasonHead").style.opacity = String(prog(lt, 0, 0.3));
+  $("reasonHead").style.transform = `translateY(${Math.round(lerp(-50, 0, easeOut(prog(lt, 0, 0.45))))}px)`;
+  REASONS.forEach((r, i) => {
+    const el = $("th" + i); const st = 0.4 + i * 1.05;
+    const p = easeOut(prog(lt, st, st + 0.4));
+    el.style.opacity = String(p);
+    el.style.transform = `translateX(${Math.round(lerp(-160, 0, p))}px)`;
+    el.querySelector(".txt").textContent = typed(r.text, lt, st + 0.3, 34);
+    const done = lt > st + 0.3 + r.text.length / 34 + 0.15;
+    const tag = el.querySelector(".servTag");
+    tag.style.display = done ? "inline-block" : "none";
+    tag.style.background = r.tag === "FIGHTS" ? "var(--amber)" : "var(--bone-dim)";
+  });
+}
+
+function renderMarrow(t) {
+  const [a, b] = T.marrow; const on = t >= a - 0.01 && t < b; show($("marrow"), on); if (!on) return;
+  const lt = t - a;
+  $("marrow").style.opacity = String(window_(t, a, b, 0.25));
+  const second = lt > 2.45;
+  $("marrowHead").innerHTML = second ? 'REFUSED? <span style="color:var(--bad)">WRECKED.</span>' : 'SHORT ON CHIPS? <span class="amber">MARROW LENDS.</span>';
+  $("marrowSub").textContent = second ? "A new agent takes the seat, funded by the house." : "The bank reads each agent's record, then says yes or no.";
+  const hp = second ? prog(lt, 2.45, 2.75) : prog(lt, 0, 0.3);
+  $("marrowHead").style.opacity = String(hp); $("marrowSub").style.opacity = String(hp);
+  const mp = easeBack(prog(lt, 0.1, 0.55));
+  $("marrowFace").style.transform = `scale(${mp})`;
+  $("marrowName").style.opacity = String(prog(lt, 0.4, 0.6));
+  const bp = easeBack(prog(lt, 0.3, 0.75));
+  $("borrower").style.transform = `scale(${bp})`;
+  $("borrowerName").style.opacity = String(prog(lt, 0.5, 0.7));
+  // Chips arc from Marrow to the borrower.
+  for (let i = 0; i < 5; i++) {
+    const c = $("chip" + i); const p = prog(lt, 0.9 + i * 0.12, 1.6 + i * 0.12);
+    const x = lerp(470, 1420, easeInOut(p)), y = lerp(470, 470, p) - Math.sin(p * Math.PI) * 220;
+    c.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
+    c.style.opacity = p > 0 && p < 1 ? "1" : "0";
+  }
+  // Refused: grey the borrower, strike it, slide the heir in.
+  const wp = prog(lt, 2.7, 3.0);
+  $("borrower").style.filter = `grayscale(${wp}) brightness(${1 - 0.45 * wp})`;
+  $("wreckX").style.transform = `rotate(-18deg) scaleX(${step(easeOut(prog(lt, 2.9, 3.2)), 8)})`;
+  const hp2 = easeOut(prog(lt, 3.4, 3.9));
+  $("borrower").style.opacity = $("borrowerName").style.opacity = String(lt > 3.4 ? 1 - hp2 : prog(lt, 0.3, 0.5));
+  $("wreckX").style.opacity = String(lt > 3.4 ? 1 - hp2 : 1);
+  $("heir").style.transform = `translateY(${Math.round(lerp(300, 0, hp2))}px)`;
+  $("heir").style.opacity = String(hp2);
+  $("heirName").style.opacity = String(hp2);
+}
+
+// Where the camera looks in each footage scene: [x, y, w, h] in capture pixels.
+const R = {
+  calls: [556, 70, 700, 420],
+  lever: [30, 90, 520, 390],
+  slot: [10, 55, 600, 400],
+  slotWide: [0, 0, 1280, 720],
+  back: [0, 0, 1280, 720],
+  arena: [70, 100, 600, 560],
+  arenaWide: [0, 0, 1280, 720],
+  result: [0, 0, 1280, 720],
+};
+const CAPS = {
+  predict: { step: "YOU PLAY", main: 'PREDICT <span class="hl">WHO FIGHTS</span>', sub: "Points for every right call. Double when SERV made the decision." },
+  lever: { step: "THE ROUND", main: 'PULL THE <span class="hl">LEVER</span>', sub: "Three reels draw each fighter: a character, an ability, a stat roll." },
+  backing: { step: "YOU PLAY", main: 'BACK AN AGENT <span class="hl">TO WIN</span>', sub: "Pick one before the fight starts. Points, never money." },
+  fight: { step: "THE FIGHT", main: '24 FIGHTERS. <span class="hl">ONE COLOSSEUM.</span>', sub: "Seeded and replayable. Last one standing takes it." },
+  result: { step: "THE PAYOUT", main: 'THE WINNER <span class="hl">TAKES THE POT</span>', sub: "Every entry, loan and payout is a real transfer on Base." },
+};
+
+async function renderFoot(t) {
+  const scenes = ["predict", "lever", "backing", "fight", "result"];
+  const key = scenes.find((k) => t >= T[k][0] - 0.01 && t < T[k][1]);
+  show($("foot"), Boolean(key)); if (!key) return;
+  const [a, b] = T[key]; const lt = t - a; const len = b - a;
+  let src = 0, cam = FULL;
+  if (key === "predict") { src = mark("predicted") - 4.7 + lt; cam = mixRect(FULL, R.calls, easeInOut(prog(lt, 0.2, 1.6))); }
+  if (key === "lever") {
+    // The press on the card, then a hard cut to the reels spinning.
+    if (lt < LEVER_PRESS) { src = mark("pull") - LEVER_PRESS + 0.35 + lt; cam = R.lever; }
+    else { const r = lt - LEVER_PRESS; src = mark("pull") + REELS_AFTER_PULL + r; cam = mixRect(R.slot, R.slotWide, easeInOut(prog(r, 3.0, 4.4))); }
+  }
+  if (key === "backing") { src = mark("backing") + 0.9 + lt; cam = mixRect(R.back, R.back, 0); }
+  if (key === "fight") { src = mark("fight") + 0.2 + lt; cam = mixRect(R.arenaWide, R.arena, easeInOut(prog(lt, 0.2, 2.2))); }
+  if (key === "result") { src = mark("result") + 0.8 + lt; cam = mixRect(R.result, FULL, easeInOut(prog(lt, 0.4, 2.4))); }
+  // A slow push on top of every shot, so nothing is ever still.
+  const push = 1 + 0.035 * prog(lt, 0, len);
+  const cx = cam[0] + cam[2] / 2, cy = cam[1] + cam[3] / 2;
+  cam = [cx - (cam[2] / push) / 2, cy - (cam[3] / push) / 2, cam[2] / push, cam[3] / push];
+  const img = $("footImg");
+  const want = frameAt(src);
+  if (!img.src.endsWith(want)) { img.src = want; await img.decode().catch(() => {}); }
+  $("footCam").style.transform = camera(cam);
+  renderReels(key, lt);
+  const c = CAPS[key];
+  $("step").textContent = c.step;
+  $("capMain").innerHTML = c.main;
+  $("capSub").textContent = c.sub;
+  const cp = easeOut(prog(lt, 0.25, 0.7));
+  $("cap").style.transform = `translateY(${Math.round(lerp(60, 0, cp))}px)`;
+  $("cap").style.opacity = String(cp * (1 - prog(lt, len - 0.3, len)));
+  $("capBar").style.width = Math.round(step(prog(lt, 0.3, len - 0.2), 40) * 1728) + "px";
+  $("liveDot").style.opacity = Math.floor(t * 2.5) % 2 ? "0.25" : "1";
+  $("step").style.transform = `translateX(${Math.round(lerp(300, 0, easeOut(prog(lt, 0.1, 0.5))))}px)`;
+}
+
+/** When each reel stops, in seconds after the cut to the slot. */
+const REEL_STOPS = [1.3, 2.0, 2.9];
+function renderReels(key, lt) {
+  const r = lt - LEVER_PRESS;
+  const on = key === "lever" && r >= 0 && r < REEL_STOPS[2] + 0.35;
+  $("reelFx").style.display = on ? "block" : "none";
+  if (!on) return;
+  for (let c = 0; c < 3; c++) {
+    const stop = REEL_STOPS[c];
+    // Spin fast, then ease into the stop, then hand over to the real reel.
+    // Settles on a whole symbol, so the hand-over to the real reel has no jump.
+    const base = (stop - 0.45) * 2400, target = Math.ceil((base + 300) / 76) * 76;
+    const spin = r < stop - 0.45 ? r * 2400 : base + easeOut(prog(r, stop - 0.45, stop)) * (target - base);
+    const y = -(Math.round(spin) % (76 * 12));
+    $("rs" + c).style.transform = `translateY(${y}px)`;
+    $("rs" + c).style.filter = r < stop - 0.3 ? "blur(1.5px) brightness(1.1)" : "";
+    const gone = prog(r, stop, stop + 0.12);
+    $("rc" + c).style.opacity = String(1 - gone);
+    $("rf" + c).style.opacity = String(r >= stop && r < stop + 0.2 ? 0.55 * (1 - prog(r, stop, stop + 0.2)) : 0);
+  }
+}
+
+function renderEnd(t) {
+  const [a] = T.end; const on = t >= a; show($("end"), on); if (!on) return;
+  const lt = t - a;
+  const kids = $("end").children;
+  for (let i = 0; i < kids.length; i++) {
+    const p = easeBack(prog(lt, 0.15 + i * 0.18, 0.6 + i * 0.18));
+    kids[i].style.opacity = String(clamp(p));
+    kids[i].style.transform = `translateY(${Math.round(lerp(50, 0, clamp(p)))}px) scale(${lerp(0.9, 1, clamp(p))})`;
+  }
+  $("endCta").style.background = Math.floor(lt * 2) % 2 && lt > 1.6 ? "#ffd166" : "var(--amber)";
+  $("end").style.opacity = String(1 - prog(t, DURATION - 0.6, DURATION));
+}
+
+function renderWipe(t) {
+  // A column of amber blocks sweeps across each cut, stepped like a pixel wipe.
+  const cut = CUTS.find((c) => t > c - 0.3 && t < c + 0.3);
+  for (let i = 0; i < 12; i++) {
+    const el = $("wp" + i);
+    if (cut === undefined) { el.style.display = "none"; continue; }
+    el.style.display = "";
+    const p = prog(t, cut - 0.3 + i * 0.012, cut + 0.3 - (11 - i) * 0.012);
+    const h = 1080 / 12;
+    const x = step(easeInOut(p), 24) * (1920 + 700) - 700;
+    el.style.left = Math.round(x) + "px"; el.style.top = Math.round(i * h) + "px";
+    el.style.width = "700px"; el.style.height = Math.ceil(h) + 1 + "px";
+    el.style.opacity = "1";
+  }
+}
+
+async function renderAt(t) {
+  const explainer = (t >= T.decide[0] && t < T.reason[1]) || (t >= T.marrow[0] && t < T.marrow[1]) || t < T.logo[1] || t >= T.end[0];
+  renderBg(t, explainer ? 1 : 0);
+  renderLogo(t); renderDecide(t); renderReason(t); renderMarrow(t); renderEnd(t);
+  await renderFoot(t);
+  renderWipe(t);
+}
+
+// Sound cues, read by the render script to lay the audio track.
+const CUES = [
+  { at: 0.3, sfx: "uiSelect" }, { at: 0.55, sfx: "uiSelect" }, { at: 0.85, sfx: "uiSelect" },
+  { at: 4.6, sfx: "reelStop" }, { at: 7.4, sfx: "uiLocked" },
+  { at: 10.4, sfx: "reelStop" }, { at: 15.2, sfx: "reelStop" },
+  { at: 20.6, sfx: "reelStop" }, { at: 21.6, sfx: "payoutTransient" }, { at: 23.4, sfx: "nearMiss" },
+  { at: 25.4, sfx: "reelStop" }, { at: 49.4, sfx: "jackpotSting" },
+];
+
+window.TRAILER = { renderAt, DURATION, T, CUES, ready: (async () => {
+  FOOT = await (await fetch("/footage/index.json")).json();
+  build();
+  await document.fonts.load('64px "SPDisplay"'); await document.fonts.load('40px "Tiny5"');
+  await Promise.all([...document.images].map((i) => i.decode().catch(() => {})));
+  window.FOOT = FOOT;
+})() };
+</script>
+</body>
+</html>

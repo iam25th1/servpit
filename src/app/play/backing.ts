@@ -20,6 +20,9 @@ export interface BackOption {
   tier: string | null;
   /** How many viewers have backed it so far. */
   backers: number;
+  /** What it staked, and where that decision came from. */
+  stake?: number;
+  source?: string;
 }
 
 /** The entrant id an agent fights under, which is what a result names. */
@@ -41,6 +44,8 @@ export function backOptions(round: ArenaFeedRound | null, counts: Record<string,
       characterId: pull?.characterId ?? null,
       tier: pull?.tier ?? null,
       backers: counts[entry.agentId] ?? 0,
+      stake: decision?.stake,
+      source: decision?.source,
     };
   });
 }

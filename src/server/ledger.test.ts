@@ -82,3 +82,39 @@ describe("TransferLedger.transferOnce", () => {
     expect(chain.applied).toBe(0);
   });
 });
+
+describe("TransferLedger.correctFee", () => {
+  it("writes the fee the chain reports over the one recorded at confirm time", async () => {
+    const { chain, agent, pot, ledger } = await setup();
+    const key = idempotencyKey("round-1", "atlas", "entry");
+    await ledger.transferOnce({ key, roundId: "round-1", agentId: "atlas", kind: "entry", from: agent, to: pot.address, amountWei: 300n, network: "fake" });
+
+    expect(ledger.correctFee(key, 132_025_268_374n)).toBe(true);
+    expect(ledger.get(key)?.feeWei).toBe(132_025_268_374n);
+    // And it survives a reload, because the point is that the store stops
+    // holding a number the chain disagrees with.
+    expect(new TransferLedger(join(dir, "ledger.json")).get(key)?.feeWei).toBe(132_025_268_374n);
+    expect(chain.kind).toBe("fake");
+  });
+
+  it("changes nothing else about the record", async () => {
+    const { agent, pot, ledger } = await setup();
+    const key = idempotencyKey("round-1", "atlas", "entry");
+    const before = await ledger.transferOnce({ key, roundId: "round-1", agentId: "atlas", kind: "entry", from: agent, to: pot.address, amountWei: 300n, network: "fake" });
+    ledger.correctFee(key, 99n);
+    const after = ledger.get(key)!;
+    expect({ ...after, feeWei: before.feeWei, updatedAt: before.updatedAt }).toEqual(before);
+  });
+
+  it("refuses a key it does not hold, and a record that is not complete", async () => {
+    const { ledger } = await setup();
+    expect(ledger.correctFee("nothing-like-this", 1n)).toBe(false);
+  });
+
+  it("says nothing changed when the figures already agree", async () => {
+    const { agent, pot, ledger } = await setup();
+    const key = idempotencyKey("round-1", "atlas", "entry");
+    const record = await ledger.transferOnce({ key, roundId: "round-1", agentId: "atlas", kind: "entry", from: agent, to: pot.address, amountWei: 300n, network: "fake" });
+    expect(ledger.correctFee(key, record.feeWei ?? 0n)).toBe(false);
+  });
+});

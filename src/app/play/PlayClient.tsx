@@ -37,6 +37,7 @@ import type { DecidedShape, OccupantShape } from "./screens/lineupRows";
 import { UiKitProvider } from "@/ui/UiKit";
 import { createResponsiveScope, playTransition } from "@/ui/transitions";
 import { Stage } from "@/ui/Stage";
+import { layoutFor } from "@/ui/layoutMode";
 import { readNdjson } from "./ndjson";
 import { getWithTimeout, requestWithTimeout, RequestTimeoutError } from "./request";
 import { pickPlayerDraw, type RunReel } from "./reelPick";
@@ -44,7 +45,7 @@ import { runRequestFor } from "./roundRequest";
 import { arenaStanding, type ArenaStanding } from "./screens/arenaHud";
 import { useArenaFeed } from "./arenaFeed";
 import { readNow, useWallClock } from "./arenaClock";
-import { fightOffsetMs, pulledLine, reasoningLine, watchDecisions, watchEntries, watchOccupants, watchState } from "./arenaScreens";
+import { fightOffsetMs, pulledLine, reasoningLine, reasoningTag, servLine, watchDecisions, watchEntries, watchOccupants, watchState } from "./arenaScreens";
 import { replayFrame, replayableRound } from "./arenaReplay";
 import { backOptions, pickOutcome } from "./backing";
 import { useBackingFeed } from "./backingFeed";
@@ -53,6 +54,10 @@ import { leverLines } from "./leverNote";
 import { backerHandle, backerToken, browserStore, type StorageLike } from "./backerId";
 import { useHandleClaim } from "./handleFeed";
 import { useFighterFeed } from "./fighterFeed";
+import { useCallFeed } from "./callFeed";
+import { CALL_SEATS, callSeats, callsLine, roundRead } from "./calls";
+import { readLine, type Calls } from "@/config/reads";
+import { roundNames } from "./screens/entrantLabel";
 import { careerLine, myRound, myRoundLine, plateNames, type ClaimedSeat } from "./myFighter";
 import { hasSeenOnboarding, markOnboardingSeen, onboardingScreens } from "./onboarding";
 import type { BoardShape } from "./screens/GameShell";
@@ -142,6 +147,10 @@ interface Engine {
 
 const SYMBOL_POOL = (manifest: Manifest): string[] => manifest.entries.map((e) => e.id);
 const MAX_SCALE = 3;
+/** The arena's largest side on the desktop stage, in stage pixels. */
+const ARENA_DESKTOP_PX = 600;
+/** The cabinet's frame and padding around the arena canvas, top and bottom together. */
+const ARENA_FRAME_PX = 56;
 /** Short unique token. Not a clock: this screen may not read time outside the loop. */
 const token = (): string => crypto.randomUUID().replace(/-/g, "").slice(0, 10);
 
@@ -222,17 +231,14 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
   // left open whenever the answer is no.
   const handleClaim = useHandleClaim(backerStore, deviceToken, storedHandle);
   const handle = handleClaim.handle;
-  // A fighter of your own: asked for when there is a handle, and again when
-  // a claim lands. Nothing here is on a clock.
-  const fighterFeed = useFighterFeed(arenaMode, handle, deviceToken);
+  // A fighter of your own: asked for when there is a handle, when a claim
+  // lands, and again whenever a round reaches its result, so the career line
+  // and the seat's state are the ones after that round rather than the ones
+  // this tab loaded with. Each ask is also the visit that keeps a claim alive.
+  // Nothing here is on a clock.
+  const fighterRefresh = feed.view?.last?.roundId ?? "";
+  const fighterFeed = useFighterFeed(arenaMode, handle, deviceToken, fighterRefresh);
   const myFighter: ClaimedSeat | null = fighterFeed.view?.fighter ?? null;
-  // Read by the effect that builds the timeline, which runs on a phase rather
-  // than on this value: a ref keeps it current without rebuilding the fight,
-  // and it is written in an effect rather than during a render.
-  const myFighterRef = useRef<ClaimedSeat | null>(null);
-  useEffect(() => {
-    myFighterRef.current = myFighter;
-  }, [myFighter]);
 
   // Never during a replay: a recording has no window to back into, and a pick
   // on a finished round would be a pick on a known result.
@@ -244,6 +250,42 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
   // The lever. Only where a round is something to ask for: in arena mode, and
   // not over a recording, which has no round to start.
   const pullFeed = usePullFeed(arenaMode && replayRound === null, handle, deviceToken);
+
+  // Calling the next round. Asked for again on every phase, which is when the
+  // calls lock, when the answers land and when a read can be scored.
+  // Read over a replay too, so watching the last round again marks the calls
+  // that were made on it; only making calls is closed while a replay plays.
+  const callsLive = arenaMode && replayRound === null;
+  const callKey = `${watch.round?.roundId ?? ""}:${watch.round?.phase ?? ""}`;
+  const callFeed = useCallFeed(arenaMode, handle, deviceToken, callKey);
+  // The round new calls are filed after, which between rounds is the one on
+  // screen. A draft belongs to it and is dropped when the pit moves on.
+  const fileKey = watch.round?.roundId ?? "";
+  const [draft, setDraft] = useState<{ key: string; calls: Calls } | null>(null);
+  const shownDraft: Calls = draft && draft.key === fileKey ? draft.calls : (callFeed.view?.mine ?? {});
+  const savedCalls = callFeed.view?.mine ?? null;
+  const saved = savedCalls !== null && sameCalls(savedCalls, shownDraft);
+  const makeCall = (agentId: string, call: boolean): void => {
+    const next = { ...shownDraft, [agentId]: call };
+    setDraft({ key: fileKey, calls: next });
+    if (!handle) return;
+    void callFeed.save(handle, deviceToken, next).then((error) => {
+      if (error && /another browser/.test(error)) handleClaim.refused(error);
+    });
+  };
+  // Calls made before a handle existed are saved the moment one does, so a
+  // visitor who called first and named themselves second loses nothing.
+  const savedForHandle = useRef<string | null>(null);
+  useEffect(() => {
+    if (!handle || savedForHandle.current === handle) return;
+    savedForHandle.current = handle;
+    if (!draft || draft.key !== fileKey || Object.keys(draft.calls).length === 0) return;
+    void callFeed.save(handle, deviceToken, draft.calls);
+  }, [handle, draft, fileKey, callFeed, deviceToken]);
+  // This viewer's calls on the round on screen: marked in the lineup as the
+  // answers land, and scored on the result and the quiet screen after it.
+  const roundCalls = callFeed.view?.round && callFeed.view.round.roundId === watch.round?.roundId ? callFeed.view.round.mine : null;
+  const read = roundRead(watch.round, roundCalls);
 
   // How it works: open by itself the first time, and whenever it is asked for
   // after that. Read from storage in the initialiser for the same reason the
@@ -266,8 +308,9 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       setFighterBoard((await response.json()) as Record<string, unknown>);
     } catch {
-      // An empty board says the same thing a failed one would.
-      setFighterBoard({ rows: [], page: 1, pages: 1, total: 0, you: null });
+      // Said as a failure rather than as an empty board: an empty board reads
+      // as nobody having claimed a fighter, which is not what happened.
+      setFighterBoard({ rows: [], page: 1, pages: 1, total: 0, you: null, error: "Could not read the fighters just then. Close this and try again." });
     }
   };
 
@@ -409,7 +452,9 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
 
         engine.lever.onCommit(() => {
           engine.audio.leverPull();
-          setLeverNote("Committed. The pull is locked.");
+          // In a pit that runs itself the house pulls, and saying "the pull
+          // is locked" under it told a viewer they had done something.
+          setLeverNote(arenaModeRef.current ? "The house pulled the lever." : "Committed. The pull is locked.");
         });
         engine.lever.onRelease(() => {
           // Spin immediately on a provisional landing. The real draw arrives
@@ -422,14 +467,36 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
           setLeverNote("");
         });
 
+        // On a desktop the canvases live on the 1280 by 720 stage, which is
+        // scaled as a whole to the window. Sizing them from the window as well
+        // counted the window twice: a tall window asked for the arena at
+        // double size, 800 px of it inside a 720 px stage, and the top of the
+        // pit ran up under the bar. So on the stage they are sized from the
+        // room the stage gives them, and only a phone reads the window.
+        const playfield = arenaCanvas.closest<HTMLElement>("[data-playfield]");
         const fit = (): void => {
-          const slotScale = computeIntegerScale(Math.min(window.innerWidth - 48, 640), 520, slotRenderer.width, slotRenderer.height);
+          const desktop = layoutFor(window.innerWidth, window.innerHeight) === "desktop";
+          const slotScale = computeIntegerScale(desktop ? 640 : Math.min(window.innerWidth - 48, 640), 520, slotRenderer.width, slotRenderer.height);
           slotTarget.setScale(Math.min(MAX_SCALE, slotScale));
-          const arenaScale = computeIntegerScale(Math.min(window.innerWidth - 48, 900), window.innerHeight - 260, arenaRenderer.width, arenaRenderer.height);
-          arenaTarget.setScale(Math.min(2, arenaScale));
+          if (!desktop) {
+            const arenaScale = computeIntegerScale(Math.min(window.innerWidth - 48, 900), window.innerHeight - 260, arenaRenderer.width, arenaRenderer.height);
+            arenaTarget.setScale(Math.min(2, arenaScale));
+            return;
+          }
+          // Drawn at twice its size and shown at whatever square fits the
+          // playfield, less the cabinet's frame. The playfield is offstage
+          // (one pixel) until the pit is showing, so fall back to the size a
+          // 720 stage leaves until it is measured for real.
+          arenaTarget.setScale(2);
+          const room = playfield && playfield.clientHeight > 100 ? playfield.clientHeight - ARENA_FRAME_PX : ARENA_DESKTOP_PX;
+          const side = Math.max(arenaRenderer.height, Math.min(ARENA_DESKTOP_PX, room));
+          arenaCanvas.style.height = `${side}px`;
+          arenaCanvas.style.width = `${Math.round((side * arenaRenderer.width) / arenaRenderer.height)}px`;
         };
         fit();
         window.addEventListener("resize", fit);
+        const watchField = typeof ResizeObserver === "undefined" || !playfield ? null : new ResizeObserver(fit);
+        if (watchField && playfield) watchField.observe(playfield);
 
         const loop = startLoop((deltaMs) => {
           engine.elapsedMs += deltaMs;
@@ -468,6 +535,7 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
         stop = () => {
           loop.stop();
           window.removeEventListener("resize", fit);
+          watchField?.disconnect();
           sink.close();
         };
       } catch (e) {
@@ -706,7 +774,10 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
     if (!engine || !round) return;
     // The replay's start is part of the key, so watching the same round twice
     // plays it twice rather than being taken for the phase already acted on.
-    const key = `${replayStartedAt ?? 0}:${round.roundId}:${round.phase}`;
+    // So is this viewer's fighter: when it is known only after the fight has
+    // started, the fight is rebuilt at the moment it has reached, with the
+    // plate on it, rather than played to the end without one.
+    const key = `${replayStartedAt ?? 0}:${round.roundId}:${round.phase}:${myFighter?.entrantId ?? ""}`;
     if (watchedPhaseRef.current === key) return;
     watchedPhaseRef.current = key;
 
@@ -732,7 +803,7 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
         placements: round.fight.placements,
         // The agents, which the round names, and this viewer's own fighter.
         // Nobody else's: twenty four plates is noise rather than a pit.
-        names: plateNames(round, myFighterRef.current),
+        names: plateNames(round, myFighter),
       } as never);
       engine.timeline.onBatch((batch, silent) => engine.juice.onBatch(batch, silent, (id) => engine.timeline!.actor(id)));
       setArena(arenaStanding(engine.timeline.actors()));
@@ -747,7 +818,7 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
     if (round.phase === "result" || round.phase === "resting" || round.phase === "failed") {
       engine.timeline?.pause();
     }
-  }, [arenaMode, engineReady, replayStartedAt, watch.round?.roundId, watch.round?.phase, watch.round]);
+  }, [arenaMode, engineReady, replayStartedAt, watch.round?.roundId, watch.round?.phase, watch.round, myFighter]);
 
   // Arena mode: the worker owns the round, so the phase it publishes is the
   // screen. The machine still runs boot and title, and everything after that
@@ -768,8 +839,10 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
           // stake was in seats rather than only in chips.
           stakeChips: watchedRound.stakeChips,
           bank: watchedRound.bank as PlanResponse["bank"],
-          loans: watchedRound.loans as PlanResponse["loans"],
-          refusals: watchedRound.refusals.map((r) => ({ ...r, tappedOut: false })) as PlanResponse["refusals"],
+          // Whether each borrower was broke or wanted more, as the worker
+          // said. Read as wanting more before it said either.
+          loans: watchedRound.loans.map((l) => ({ ...l, tappedOut: l.tappedOut === true })) as PlanResponse["loans"],
+          refusals: watchedRound.refusals.map((r) => ({ ...r, tappedOut: r.tappedOut === true })) as PlanResponse["refusals"],
           tappedOut: [],
         } as PlanResponse)
       : null
@@ -783,6 +856,9 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
           network: watchedRound.network,
           backend: watchedRound.backend,
           weiPerChip: watchedRound.weiPerChip,
+          // The character the winner fought as, so the winner card shows the
+          // face a viewer just watched win rather than one made up for it.
+          winnerCharacter: characterOf(watchedRound, String(watchedRound.result.winner ?? "")),
           reels: [],
           replay: { characters: [] as never[], log: [] as never[], placements: watchedRound.fight.placements },
         } as unknown as RunResponse)
@@ -867,6 +943,8 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
                     // Who asked for it, when somebody did. The same tense
                     // rule as the reasoning line, for the same reason.
                     pulled: pulledLine(watch.round, watch.resting || replayRound !== null),
+                    reasoningTag: reasoningTag(watch.round),
+                    pulledBy: watch.round?.pulledBy ?? null,
                     // What the pit has to learn from, which is what a round
                     // that is not reasoning plays from.
                     reasonedRounds: feed.view?.pit.reasonedRounds,
@@ -915,12 +993,46 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
                     mine: fighterFeed.view?.fighter ?? null,
                     freeFaces: fighterFeed.view?.freeFaces ?? [],
                     error: fighterFeed.error,
+                    message: fighterFeed.view?.fighter ? fighterFeed.view.message : null,
                     claiming: fighterFeed.claiming,
                     ready: handle !== null,
-                    onClaim: (name, face) => void fighterFeed.claim(name, face),
+                    onClaim: (name, face) =>
+                      void fighterFeed.claim(name, face).then((error) => {
+                        // The board lists the new fighter straight away, so
+                        // a visitor who just claimed one can see it there.
+                        if (error === null && fighterBoard) void showFighters(1);
+                      }),
                   }
                 : null
             }
+            calls={
+              callsLive
+                ? {
+                    seats: callSeats(watch.round),
+                    draft: shownDraft,
+                    open: watch.resting && (callFeed.view?.open ?? true),
+                    status: !handle
+                      ? `${callsLine(shownDraft, CALL_SEATS.length)} Pick a handle to save them and score.`
+                      : callFeed.saving
+                        ? "Saving your calls."
+                        : callFeed.error
+                          ? callFeed.error
+                          : saved
+                            ? `Saved. ${callsLine(shownDraft, CALL_SEATS.length)} They lock when the round starts.`
+                            : callsLine(shownDraft, CALL_SEATS.length),
+                    callers: callFeed.view?.callers ?? 0,
+                    onCall: makeCall,
+                  }
+                : null
+            }
+            roundCalls={roundCalls}
+            readLine={read ? readLine(read) : null}
+            names={roundNames(watch.round)}
+            fighters={watch.round?.fighters ?? []}
+            myEntrantId={myFighter && watch.round?.fighters?.some((f) => f.entrantId === myFighter.entrantId) ? myFighter.entrantId : null}
+            graveyardOpen={arenaMode && state.screen === "graveyard"}
+            weiPerChip={watchedRound?.weiPerChip}
+            servLine={arenaMode ? servLine(watch.round) : null}
             handle={
               arenaMode
                 ? {
@@ -970,4 +1082,19 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
       </Stage>
     </UiKitProvider>
   );
+}
+
+/** Whether two sets of calls say the same thing, whatever order they were made in. */
+function sameCalls(a: Calls | null, b: Calls | null): boolean {
+  const left = Object.entries(a ?? {});
+  if (left.length !== Object.keys(b ?? {}).length) return false;
+  return left.every(([seat, call]) => (b ?? {})[seat] === call);
+}
+
+/** What an entrant fought as, from the fight or the draw, or null. */
+function characterOf(round: { fight?: { characters: unknown[] }; reels?: Array<{ entrantId: string; characterId: string }> } | null, entrantId: string): string | null {
+  if (!round || !entrantId) return null;
+  const fought = (round.fight?.characters ?? []).find((c) => (c as { entrantId?: string } | null)?.entrantId === entrantId) as { characterId?: string } | undefined;
+  if (typeof fought?.characterId === "string") return fought.characterId;
+  return round.reels?.find((r) => r.entrantId === entrantId)?.characterId ?? null;
 }

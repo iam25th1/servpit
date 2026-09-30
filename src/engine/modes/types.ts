@@ -1,3 +1,4 @@
+import type { Arena } from "../arenaShape";
 import type { Combatant } from "../combat";
 import type { RoundEvent } from "../events";
 import type { Payout } from "../payout";
@@ -7,7 +8,7 @@ export interface FightContext {
   rng: Rng;
   /** In entrant order. Modes must not mutate these. */
   combatants: readonly Combatant[];
-  arena: { width: number; height: number };
+  arena: Arena;
   maxTicks: number;
   stormDamage: number;
   damageVariancePct: number;

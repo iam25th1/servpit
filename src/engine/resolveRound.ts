@@ -6,6 +6,7 @@
 
 import type { RoundConfig } from "@/config/round";
 import { ROSTER, TIERS } from "@/config/roster";
+import { arenaTiles, inArena } from "./arenaShape";
 import { buildCombatant, type Combatant } from "./combat";
 import { isFacing, type EventType, type RoundEvent } from "./events";
 import { assertInt } from "./intmath";
@@ -95,7 +96,8 @@ function snapshotConfig(config: unknown): RoundConfig {
   if (!isObject(c.arena)) throw new TypeError("arena must be an object");
   assertInt(c.arena.width, "arena.width", 4, 256);
   assertInt(c.arena.height, "arena.height", 4, 256);
-  if (c.arena.width * c.arena.height < c.mode.maxEntrants * 2) throw new RangeError("arena too small for mode.maxEntrants");
+  if (c.arena.shape !== undefined && c.arena.shape !== "square" && c.arena.shape !== "round") throw new RangeError(`arena.shape must be square or round, got ${String(c.arena.shape)}`);
+  if (arenaTiles(c.arena).length < c.mode.maxEntrants * 2) throw new RangeError("arena too small for mode.maxEntrants");
 
   assertInt(c.maxTicks, "maxTicks", 1, 100_000);
   assertInt(c.stormDamage, "stormDamage", 1, 1_000_000);
@@ -167,6 +169,7 @@ function normalizeLog(log: unknown, ids: ReadonlySet<string>, arena: RoundConfig
     if (x !== undefined || y !== undefined) {
       assertInt(x as number, `log[${i}].x`, 0, arena.width - 1);
       assertInt(y as number, `log[${i}].y`, 0, arena.height - 1);
+      if (!inArena(arena, x as number, y as number)) throw new RangeError(`log[${i}] stands off the pit floor at ${String(x)},${String(y)}`);
       copy.x = x as number;
       copy.y = y as number;
     }
@@ -232,7 +235,7 @@ export function resolveRound(seed: string, entrants: readonly Entrant[], config:
   const simulated = c.mode.simulate({
     rng,
     combatants: characters,
-    arena: { width: c.arena.width, height: c.arena.height },
+    arena: { width: c.arena.width, height: c.arena.height, ...(c.arena.shape === undefined ? {} : { shape: c.arena.shape }) },
     maxTicks: c.maxTicks,
     stormDamage: c.stormDamage,
     damageVariancePct: c.damageVariancePct,

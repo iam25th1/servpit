@@ -38,6 +38,23 @@ describe("what a first time visitor is told", () => {
     }
   });
 
+  it("says what the pit is for and what SERV does in it, before how it works", () => {
+    for (const arena of [true, false]) {
+      const [first, second] = onboardingScreens(arena);
+      expect(first!.lines.join(" ")).toMatch(/live test of AI agents with money/);
+      expect(second!.title).toBe("What SERV does");
+      expect(second!.lines.join(" ")).toMatch(/SERV Reasoning/);
+    }
+  });
+
+  it("tells a viewer the game they play, where there is one", () => {
+    const arena = onboardingScreens(true).flatMap((s) => s.lines).join(" ");
+    const lever = onboardingScreens(false).flatMap((s) => s.lines).join(" ");
+    expect(arena).toMatch(/predict which agents will pay to fight/i);
+    expect(arena).toMatch(/double when SERV made the decision/);
+    expect(lever).not.toMatch(/call each agent/i);
+  });
+
   it("offers backing and the replay only where they exist", () => {
     const arena = onboardingScreens(true).flatMap((s) => s.lines).join(" ");
     const lever = onboardingScreens(false).flatMap((s) => s.lines).join(" ");

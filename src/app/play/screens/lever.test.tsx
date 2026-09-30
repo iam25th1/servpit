@@ -107,7 +107,7 @@ describe("a learned answer on the lineup", () => {
         name: "Atlas",
         enter: true,
         stake: 10,
-        reason: "learned: in 7 reasoned rounds like this one it entered 7, usually for 10 chips",
+        reason: "SERV had me in 7 of 7 spots like this, so I am in.",
         source: "learned" as const,
         balance: 100,
         debt: 0,

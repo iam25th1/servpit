@@ -41,7 +41,14 @@ const VERBS: Record<string, string> = {
   refill: "was staked by the operator",
 };
 
-export function transferRows(transfers: readonly TransferInput[]): TransferRow[] {
+/**
+ * The rows, in the round's own order.
+ *
+ * Named by the agents' names when the caller has them: a wallet's seat id is
+ * the key the ledger keeps, and "blaze paid in" beside a panel that says Vex
+ * is a second name for the same agent.
+ */
+export function transferRows(transfers: readonly TransferInput[], names: Readonly<Record<string, string>> = {}): TransferRow[] {
   // The round's own order: a loan lands before the entry it paid for, the
   // entries before whatever happened to the prize, and what the bank took
   // back after the prize arrived. A retention sorts where the payout would
@@ -59,7 +66,7 @@ export function transferRows(transfers: readonly TransferInput[]): TransferRow[]
       const verb = VERBS[t.kind] ?? "paid in";
       return {
         kind: t.kind,
-        label: `${t.agentId} ${verb}`,
+        label: `${names[t.agentId] ?? t.agentId} ${verb}`,
         amountWei: t.amountWei,
         hashShort: hash ? shorten(hash) : retained ? "no transfer" : "pending",
         link,

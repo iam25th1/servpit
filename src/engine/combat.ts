@@ -3,6 +3,7 @@
 import type { StatBlock } from "@/config/round";
 import type { Tier } from "@/config/roster";
 import { FACING, facingToward, type Facing } from "./events";
+import { arenaTiles, inArena, type Arena } from "./arenaShape";
 import { applyPct, idiv } from "./intmath";
 import type { Combo, Pull } from "./reels";
 import type { Rng } from "./rng";
@@ -49,10 +50,7 @@ export interface Fighter {
   order: number;
 }
 
-export interface Arena {
-  width: number;
-  height: number;
-}
+export type { Arena } from "./arenaShape";
 
 export function shuffle<T>(rng: Rng, items: readonly T[]): T[] {
   const out = [...items];
@@ -65,11 +63,11 @@ export function shuffle<T>(rng: Rng, items: readonly T[]): T[] {
 
 export const tileKey = (x: number, y: number): number => y * 65_536 + x;
 
-/** Shuffled turn order, each fighter on a distinct tile. */
+/** Shuffled turn order, each fighter on a distinct floor tile. */
 export function placeFighters(rng: Rng, combatants: readonly Combatant[], arena: Arena): Fighter[] {
   const order = shuffle(rng, combatants);
-  const tileCount = arena.width * arena.height;
-  const tiles = Array.from({ length: tileCount }, (_, i) => i);
+  const tiles = arenaTiles(arena);
+  const tileCount = tiles.length;
   return order.map((c, i) => {
     const j = i + rng.nextInt(tileCount - i);
     [tiles[i], tiles[j]] = [tiles[j], tiles[i]];
@@ -113,7 +111,7 @@ export function stepToward(self: Fighter, target: Fighter, occupied: Set<number>
     if (sx === 0 && sy === 0) continue;
     const nx = self.x + sx;
     const ny = self.y + sy;
-    if (nx < 0 || ny < 0 || nx >= arena.width || ny >= arena.height) continue;
+    if (!inArena(arena, nx, ny)) continue;
     if (occupied.has(tileKey(nx, ny))) continue;
     occupied.delete(tileKey(self.x, self.y));
     self.x = nx;

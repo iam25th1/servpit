@@ -16,6 +16,7 @@ import { log } from "./log";
 import { PlanStore } from "./round/planStore";
 import { RolloverStore } from "./round/rollover";
 import { DebtStore } from "./round/debt";
+import { SummaryStore, summaryFile } from "./round/summaries";
 import { WreckStore } from "./round/wrecks";
 import { RoundStore } from "./round/store";
 import type { FlowContext } from "./round/types";
@@ -57,12 +58,15 @@ async function build(): Promise<SettleContext> {
   const rollover = new RolloverStore(join(env.dataDir, `rollover-${chain.network}.json`), chain.network);
   const debts = new DebtStore(join(env.dataDir, `debts-${chain.network}.json`), chain.network);
   const wreckStore = new WreckStore(join(env.dataDir, `wrecks-${chain.network}.json`), chain.network);
+  // One permanent line per round, so the history outlives the round store's
+  // two hundred round window.
+  const summaries = new SummaryStore(summaryFile(env.dataDir, chain.network), chain.network);
   // A bank wallet exists now, and nothing sends it a share of a house win.
   // This is the path that settles, so it is the path that must refuse to
   // start while a share is set with no transfer behind it.
   assertBankShareIsPayable(false);
   // No serv: a settle has nothing to ask.
-  const flow: FlowContext = { chain, wallets, ledger, store, bankroll, meter, plans, rollover, debts, wreckStore, settleLockFile: join(env.dataDir, `settle-${chain.network}.lock`), entrants: 24 };
+  const flow: FlowContext = { chain, wallets, ledger, store, bankroll, meter, plans, rollover, debts, wreckStore, summaries, settleLockFile: join(env.dataDir, `settle-${chain.network}.lock`), entrants: 24 };
   return { chain, wallets, flow };
 }
 

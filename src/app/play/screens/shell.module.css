@@ -20,7 +20,14 @@
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  justify-content: center;
+  /* Safe, and scrolling: a screen taller than the stage used to overflow
+     both ways from the centre, and the result card of a round with a loan,
+     a fighter, a read and a failed check ran up over the top bar. Now it
+     starts under the bar and the body scrolls. */
+  justify-content: safe center;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--bone-dim, #8a8170) transparent;
   gap: var(--space-base);
 }
 
@@ -408,7 +415,9 @@
   margin: 0 auto;
   display: grid;
   grid-template-columns: minmax(260px, 0.9fr) minmax(320px, 1fr);
-  gap: var(--space-wide);
+  /* Rows closer than columns: the result is taller than it is wide on the
+     stage, and the wide row gap put the footer below the fold. */
+  gap: var(--space-base) var(--space-wide);
   align-items: start;
   position: relative;
 }
@@ -468,6 +477,14 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-snug);
+}
+
+/* What SERV did, under the bankrolls. The dim ink the rest of the frame's
+   notes use: it is context for the figures above it. */
+.ledgerNote {
+  font-size: var(--text-small);
+  color: var(--on-surface-dim, var(--bone-dim));
+  margin: var(--space-snug) 0 0;
 }
 
 .ledgerRow {
@@ -1166,6 +1183,7 @@ a.transferHash {
 .offair,
 .waiting {
   font-size: var(--text-micro);
+  white-space: nowrap;
 }
 
 .live {
@@ -1183,13 +1201,22 @@ a.transferHash {
 .replay {
   font-size: var(--text-micro);
   color: var(--amber);
+  white-space: nowrap;
+}
+
+/* Who is looking, in the bar. One line: a handle is sixteen characters at
+   most, and a name that wraps reads as two. */
+.who {
+  white-space: nowrap;
 }
 
 /* The same dim ink as the rest of the header meta, because whether a round is
-   reasoned is context, not a warning. */
+   reasoned is context, not a warning. A few words, kept on one line: the bar
+   is a row, and a note that wraps doubles its height. */
 .reasoningNote {
   font-size: var(--text-micro);
   color: var(--on-surface-dim, var(--bone-dim));
+  white-space: nowrap;
 }
 
 .offair {
@@ -1198,25 +1225,45 @@ a.transferHash {
   padding: 0 var(--space-tight);
 }
 
-/* The quiet between rounds. One card, centred, with the countdown as the
-   thing a viewer reads first. */
-/* One composition, not two objects sharing a screen.
-   Side by side, the card and Marrow's panel were centred on each other and
-   nothing else: a 304 tall card next to a 122 tall panel lines up on no edge
-   a reader can see, and the pair floated in the middle of the stage with a
-   band of black under it. Stacked and centred, at one width, they read as a
-   single block with the card leading it. */
+/* The quiet between rounds, which is where a visitor spends most of an hour,
+   so it is two things side by side: the pit on the left, with the countdown
+   and the lever, and the game on the right, calling the next round.
+
+   The left column is one composition, not two objects sharing a screen. The
+   card and Marrow's panel used to be centred on each other and nothing else:
+   a 304 tall card next to a 122 tall panel lines up on no edge a reader can
+   see. Stacked, at one width, they read as a single block with the card
+   leading it. The calls panel stands the full height beside that block, so
+   the pair has one top edge and one bottom edge. */
 .resting {
   /* Wide enough for a sentence of reason at body size without becoming a
-     wall, on a stage that is 1280 across. */
-  --rest-width: 560px;
+     wall, and leaving the calls panel room for a row that reads. */
+  --rest-width: 500px;
   display: flex;
-  flex-direction: column;
-  align-items: center;
+  flex-direction: row;
+  align-items: stretch;
   justify-content: center;
   gap: var(--space-wide);
   flex: 1;
   min-height: 0;
+}
+
+.restMain {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  /* Safe, so a card with a fighter and a record on it grows down the stage
+     rather than up over the top bar. */
+  justify-content: safe center;
+  gap: var(--space-wide);
+  min-height: 0;
+  flex: none;
+  /* A card with a fighter, a record and a read on it, above Marrow with a
+     book of loans, can be taller than the stage. It used to be cut off at the
+     bottom, Marrow with it. Now the column scrolls instead, and only then. */
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--bone-dim, #8a8170) transparent;
 }
 
 /* Under the card and the same width as it, so the block has two straight
@@ -1224,6 +1271,152 @@ a.transferHash {
 .restBank {
   width: var(--rest-width);
   flex: none;
+}
+
+/* The game between rounds. As tall as the block beside it, and the width the
+   stage has left. */
+.restCalls {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-snug);
+  flex: 1;
+  min-width: 0;
+  max-width: 660px;
+  min-height: 0;
+}
+
+.callList {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: var(--space-tight);
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.callRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-snug);
+}
+
+.callWho {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+/* The name and the figures on one line, the posture under them: two lines a
+   row, so six rows and the terms fit the panel without a scroll. */
+.callLine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: var(--space-snug);
+}
+
+.callName {
+  font-family: var(--font-ui);
+  font-size: var(--text-small);
+  color: var(--on-surface, var(--bone));
+}
+
+/* How it tends to play, which is the thing to read it by. Dim, because the
+   name leads and this is its footnote. */
+.callStyle,
+.callStats {
+  font-size: var(--text-micro);
+  color: var(--on-surface-dim, var(--bone-dim));
+}
+
+.callStats {
+  color: var(--amber);
+}
+
+/* In and out, side by side, where a thumb already is. */
+.callPick {
+  display: flex;
+  gap: var(--space-tight);
+  flex: none;
+}
+
+.callStatus {
+  font-family: var(--font-ui);
+  font-size: var(--text-small);
+  color: var(--on-surface, var(--bone));
+  margin: 0;
+}
+
+.callTerms {
+  font-size: var(--text-micro);
+  color: var(--on-surface-dim, var(--bone-dim));
+  margin: 0;
+}
+
+/* A viewer's call beside an agent's answer. Green when it held, which is the
+   colour a reasoned answer already uses on this frame; dim when it did not,
+   because a wrong call is not an alarm. */
+.callMarkWaiting,
+.callMarkRight,
+.callMarkWrong {
+  font-family: var(--font-ui);
+  font-size: var(--text-micro);
+  margin-left: var(--space-snug);
+}
+
+.callMarkWaiting,
+.callMarkWrong {
+  color: var(--bone-dim);
+}
+
+.callMarkRight {
+  color: var(--good);
+}
+
+/* The claimed fighters in the round, under the agents. */
+.fighterLine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-tight) var(--space-snug);
+  font-size: var(--text-micro);
+  color: var(--bone-dim);
+  margin: var(--space-tight) 0 0;
+}
+
+.fighterLineLabel {
+  color: var(--bone-dim);
+}
+
+.fighterChip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-tight);
+  color: var(--bone);
+}
+
+.fighterChipMine {
+  color: var(--amber);
+}
+
+.fighterChipFace {
+  image-rendering: pixelated;
+}
+
+/* The graveyard over a pit that runs itself: a side room, like the boards,
+   on the pit's own floor rather than a shade over the stage. */
+.graveOver {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-loose);
+  background: var(--pit);
+  z-index: 5;
 }
 
 .restCard {
@@ -1453,9 +1646,19 @@ a.transferHash {
 
 .handleRow {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  justify-content: center;
   gap: var(--space-snug);
   margin-bottom: var(--space-snug);
+}
+
+/* What the pit said about a name, and the free names it offers, each on a
+   line of their own under the field, rather than squeezed beside it into a
+   column one word wide. */
+.handleRow > .handleNote,
+.handleRow > .handleOffers {
+  flex-basis: 100%;
 }
 
 .handleLabel {
@@ -1778,7 +1981,10 @@ a.transferHash {
   font-size: 16px;
 }
 
-/* The quiet between rounds, and the result: one column, in reading order. */
+/* The quiet between rounds, and the result: one column, in reading order.
+   The left block dissolves so its two panels can take their own places: the
+   card first, because it says when the next round is, then the calls, which
+   are the thing to do while waiting, and Marrow last. */
 .shell[data-layout="portrait"] .resting,
 .shell[data-layout="compact"] .resting {
   flex-direction: column;
@@ -1786,13 +1992,60 @@ a.transferHash {
   gap: var(--space-base);
 }
 
+.shell[data-layout="portrait"] .restMain,
+.shell[data-layout="compact"] .restMain {
+  display: contents;
+}
+
 .shell[data-layout="portrait"] .restCard,
 .shell[data-layout="compact"] .restCard,
 .shell[data-layout="portrait"] .restBank,
-.shell[data-layout="compact"] .restBank {
+.shell[data-layout="compact"] .restBank,
+.shell[data-layout="portrait"] .restCalls,
+.shell[data-layout="compact"] .restCalls {
   width: 100%;
   max-width: none;
   min-width: 0;
+}
+
+.shell[data-layout="portrait"] .restCard,
+.shell[data-layout="compact"] .restCard {
+  order: 0;
+}
+
+.shell[data-layout="portrait"] .restCalls,
+.shell[data-layout="compact"] .restCalls {
+  order: 1;
+}
+
+.shell[data-layout="portrait"] .restBank,
+.shell[data-layout="compact"] .restBank {
+  order: 2;
+}
+
+/* A call row on a phone: the agent across the top, the two switches under
+   it at thumb size, so a long posture line never squeezes them. */
+.shell[data-layout="portrait"] .callRow,
+.shell[data-layout="compact"] .callRow {
+  flex-wrap: wrap;
+  min-height: 56px;
+}
+
+.shell[data-layout="portrait"] .callPick,
+.shell[data-layout="compact"] .callPick {
+  width: 100%;
+}
+
+.shell[data-layout="portrait"] .callPick > button,
+.shell[data-layout="compact"] .callPick > button {
+  flex: 1;
+}
+
+.shell[data-layout="portrait"] .graveOver,
+.shell[data-layout="compact"] .graveOver {
+  position: fixed;
+  padding: var(--space-base);
+  overflow-y: auto;
 }
 
 .shell[data-layout="portrait"] .ledger,

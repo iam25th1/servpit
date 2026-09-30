@@ -103,7 +103,9 @@ export function learnedDecision(
       decision: {
         enter: false,
         stake: 0,
-        reason: `learned: in ${matches.length} reasoned rounds like this one it entered ${entered.length}, so it sits this out`,
+        // In the agent's own voice, because it goes in the speech box. The
+        // evidence line under it carries the working.
+        reason: `SERV sat me out in ${matches.length - entered.length} of ${matches.length} spots like this. Holding.`,
       },
       evidence,
     };
@@ -116,7 +118,7 @@ export function learnedDecision(
       // decided elsewhere: this number goes through the same validator every
       // other answer does, against the balance read from the chain.
       stake: Math.max(stakeChips, typicalStake),
-      reason: `learned: in ${matches.length} reasoned rounds like this one it entered ${entered.length}, usually for ${Math.max(stakeChips, typicalStake)} chips`,
+      reason: `SERV had me in ${entered.length} of ${matches.length} spots like this, so I am in.`,
     },
     evidence,
   };

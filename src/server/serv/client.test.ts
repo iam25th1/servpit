@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { DEFAULT_SERV, servModelId, type ServConfig } from "@/config/serv";
 import { CostMeter, ServClient, ServError, type ChatTransport } from "./client";
+import { spentSince, summaryOf } from "./meter";
 
 const config = (patch: Partial<ServConfig> = {}): ServConfig => ({ ...DEFAULT_SERV, ...patch, backoffMs: 0 });
 
@@ -119,6 +120,35 @@ describe("CostMeter", () => {
     meter.record(undefined);
     expect(meter.calls).toBe(1);
     expect(meter.totals.totalTokens).toBe(0);
+  });
+
+  it("measures one round rather than the process it ran in", () => {
+    // The bug this replaced: a round stored the meter's total, so the second
+    // round in a process reported the first round's spend as well as its own.
+    const meter = new CostMeter(DEFAULT_SERV.pricing);
+    meter.record({ prompt_tokens: 1_000, completion_tokens: 100, total_tokens: 1_100 });
+
+    const before = meter.reading();
+    meter.record({ prompt_tokens: 2_000, completion_tokens: 300, total_tokens: 2_300 });
+    meter.record({ prompt_tokens: 500, completion_tokens: 50, total_tokens: 550 });
+    const spent = spentSince(before, meter.reading());
+
+    expect(spent).toEqual({ calls: 2, promptTokens: 2_500, completionTokens: 350, microCents: 2_500 * 125 + 350 * 650 });
+    // The meter still counts everything, which is what a process total is for.
+    expect(meter.calls).toBe(3);
+    expect(meter.totals.promptTokens).toBe(3_500);
+  });
+
+  it("says one round's spend in the same shape the meter says a process's", () => {
+    expect(summaryOf({ calls: 6, promptTokens: 7_200, completionTokens: 900, microCents: 1_485_000 })).toBe("6 calls, 7200 in, 900 out, about $0.014850");
+    expect(summaryOf({ calls: 1, promptTokens: 0, completionTokens: 0, microCents: 0 })).toBe("1 call, 0 in, 0 out, about $0.000000");
+  });
+
+  it("reads zero spend for a round that asked nobody anything", () => {
+    const meter = new CostMeter(DEFAULT_SERV.pricing);
+    meter.record({ prompt_tokens: 1_000, completion_tokens: 100, total_tokens: 1_100 });
+    const before = meter.reading();
+    expect(spentSince(before, meter.reading())).toEqual({ calls: 0, promptTokens: 0, completionTokens: 0, microCents: 0 });
   });
 });
 

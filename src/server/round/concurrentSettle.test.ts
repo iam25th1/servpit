@@ -24,6 +24,7 @@ import { planRound, runRound } from "./flow";
 import { RolloverStore } from "./rollover";
 import { resetSettleQueue } from "./settleLock";
 import { RoundStore } from "./store";
+import { SummaryStore, summaryFile } from "./summaries";
 import { WreckStore } from "./wrecks";
 
 let dir: string;
@@ -70,6 +71,7 @@ async function harness() {
     rollover,
     debts,
     wreckStore,
+    summaries: new SummaryStore(summaryFile(dir, "fake"), "fake"),
     serv: new ServClient({ ...DEFAULT_SERV, backoffMs: 0 }, transport(toChips(seat))),
     settleLockFile: join(dir, "settle.lock"),
     entrants: 24,
@@ -92,6 +94,40 @@ describe("two settles at once", () => {
     // drops a whole round out of it.
     expect(store.get(first.roundId)?.roundId).toBe(first.roundId);
     expect(store.get(second.roundId)?.roundId).toBe(second.roundId);
+  });
+
+  it("keeps a permanent line for the round, beside the record that will roll", async () => {
+    const { ctx, store } = await harness();
+    const plan = await planRound(ctx, "kept-for-good");
+    await runRound(ctx, plan);
+
+    const kept = ctx.summaries?.all() ?? [];
+    expect(kept).toHaveLength(1);
+    expect(kept[0]).toMatchObject({
+      roundId: plan.roundId,
+      entrants: plan.entrants.length,
+      winner: store.get(plan.roundId)?.winner,
+      reconciled: true,
+      // This harness answers through a stub transport, so the decisions are
+      // the model's and the round is a reasoned one.
+      answers: "reasoned",
+    });
+    expect(kept[0]?.backfilled).toBeUndefined();
+  });
+
+  it("records which checks ran, so a failure on file says what failed", async () => {
+    const { ctx, store } = await harness();
+    const plan = await planRound(ctx, "checks-kept");
+    const run = await runRound(ctx, plan);
+
+    const stored = store.get(plan.roundId)!;
+    expect(stored.reconciled).toBe(true);
+    // Every check reconciliation ran, by name, and nothing in the failed list
+    // on a round that passed.
+    expect(stored.reconciliation?.ran).toEqual(run.reconciliation.checks.map((c) => c.name));
+    expect(stored.reconciliation?.ran).toContain("conservation");
+    expect(stored.reconciliation?.ran).toContain("pot covers payout");
+    expect(stored.reconciliation?.failed).toEqual([]);
   });
 
   it("does not lose one settle's rollover to the other", async () => {

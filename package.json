@@ -17,10 +17,13 @@
     "sim:economy": "tsx scripts/sim-economy.ts",
     "round": "tsx scripts/round.ts",
     "arena": "tsx scripts/arena.ts",
+    "pit:status": "node scripts/pit-status.mjs",
     "serv": "tsx scripts/serv.ts",
     "pulls": "tsx scripts/pulls.ts",
     "fighters": "tsx scripts/fighters.ts",
     "loadtest": "tsx scripts/loadtest.ts",
+    "stats": "tsx scripts/stats.ts",
+    "backfill-summaries": "tsx scripts/backfill-summaries.ts",
     "generate-wallets": "tsx scripts/generate-wallets.ts",
     "fund-wallets": "tsx scripts/fund-wallets.ts"
   },

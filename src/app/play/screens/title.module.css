@@ -104,6 +104,18 @@
   line-height: 1.5;
 }
 
+/* The loop, in three lines. The same ink as the tagline, set as a list so it
+   reads as steps rather than as a paragraph. */
+.steps {
+  font-family: var(--font-ui);
+  font-size: var(--text-small);
+  color: var(--on-surface-dim, var(--bone-dim));
+  margin: 0;
+  padding: 0 0 0 2ch;
+  text-align: left;
+  line-height: 1.5;
+}
+
 .attract {
   font-family: var(--font-ui);
   font-size: var(--text-small);
@@ -117,4 +129,21 @@
   gap: var(--space-base);
   flex-wrap: wrap;
   justify-content: center;
+}
+
+/* On a phone the panel is as tall as what it says rather than a fixed box:
+   the loop in three steps is taller than the old tagline, and a fixed height
+   put the button across the frame. The wordmark keeps its size and gives up
+   some spacing instead, so SERVPIT stays one word on a 390 wide screen. */
+[data-layout="portrait"] .stage,
+[data-layout="compact"] .stage {
+  height: auto;
+  min-height: min(520px, 100%);
+  gap: var(--space-base);
+  padding: var(--space-loose) var(--space-base);
+}
+
+[data-layout="portrait"] .wordmark,
+[data-layout="compact"] .wordmark {
+  letter-spacing: 2px;
 }

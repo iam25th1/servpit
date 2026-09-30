@@ -8,7 +8,7 @@ import { NAMED_AGENTS } from "@/config/agents";
 import { faceFor, profileFor } from "@/config/replacements";
 import { bankEnabled, bankRateBounds, maxLoanStakes, maxStakeMultiple, CREDIT_TERMS } from "@/config/economy";
 import { clampStake } from "@/economy/prize";
-import { stakeWeiFrom, toChips } from "@/config/stake";
+import { stakeWeiFrom, toChips, toChipsUp } from "@/config/stake";
 import { toWei } from "../money";
 import type { PlannedLoan } from "./types";
 import { totalOwed } from "./debt";
@@ -19,6 +19,7 @@ import { decideLoan, lendableChips, type BankDecision, type LoanBounds, type Loa
 import type { AgentDecision, AgentSnapshot, RoundContext } from "../decisions/types";
 import { ChainUnreachableError } from "../errors";
 import { log, redact } from "../log";
+import { spentSince } from "../serv/meter";
 import type { BankSnapshot, EnteringAgent, FlowContext, RoundPlan } from "./types";
 import { roundIdFor } from "./types";
 
@@ -41,6 +42,14 @@ export const UNREACHABLE_REASON = "Couldn't reach its wallet, sitting this one o
  * narrate that costs a round trip to be told what we already know.
  */
 export const TAPPED_OUT = "I'm tapped out. I need a loan.";
+
+/**
+ * What an agent says when the fixed rule would have held it under its floor.
+ *
+ * Fixed for the same reason as TAPPED_OUT: nothing was reasoned, so nothing
+ * is narrated.
+ */
+export const BELOW_FLOOR = "Running low, but sitting out won't fix that. In at the minimum.";
 
 /**
  * Who is sitting in each seat, before anybody has decided anything.
@@ -76,7 +85,7 @@ export async function planRound(
   ctx: FlowContext,
   seed: string,
   onDecided?: (decision: AgentDecision) => void,
-  onLoan?: (decision: BankDecision, name: string, bank: BankSnapshot) => void,
+  onLoan?: (decision: BankDecision, name: string, bank: BankSnapshot, tappedOut: boolean) => void,
   options: PlanOptions = {},
 ): Promise<RoundPlan> {
   if (!SEED.test(seed)) throw new RangeError(`seed must match ${SEED}`);
@@ -97,6 +106,9 @@ export async function planRound(
   // allows. A pulled round asks to reason and a scheduled one does not, but
   // neither reaches the model with the switch off.
   const serv = options.reasoning !== false && servReasoningOn(ctx.servSwitchFile) ? ctx.serv : undefined;
+  // Where the meter stands before this round asks anybody anything, so what
+  // the round records is its own spend rather than the process's total.
+  const meterBefore = ctx.meter.reading();
 
   ctx.bankroll.invalidate();
   // Every balance in one chain request. It used to be one request per agent,
@@ -194,13 +206,39 @@ export async function planRound(
   const bankOn = stakeMultiple > 1 && Boolean(ctx.wallets.bank);
   const tapped = bankOn ? snapshots.filter((s) => s.balanceWei < stakeWei) : [];
   const tappedIds = new Set(tapped.map((s) => s.profile.id));
+  // Denied credit, for the wreck, is any refusal that leaves an agent unable
+  // to take the cheapest seat on its own: the stake and the gas the chain
+  // keeps back. It used to be only a tapped out agent, one short of the stake
+  // alone, so an agent holding fifteen chips against a ten chip seat and a
+  // twenty chip reserve was asked, refused, turned away for gas, never
+  // wrecked, and never in a round again. Every agent but the richest ended up
+  // there, and the pit was one agent and the house.
+  const cannotSeat = (s: { profile: { id: string }; balanceWei: bigint }): boolean => tappedIds.has(s.profile.id) || s.balanceWei < stakeWei + ctx.chain.gasReserveWei;
   const asked = snapshots.filter((s) => !tappedIds.has(s.profile.id));
 
   // The record, for the rounds that are not reasoning. Read here rather than
   // inside the loop so every agent in one round learns from the same history,
   // and passed rather than reached for so a context without a store keeps the
   // fixed rule.
-  const run = await decideForAgents({ client: serv, meter: ctx.meter, history: serv ? undefined : ctx.store.all() }, asked, context, onDecided);
+  // The fixed rule holds any agent below its own floor, and holds it every
+  // round: balances only move when somebody plays, so a pit where every agent
+  // had drifted under its floor rested on instinct forever. Under the floor
+  // is not broke. The agent goes in at the minimum, and the bank is asked for
+  // whatever it is short, exactly as it is for a tapped out one. Only the
+  // floor is overridden: a hold the dice decided, or one a model or the
+  // learner chose, stands.
+  const liftFloor = (d: AgentDecision): AgentDecision => {
+    if (d.source !== "heuristic" || d.decision.enter) return d;
+    const s = asked.find((a) => a.profile.id === d.agentId);
+    if (!s || s.balanceWei >= s.stakeWei * BigInt(s.profile.minBankrollMultiple)) return d;
+    return {
+      ...d,
+      decision: { enter: true, stake: toChips(stakeWei), reason: BELOW_FLOOR },
+      rejection: d.rejection ? `${d.rejection}; below its floor, so it went in at the minimum rather than holding` : "below its floor, so it went in at the minimum rather than holding",
+    };
+  };
+  const run = await decideForAgents({ client: serv, meter: ctx.meter, history: serv ? undefined : ctx.store.all() }, asked, context, onDecided && ((d) => onDecided(liftFloor(d))));
+  run.decisions = run.decisions.map(liftFloor);
 
   const tappedDecisions: AgentDecision[] = tapped.map((s) => ({
     agentId: s.profile.id,
@@ -303,7 +341,7 @@ export async function planRound(
             repaidChips: toChips(held.repaidWei),
           },
           stakeChips: toChips(chosenWei),
-          shortfallChips: toChips(shortfallWei),
+          shortfallChips: toChipsUp(shortfallWei),
         };
         // A loan that would breach the debt ceiling on its own, or that the
         // treasury cannot cover, is already zero here and the bank is not
@@ -314,13 +352,13 @@ export async function planRound(
           // lend, so this is the pit's own arithmetic rather than a decision
           // anybody made.
           refusals.push({ agentId: snapshot.profile.id, name: snapshot.profile.name, reason: "Nothing left to lend against that record.", askedWei: shortfallWei, tappedOut: tappedOutHere, source: "heuristic" });
-          if (tappedIds.has(snapshot.profile.id)) deniedCredit.push(snapshot.profile.id);
+          if (cannotSeat(snapshot)) deniedCredit.push(snapshot.profile.id);
         } else {
           const answer = await decideLoan({ client: serv, meter: ctx.meter, history: serv ? undefined : ctx.store.all() }, request, bounds);
           // With the answer, what the lender is holding as it gives it. The
           // panel is drawn from this, and without it a viewer watching the
           // banking phase sees the answers with nobody giving them.
-          onLoan?.(answer, snapshot.profile.name, { treasuryWei, book: bookNow() });
+          onLoan?.(answer, snapshot.profile.name, { treasuryWei, book: bookNow() }, tappedOutHere);
           if (answer.decision.approve && answer.decision.amountChips > 0) {
             lentWei = toWei(answer.decision.amountChips);
             treasuryWei -= lentWei;
@@ -356,7 +394,7 @@ export async function planRound(
               situation: answer.situation,
               evidence: answer.evidence,
             });
-            if (tappedIds.has(snapshot.profile.id)) deniedCredit.push(snapshot.profile.id);
+            if (cannotSeat(snapshot)) deniedCredit.push(snapshot.profile.id);
           }
         }
       }
@@ -393,6 +431,10 @@ export async function planRound(
         treasuryWei += lentWei;
         log.warn("loan withdrawn, the borrower is not entering", { agentId: decision.agentId, principalWei: lentWei.toString(), reason });
       }
+      // Lent too little to reach a seat is refused in all but name. Counted as
+      // one, or an agent the bank keeps saying a small yes to sits out every
+      // round and is never wrecked or refilled.
+      if (bankOn && lentWei > 0n && cannotSeat(snapshot) && !deniedCredit.includes(decision.agentId)) deniedCredit.push(decision.agentId);
       decisions.push({ ...decision, decision: { enter: false, stake: 0, reason: `excluded: ${reason}` }, rejection: decision.rejection ? `${decision.rejection}; ${reason}` : reason });
       continue;
     }
@@ -425,7 +467,28 @@ export async function planRound(
   const order = new Map(NAMED_AGENTS.map((p, i) => [p.id, i]));
   decisions.sort((a, b) => (order.get(a.agentId) ?? 0) - (order.get(b.agentId) ?? 0));
 
-  return { roundId, seed, stakeWei, decisions, snapshots, entering, bots, fighters, entrants, servCalls: run.servCalls + loans.length + refusals.length, guardRefusals: run.guardRefusals, rejections: run.rejections, loans, refusals, deniedCredit, bank };
+  const spent = spentSince(meterBefore, ctx.meter.reading());
+  return {
+    roundId,
+    seed,
+    stakeWei,
+    decisions,
+    snapshots,
+    entering,
+    bots,
+    fighters,
+    entrants,
+    servCalls: run.servCalls + loans.length + refusals.length,
+    servMicroCents: spent.microCents,
+    servTokensIn: spent.promptTokens,
+    servTokensOut: spent.completionTokens,
+    guardRefusals: run.guardRefusals,
+    rejections: run.rejections,
+    loans,
+    refusals,
+    deniedCredit,
+    bank,
+  };
 }
 
 /** Told as each entry confirms on chain, so a caller can show it landing. */

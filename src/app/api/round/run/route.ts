@@ -8,6 +8,7 @@ import { arenaMode } from "@/config/arena";
 import { ARENA_RUNNING } from "@/server/arena/message";
 import { LEVER_CLOSED, inProduction } from "@/server/production";
 import { TOO_LARGE, readBody } from "@/server/net/body";
+import { summaryOf } from "@/server/serv/meter";
 import { log } from "@/server/log";
 import { internalDetail, publicError } from "@/server/publicError";
 import { basescanAddress } from "@/server/money";
@@ -129,8 +130,10 @@ export async function POST(request: Request): Promise<Response> {
             checks: run.reconciliation.checks,
             servCalls: plan.servCalls,
             guardRefusals: plan.guardRefusals,
-            costMicroCents: ctx.flow.meter.estimatedMicroCents,
-            costSummary: ctx.flow.meter.summary(),
+            // The quoted plan's own spend. The meter counts this process, and
+            // a settle that re-reported it was reporting every round before it.
+            costMicroCents: plan.servMicroCents ?? 0,
+            costSummary: summaryOf({ calls: plan.servCalls, promptTokens: plan.servTokensIn ?? 0, completionTokens: plan.servTokensOut ?? 0, microCents: plan.servMicroCents ?? 0 }),
             transfers: [
               ...run.loans.map((l) => ({ kind: l.kind, agentId: l.agentId, amountWei: l.amountWei.toString(), txHash: l.txHash ?? null, link: l.link, applied: l.applied })),
               ...run.entries.map((e) => ({ kind: e.kind, agentId: e.agentId, amountWei: e.amountWei.toString(), txHash: e.txHash ?? null, link: e.link, applied: e.applied })),

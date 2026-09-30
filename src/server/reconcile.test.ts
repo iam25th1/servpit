@@ -172,6 +172,36 @@ describe("reconcile with self funded gas", () => {
     expect(failed.actual).toBe((-150n).toString());
   });
 
+  it("fails when the fee it is given is larger than the fee the wallet paid, which is what happened live", () => {
+    // The shape of the live failure, with its real numbers: the wallet paid
+    // 132025268374 in fees and the ledger had recorded 138907323886, so the
+    // check came up 6882055512 short on a round where every coin was right.
+    const input = withGas();
+    const PAID = 132_025_268_374n;
+    const RECORDED = 138_907_323_886n;
+    input.before = { "0xpot": FUNDED, "0xa": FUNDED };
+    input.after = { "0xpot": FUNDED + 100n, "0xa": FUNDED - 100n - PAID };
+    input.entries = [{ address: "0xa", amountWei: 100n }];
+    input.appliedEntries = [{ address: "0xa", amountWei: 100n }];
+    input.payouts = [];
+    input.appliedPayouts = [];
+    input.rolloverInWei = 0n;
+    input.nextRolloverWei = 100n;
+    input.feesWei = [{ address: "0xa", amountWei: RECORDED }];
+
+    const wrong = reconcile(input);
+    expect(wrong.ok).toBe(false);
+    const failed = wrong.checks.find((c) => c.name === "wallet 0xa delta")!;
+    expect(BigInt(failed.actual) - BigInt(failed.expected)).toBe(RECORDED - PAID);
+
+    // And passes on the fee the chain reports, with nothing about the check
+    // relaxed: the same equality, a truthful input.
+    input.feesWei = [{ address: "0xa", amountWei: PAID }];
+    const right = reconcile(input);
+    expect(right.checks.filter((c) => !c.ok)).toEqual([]);
+    expect(right.ok).toBe(true);
+  });
+
   it("fails when a wallet moved nothing at all but the ledger says it entered", () => {
     const input = withGas();
     input.after["0xc"] = FUNDED;

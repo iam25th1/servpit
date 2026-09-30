@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 330" width="880" height="330" role="img" aria-label="Calling the agents: a visitor calls six agents in or out, SERV decides, and each call is marked right or wrong">
+<style>
+  .bg { fill: #14170f; }
+  .frame { fill: #46402e; stroke: #3d4133; stroke-width: 2; }
+  text { font-family: 'Courier New', monospace; }
+  .head { fill: #ffb300; font-size: 20px; font-weight: bold; letter-spacing: 2px; }
+  .sub { fill: #b5afa0; font-size: 13px; }
+  .name { fill: #e8e2cf; font-size: 15px; font-weight: bold; }
+  .btn { fill: #f06733; stroke: #0d0f0a; stroke-width: 1.5; }
+  .pressed { fill: #9b513c; stroke: #ffb300; stroke-width: 2.5; }
+  .label { fill: #0d0f0a; font-size: 13px; font-weight: bold; }
+  .plabel { fill: #f0ebdb; font-size: 13px; font-weight: bold; }
+  .right { fill: #8bc34a; font-size: 14px; font-weight: bold; }
+  .wrong { fill: #b5afa0; font-size: 14px; }
+  .serv { fill: #ffb300; font-size: 14px; font-weight: bold; letter-spacing: 1px; }
+  .bar { fill: #ffb300; }
+  .score { fill: #e8e2cf; font-size: 16px; font-weight: bold; }
+  .call { opacity: 0; animation: call 9s infinite; }
+  .verdict { opacity: 0; animation: verdict 9s infinite; }
+  .thinking { opacity: 0; animation: think 9s infinite; }
+  .sweep { transform-box: fill-box; transform-origin: left center; transform: scaleX(0); animation: sweep 9s infinite; }
+  .total { opacity: 0; animation: total 9s infinite; }
+  @keyframes call { 0%, 4% { opacity: 0; } 9%, 92% { opacity: 1; } 100% { opacity: 0; } }
+  @keyframes think { 0%, 38% { opacity: 0; } 42%, 58% { opacity: 1; } 62%, 100% { opacity: 0; } }
+  @keyframes sweep { 0%, 40% { transform: scaleX(0); } 58% { transform: scaleX(1); } 62%, 100% { transform: scaleX(1); } }
+  @keyframes verdict { 0%, 60% { opacity: 0; } 64%, 92% { opacity: 1; } 100% { opacity: 0; } }
+  @keyframes total { 0%, 78% { opacity: 0; } 82%, 92% { opacity: 1; } 100% { opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) {
+    .call, .verdict, .total { animation: none; opacity: 1; }
+    .thinking { animation: none; opacity: 0; }
+    .sweep { animation: none; transform: scaleX(1); }
+  }
+</style>
+<rect class="bg" x="0" y="0" width="880" height="330"/>
+<rect class="frame" x="20" y="16" width="840" height="298" rx="4"/>
+<text class="head" x="44" y="50">CALL THE NEXT ROUND</text>
+<text class="sub" x="44" y="72">Will each agent buy a seat, or hold? Call it, then watch SERV decide.</text>
+<text class="name" x="44" y="122">Atlas</text>
+<g class="call" style="animation-delay: 0.00s">
+  <rect class="btn" x="130" y="104" width="52" height="26" rx="2"/>
+  <text class="label" x="148" y="122">IN</text>
+  <rect class="pressed" x="188" y="104" width="60" height="26" rx="2"/>
+  <text class="plabel" x="204" y="122">OUT</text>
+</g>
+<text class="verdict right" x="262" y="122" style="animation-delay: 0.00s">right</text>
+<text class="name" x="44" y="184">Blaze</text>
+<g class="call" style="animation-delay: 0.25s">
+  <rect class="pressed" x="130" y="166" width="52" height="26" rx="2"/>
+  <text class="plabel" x="148" y="184">IN</text>
+  <rect class="btn" x="188" y="166" width="60" height="26" rx="2"/>
+  <text class="label" x="204" y="184">OUT</text>
+</g>
+<text class="verdict right" x="262" y="184" style="animation-delay: 0.30s">right</text>
+<text class="name" x="44" y="246">Comet</text>
+<g class="call" style="animation-delay: 0.50s">
+  <rect class="pressed" x="130" y="228" width="52" height="26" rx="2"/>
+  <text class="plabel" x="148" y="246">IN</text>
+  <rect class="btn" x="188" y="228" width="60" height="26" rx="2"/>
+  <text class="label" x="204" y="246">OUT</text>
+</g>
+<text class="verdict wrong" x="262" y="246" style="animation-delay: 0.60s">wrong</text>
+<text class="name" x="454" y="122">Delta</text>
+<g class="call" style="animation-delay: 0.75s">
+  <rect class="btn" x="540" y="104" width="52" height="26" rx="2"/>
+  <text class="label" x="558" y="122">IN</text>
+  <rect class="pressed" x="598" y="104" width="60" height="26" rx="2"/>
+  <text class="plabel" x="614" y="122">OUT</text>
+</g>
+<text class="verdict right" x="672" y="122" style="animation-delay: 0.90s">right</text>
+<text class="name" x="454" y="184">Ember</text>
+<g class="call" style="animation-delay: 1.00s">
+  <rect class="pressed" x="540" y="166" width="52" height="26" rx="2"/>
+  <text class="plabel" x="558" y="184">IN</text>
+  <rect class="btn" x="598" y="166" width="60" height="26" rx="2"/>
+  <text class="label" x="614" y="184">OUT</text>
+</g>
+<text class="verdict right" x="672" y="184" style="animation-delay: 1.20s">right</text>
+<text class="name" x="454" y="246">Flint</text>
+<g class="call" style="animation-delay: 1.25s">
+  <rect class="btn" x="540" y="228" width="52" height="26" rx="2"/>
+  <text class="label" x="558" y="246">IN</text>
+  <rect class="pressed" x="598" y="228" width="60" height="26" rx="2"/>
+  <text class="plabel" x="614" y="246">OUT</text>
+</g>
+<text class="verdict wrong" x="672" y="246" style="animation-delay: 1.50s">wrong</text>
+<g class="thinking">
+  <text class="serv" x="44" y="296">SERV REASONING</text>
+</g>
+<rect class="bar sweep" x="200" y="286" width="400" height="10"/>
+<text class="total score" x="620" y="296">4 of 6 right: 80 points</text>
+</svg>

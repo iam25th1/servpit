@@ -16,6 +16,7 @@ import { log } from "./log";
 import { PlanStore } from "./round/planStore";
 import { RolloverStore } from "./round/rollover";
 import { DebtStore } from "./round/debt";
+import { SummaryStore, summaryFile } from "./round/summaries";
 import { WreckStore } from "./round/wrecks";
 import { assertBankShareIsPayable } from "@/config/economy";
 import { openWallets, type Wallets } from "./wallets/open";
@@ -58,6 +59,9 @@ async function build(): Promise<ServerContext> {
   const rollover = new RolloverStore(join(env.dataDir, `rollover-${chain.network}.json`), chain.network);
   const debts = new DebtStore(join(env.dataDir, `debts-${chain.network}.json`), chain.network);
   const wreckStore = new WreckStore(join(env.dataDir, `wrecks-${chain.network}.json`), chain.network);
+  // One permanent line per round, so the history outlives the round store's
+  // two hundred round window.
+  const summaries = new SummaryStore(summaryFile(env.dataDir, chain.network), chain.network);
   // A bank wallet exists now, and nothing sends it a share of a house win:
   // the prize model computes that share as zero and no transfer carries it.
   // So the answer is still false, and a nonzero share still refuses to start
@@ -70,7 +74,7 @@ async function build(): Promise<ServerContext> {
   // here: claims land between rounds, and a list from process start would be
   // the claims of an hour ago.
   const fighterStore = new FighterStore(fighterFile(env.dataDir, chain.network), chain.network);
-  const flow: FlowContext = { chain, wallets, ledger, store, bankroll, meter, serv, plans, rollover, debts, wreckStore, fighters: () => fighterStore.all().map((f) => ({ handle: f.handle, name: f.name, face: f.face, entrantId: f.entrantId })), settleLockFile: join(env.dataDir, `settle-${chain.network}.lock`), servSwitchFile: join(env.dataDir, SERV_OFF_FILE), servScheduledFile: join(env.dataDir, SERV_SCHEDULED_FILE), pullSettingsFile: pullSettingsFile(env.dataDir), entrants: 24 };
+  const flow: FlowContext = { chain, wallets, ledger, store, bankroll, meter, serv, plans, rollover, debts, wreckStore, summaries, fighters: () => fighterStore.all().map((f) => ({ handle: f.handle, name: f.name, face: f.face, entrantId: f.entrantId })), settleLockFile: join(env.dataDir, `settle-${chain.network}.lock`), servSwitchFile: join(env.dataDir, SERV_OFF_FILE), servScheduledFile: join(env.dataDir, SERV_SCHEDULED_FILE), pullSettingsFile: pullSettingsFile(env.dataDir), entrants: 24 };
   return { env, chain, registry, wallets, bankroll, flow };
 }
 

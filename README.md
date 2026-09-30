@@ -2,9 +2,9 @@
 
 <img src="docs/hero.svg" alt="SERVPIT" width="880">
 
-**A slot machine decides who fights. Six agents decide whether to pay for a seat.**
+**A slot machine decides who fights. Six agents decide whether to pay for a seat. You call it before they do.**
 
-`SERV Reasoning` · `Coinbase AgentKit` · `Base Sepolia` · `Next.js` · `1556 tests`
+`SERV Reasoning` · `Coinbase AgentKit` · `Base Sepolia` · `Next.js` · `1724 tests`
 
 [![ci](https://github.com/iam25th1/servpit/actions/workflows/ci.yml/badge.svg)](https://github.com/iam25th1/servpit/actions/workflows/ci.yml)
 
@@ -14,8 +14,9 @@
 
 <!--
   TODO before submitting:
-  1. Drag the demo mp4 into this README on github.com so GitHub hosts it, then paste the
-     user-attachments URL below.
+  1. Drag docs/media/servpit-trailer.mp4 into this README on github.com so GitHub hosts it
+     and plays it inline, then paste the user-attachments URL below. Until then the poster
+     links to the file in the repo, which plays and downloads from its GitHub page.
   2. Done: the deployment URL is under "Play it".
   (The settlement hashes are already full and linked to Basescan.)
 -->
@@ -23,6 +24,49 @@
 ## Demo
 
 <!-- paste the GitHub user-attachments video URL here, above this line -->
+
+### Trailer
+
+<a href="docs/media/servpit-trailer.mp4"><img src="docs/media/trailer-poster.jpg" alt="SERVPIT trailer: 24 fighters, one colosseum" width="880"></a>
+
+**[Watch or download the trailer](docs/media/servpit-trailer.mp4)** (55 seconds, 1080p, with sound).
+Motion design over real gameplay: every shot of the game is a frame recorded from the running
+pit, and the soundtrack is the game's own music and effects.
+
+<details>
+<summary><b>How the trailer is made</b></summary>
+
+<br>
+
+It lives in [`trailer/`](trailer), with its own `package.json` and lockfile so the app's
+install never pulls it in.
+
+```mermaid
+flowchart LR
+    P[Running pit] -->|capture.mjs: a viewer plays one round| F[Frames + marks]
+    F --> C[index.html: renderAt t]
+    C -->|render.mjs: 30 fps screenshots| V[video.mp4]
+    V -->|mix.mjs: music + effects on cues| M[servpit-trailer.mp4]
+```
+
+The composition is a page whose every element is placed by `renderAt(t)`, a pure function of
+time. The renderer steps $t = i / 30$ for $i = 0 \ldots 1649$ and screenshots each frame, so the
+video is smooth however long a frame takes to draw. Footage cuts land on the marks the capture
+left (the pull, the reels, the backing window, the fight, the result).
+
+```sh
+cd trailer && npm ci --ignore-scripts
+node capture.mjs latest          # with the pit running on :3000 (PIT= to point elsewhere)
+node serve.mjs &                 # 127.0.0.1:8088, TAKE= for another take
+node render.mjs out/video.mp4    # needs ffmpeg on PATH (FFMPEG= to override)
+node mix.mjs out/video.mp4 out/servpit-trailer.mp4
+```
+
+A house bot wins most rounds, since 18 of the 24 seats are the house's, so a take with an agent
+winning can take several captures. The footage in the committed cut ran on the local test
+chain, which is why it plays on instinct and says so on the result screen.
+
+</details>
 
 ![The full player flow: lever, reels, handoff to the arena, result](docs/media/slot-flow.gif)
 
@@ -34,6 +78,22 @@
 ---
 
 ## What this is
+
+**A live test of AI agents with money.** Six agents hold real wallets on Base Sepolia. Every
+round each one decides, through SERV Reasoning, whether to spend its chips on a seat in the
+pit, borrow from a lender that is itself an agent, or hold. Every decision is shown in the
+agent's own words with where it came from, and every chip that moves is a transaction with a
+hash. It is a small economy of autonomous agents that anybody can watch and audit, which is
+the use case: seeing how a reasoning model manages money it can actually lose.
+
+**And a game on top of it: read the agents.** Between rounds a visitor calls each agent in or
+out. Pulling the lever starts the round at once with every agent reasoning, and each call is
+marked right or wrong as its answer lands. Reading a model right is worth double. More in
+[Calling the agents](#calling-the-agents-which-is-the-game).
+
+<div align="center">
+<img src="docs/calls.svg" alt="Calling the agents: six agents called in or out, SERV decides, each call marked right or wrong" width="880">
+</div>
 
 You pull a lever. Three reels draw you a fighter. Twenty four fighters load into a pit and
 kill each other without anyone playing. One walks out with the pot.
@@ -49,8 +109,9 @@ and told which of the two it was short on.
 
 That is the lever flow, and it still works exactly as it did. With `SERVPIT_ARENA_MODE` on the
 pit runs itself instead: a worker plays a round every interval, the house pulls the lever, and
-everybody watching sees the same round at the same moment. The only thing a visitor does then
-is back an agent for points, which are points and never money.
+everybody watching sees the same round at the same moment. A visitor there calls the agents
+between rounds, pulls the lever to make them reason, backs one before the fight and can claim a
+house seat of their own, all for points, which are points and never money.
 
 ### Open Track, and where AgentKit actually sits
 
@@ -280,6 +341,21 @@ round the L1 fee was not even constant:
 Any hardcoded constant would have failed. Reconciliation subtracts the actual fee from each
 receipt, and still fails loudly if stake accounting is genuinely wrong.
 
+**And the receipt has to be read again at reconcile time, which took 99 rounds to learn.** The
+fee was taken from the receipt as it came back the moment a transfer confirmed, and on Base
+Sepolia that reading is not final: over 70 consecutive live transfers, 39 recorded a fee larger
+than the one the same receipt reports once the block has settled, and none recorded a smaller
+one. The L2 component was identical every time, 21,000 gas at 6 gwei; the whole difference was
+in the L1 data fee. That was enough to mark 99 of the 200 rounds on file unreconciled, 95 on a
+wallet check and 4 on the pot check, each by exactly the gap between the fee recorded and the
+fee charged, while every entry, payout, loan, repayment and seizure was right to the wei.
+
+The settle path already read the chain again when a check failed, because a balance can lag a
+receipt, but it re-read the balances and reused the fee, so a wrong fee could never clear. It
+re-reads the fee too now, and the ledger keeps the chain's answer. Nothing was relaxed: the
+check is the same equality, and a fee that cannot be confirmed keeps the number that was
+written down and is allowed to fail on it.
+
 </details>
 
 <details>
@@ -428,6 +504,16 @@ Nothing that decides the fight is readable before the fight is being shown. The 
 deterministic, so the seed is the winner, and it stays on the server until the moment the
 fight starts.
 
+**A pit that has run low still plays.** On instinct, the fixed rule used to hold any agent
+below its own bankroll floor, and only one that could not cover a single seat was sent to the
+lender. Balances only move when a round settles, so once every agent had drifted under its
+floor the round rested with nobody in, and the next one saw the same balances and rested
+again, for good. An agent the rule would hold for its floor now goes in at the minimum and asks
+Marrow for anything it is short; a hold the model, the learner or the dice chose stands. And a
+round with no agents in is played rather than rested: the claimed fighters and the house bots
+fight, interest is charged, broke agents refused credit are wrecked and replaced, and nothing is
+taken from the rollover.
+
 ### What a viewer sees
 
 Every viewer watches the same round at the same moment. The client subscribes to the phase
@@ -438,9 +524,15 @@ the draw, the backing window, the fight, the figures.
 - **Arriving mid round lands in the right moment.** The worker publishes when the fight began
   and how long it runs, so a viewer who arrives mid fight seeks the canvas Timeline to that
   offset. Two browsers opened minutes apart are on the same tick.
-- **The quiet between rounds is a screen, not a stale result.** A countdown, what the last
-  round paid, Marrow's book, the graveyard, the leaderboard, and the reason in the worker's
-  own words when it is resting on funds or paused.
+- **The quiet between rounds is where the game is.** On one side a countdown, what the last
+  round paid (a house win pays nobody and rolls the pot on, and says so), how the viewer's last
+  read went, the lever and Marrow's book. On the other, every agent with how it tends to play,
+  what it holds and owes and what it did last round, to be called in or out.
+- **The reveal is the round.** Each answer lands in the lineup beside the viewer's call,
+  marked right or wrong, and the result says how the read went and what SERV decided.
+- **Claimed fighters are named everywhere they are.** In the lineup from the first phase, on
+  their own plate in the fight, in the kill feed, and on the fighters board the moment they
+  are claimed. House bots are House 1 to House 24 rather than bot ids.
 - **The last round can be watched again**, from the recording the round left behind: the
   decisions, the lender, the draw, the fight and the figures, with no SERV call and no chain
   call. A replay says so in the badge and yields the moment a live round starts.
@@ -451,19 +543,25 @@ the draw, the backing window, the fight, the figures.
 
 ### What a round costs
 
-About a cent of SERV: six agent decisions plus one for every loan the bank is asked about.
-Measured across the 29 settled rounds that actually called SERV, the median round costs
-**$0.0125**, and a round where nobody borrowed, so only the six agents were asked, costs
-**$0.0090**. Every one of those rounds reconciled across the agents, the pot, the bank and the
-operator, with conservation and both solvency checks passing.
+About a cent or two of SERV: six agent decisions plus one for every loan the bank is asked
+about, priced at $1.25 per million tokens in and $6.50 per million out.
 
-Left running, that is the whole bill:
+**The per round figures that used to be here have been withdrawn, and why is worth saying.**
+They were read off each round's `servMicroCents`, and that field held the cost meter's running
+total for the process the round was played in rather than the round's own spend. The first
+round in a process was right and every round after it carried the ones before it, so a median
+taken across them was an overstatement of unknown size. On the live pit it showed as the same
+2,088,850 micro cents stamped on all 200 rounds on file while every one of them recorded zero
+calls, which a naive total read as a $41.78 bill for rounds that never asked anybody anything.
 
-| a round every | rounds a day | SERV a day |
-|---|---|---|
-| 10 minutes | 144 | $1.80 |
-| 30 minutes | 48 | $0.60 |
-| 60 minutes | 24 | $0.30 |
+What is on file and true: that figure is the whole metered spend of the worker process running
+the live pit, **$0.0209**, across the reasoned rounds it has played. Nothing else can be
+re-derived, because no round in the window called SERV at all.
+
+A round now records its own cost and the tokens behind it, and the tokens are how a record
+that carries its own spend is told from one that carries a meter total. `npm run stats` totals
+the first kind and says how many of the second it left out. Figures per round and per day will
+be published from those records once there are enough of them to be worth quoting.
 
 And it can be turned off without stopping the pit. `npm run serv -- off` writes one file that
 every process reads at the start of every round, so nothing restarts and nothing is billed:
@@ -728,6 +826,12 @@ so a kill is a death whose killer was that fighter. The streak counts outlasting
 which means finishing in the top half of it, because everybody but the winner dies and a
 streak of survivals would be a streak of wins under another name.
 
+A claim is on the fighters board at once, with an empty record until its first round, and
+the lineup names every claimed fighter in a round under the agents. The board used to list
+records only, so a fighter claimed a moment before was nowhere on it, which read as the claim
+failing. The pit also used to rest on a round nobody could buy into, so on a pit that had run
+dry a claimed fighter never got to fight at all; a round with no agents in is played now.
+
 **The fighters board is its own board, and that is the point.** A fighter is one seat in
 twenty four with no decisions to make: its record is mostly luck. The backing board scores
 calling a round right, which is at least a judgement. Mixing them would make luck look like
@@ -735,7 +839,7 @@ skill, so they are kept apart.
 
 ## Backing, which is points and nothing else
 
-In arena mode the pit opens a backing window between the draw and the fight, forty five
+In arena mode the pit opens a backing window between the draw and the fight, fifteen
 seconds by default (`SERVPIT_BACKING_WINDOW_SECONDS`). A viewer picks one of the agents that
 bought into the round and scores for calling it right. The fight waits for the window to
 close, and the server refuses any pick that arrives after it, whatever the client sends.
@@ -766,6 +870,86 @@ leaderboard as a list of names that called rounds right, not as a ranking of peo
 Backing is arena mode only. In lever mode the plan route hands the player the round's seed and
 the resolver is deterministic, so a pick could be made knowing the winner.
 
+## Calling the agents, which is the game
+
+Backing a winner is mostly luck: the fight never reads a stake, so a pick is a pick on the
+reels. What the pit has that is not luck is six agents deciding what to do with money, so the
+game a visitor plays is reading them. Between rounds, predict for each agent whether it
+**fights** (pays its stake for a seat) or **sits out** (keeps its chips). The calls lock the moment the next round starts, the agents never see
+them, and each one is marked right or wrong as its answer lands.
+
+With $C$ the seats a visitor called, $c_a$ the call on seat $a$, $e_a$ whether that agent
+bought in once the chain had checked its balance, and $s_a$ whether its decision came from
+SERV rather than instinct or the learned record, a read scores
+
+$$\text{points} = \sum_{a \in C} [c_a = e_a]\,\bigl(10 + 10\,s_a\bigr) \;+\; 50 \cdot \bigl[\,C = \text{all six} \,\wedge\, c_a = e_a \;\forall a\,\bigr]$$
+
+so a right call on a reasoned decision is worth twenty, and a perfect read of a round where
+every agent reasoned is worth $6 \cdot 20 + 50 = 170$. Pulling the lever is what makes a
+round reason, so the loop is: call, pull, watch SERV answer, score.
+
+```mermaid
+sequenceDiagram
+    participant V as Visitor
+    participant C as /api/calls
+    participant W as Worker
+    participant S as SERV Reasoning
+    participant B as Board
+    V->>C: calls on the next round, filed after round R
+    Note over C: taken only while no round is being decided
+    V->>W: pulls the lever
+    W->>W: round S starts, after = R, calls lock
+    W->>S: six agents decide, Marrow lends
+    S-->>W: in or out, with a reason
+    W-->>V: each answer lands beside the call, right or wrong
+    W->>B: settle: calls made before S started, scored on its final decisions
+```
+
+<details>
+<summary><b>Why calls are filed after the round before, and cut off by the clock</b></summary>
+
+<br>
+
+A round has no id until it starts, and it is locked the moment it does, so the only name calls
+can be given that nobody could have chosen after seeing the answer is the round that was on
+file when they were made. The worker records that id on the new round as `after`, and the
+settle reads the calls filed under it.
+
+The route refuses calls while a round is being decided, and the settle does not trust that
+alone: it only counts lines written at or before the moment the round started. A call that
+somehow landed after the agents began deciding is in the log and is never scored. A round that
+fails never settles, so its calls are void rather than carried over.
+
+Calls live in the pick log, as a new kind of line, so a handle is one browser across picks,
+calls, pulls and claims without a second log that could disagree about who owns a name. They
+score onto the same board as backing, under their own settle key, so a round's backing and its
+reads are each applied exactly once however the two settles run. A read never touches the
+backing streak: calling agents and calling a winner are two different judgements.
+
+</details>
+
+<table>
+<tr>
+<td><img src="docs/media/calls-panel.png" alt="The quiet screen: the countdown and the lever on the left, six agents to call in or out on the right" width="420"></td>
+<td><img src="docs/media/calls-reveal.png" alt="The lineup as the answers land, each marked against the call: you called in, right" width="420"></td>
+</tr>
+<tr>
+<td align="center">Between rounds: every agent, how it plays, what it holds and did last round.</td>
+<td align="center">The reveal: each answer lands beside the call, right or wrong.</td>
+</tr>
+</table>
+
+Captured headlessly from a local pit on the test chain, which has no SERV key, so every round
+there is labelled as instinct.
+
+The seats a visitor calls from are written by the worker with each result: who sits in each
+seat after any wreck, the balance the chain reported after the settle, what is owed after
+interest and repayment, and what each did in the round just played. That table says who won,
+so it only travels with the finished round, and the spoiler test holds it to that.
+
+Points, never money, exactly as with backing: nothing a visitor calls reaches a wallet or an
+agent.
+
 ---
 
 ## The odds
@@ -776,7 +960,7 @@ three a stat roll. Matching faces pay a combination bonus on top.
 With tier weights $w_t$ and per-tier win rates $p_t$, the blended probability that a given
 pull wins its round is
 
-$$P(\text{win}) = \sum_{t \in \{c,u,r\}} w_t \, p_t = 0.70(0.0325) + 0.25(0.0475) + 0.05(0.1255) \approx 0.0409$$
+$$P(\text{win}) = \sum_{t \in \{c,u,r\}} w_t \, p_t = 0.70(0.0346) + 0.25(0.0475) + 0.05(0.1079) \approx 0.0415$$
 
 against a flat baseline of $1/24 \approx 0.0417$ for a field of $n = 24$.
 
@@ -814,19 +998,20 @@ twice over: bots never hold wallets, and now they never add to a prize either.
 
 | tier | share of pulls | win rate | multiple of baseline |
 |---|---|---|---|
-| common | 70% | 2.8 to 3.7% | 0.80x |
-| uncommon | 25% | 4.0 to 5.5% | 1.16x |
-| rare | 5% | 10.5 to 14.6% | 2.9x |
-| three of a kind | 0.65% | 32.1% | 7.7x |
+| common | 70% | 2.5 to 4.8% | 0.83x |
+| uncommon | 25% | 4.2 to 5.2% | 1.14x |
+| rare | 5% | 9.7 to 13.0% | 2.6x |
+| three of a kind | 0.65% | 29.5% | 7.1x |
 
 Combination frequency: no match 78.55%, pair 20.80%, three of a kind 0.65%.
 
 An earlier tuning had rare at 8x baseline, which meant 69 percent of pulls were effectively
 eliminated before the fight started. The spread above keeps a common roll a ticket rather than
-a receipt, while three of a kind stays a genuine jackpot: 7.7x, but on two thirds of one
+a receipt, while three of a kind stays a genuine jackpot: 7.1x, but on two thirds of one
 percent of pulls, so roughly one round in seven contains one at all.
 
-Round length averages 37 ticks, about 11.9 seconds at the 320ms tick.
+Round length averages 35 ticks, about 11.1 seconds at the 320ms tick, measured in the round pit
+(a disc of 448 floor tiles inside the 24 by 24 grid, stands where the corners were).
 
 </details>
 
@@ -956,12 +1141,12 @@ finishes the round it is in before it goes.
 
 **What is not served in production.** The wallet view at `/api/agents`, the seed box at
 `/arena`, and both lever routes, which write. In production a visitor can read the pit and
-write exactly three things: a pick, an ask for a round, and a claim on one house seat. Each is
-a line in an append only log, each is bound to a handle and the hash of a token the browser
-keeps, and each is limited twice: once by that token, and once by where the request came from,
-because a browser mints its own token and a fresh one is free. No address is stored for that
-second limit. It is hashed with a salt made when the process starts, held in memory, and never
-written down or returned.
+write exactly four things, none of them able to move a chip: a pick, a set of calls, an ask
+for a round, and a claim on one house seat. Each is a line in an append only log, each is
+bound to a handle and the hash of a token the browser keeps, and each is limited twice: once by
+that token, and once by where the request came from, because a browser mints its own token and
+a fresh one is free. No address is stored for that second limit. It is hashed with a salt made
+when the process starts, held in memory, and never written down or returned.
 
 ### How many people it holds
 
@@ -1004,6 +1189,7 @@ held for 400 seconds. One cloudflared instance opens
 and a tunnel can run up to 25 replicas for 100 connections, which is how to go past the wall
 above without changing a line of this application.
 
+
 <details>
 <summary><b>Settling on Base Sepolia for real</b></summary>
 
@@ -1021,7 +1207,7 @@ and per account, so seven claims take days and one claim plus an on-chain fan-ou
 minutes. Six transfers cost about 0.0000008 ETH in total.
 
 Set `SERV_API_KEY` in `.env.local` for real reasoning. Without it every agent falls through to
-the heuristic and says so in its reason string.
+the heuristic, and every decision on screen is labelled as made on instinct.
 
 Configurable: `SERVPIT_FUND_TARGET_ETH`, `SERVPIT_STAKE_FRACTION`, `SERVPIT_GAS_RESERVE_ETH`,
 `BASE_SEPOLIA_RPC_URLS` (comma separated, or `BASE_SEPOLIA_RPC_URL` for a single endpoint),
@@ -1053,8 +1239,9 @@ a money surface.
 | `npm run fighters -- status` | The claimed seats, the faces left, and the sweep that gives back the ones nobody came back to |
 | `npm run loadtest -- <url>` | Holds phase streams and asks for pages, to measure what a deployment holds. GET only |
 | `npm run extract-assets` | Pulls the roster, FX, UI kit, fonts and tilesets out of the asset pack into `public/assets` and writes the manifest |
+| `npm run stats` | Everything worth posting about, counted from the stores. Read only, takes the network as an argument |
 | `npm run gate` | typecheck, lint, test, build. What CI runs |
-| `npm test` | 1556 tests |
+| `npm test` | 1724 tests |
 
 </details>
 

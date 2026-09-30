@@ -64,16 +64,19 @@ export function leverLines(state: LeverState): LeverLines {
           ? `${left} pull${left === 1 ? "" : "s"} left${reset === null ? "" : `, one more ${reset}`}.`
           : `No pulls left${reset === null ? "" : `, the next ${reset}`}.`;
 
-  const reasoning = view === null ? "" : view.willReason ? "The agents will reason about this round." : (view.reasonBlocked ?? "This round will run on instinct.");
+  // What pulling does, and not only whether it reasons: a first time visitor
+  // has no reason to guess that the lever starts the round now.
+  const reasoning = view === null ? "" : view.willReason ? "Starts the next round now, with all six agents reasoning through SERV." : (view.reasonBlocked ?? "Starts the next round now. It will run on instinct.");
 
   const blocked =
     state.error !== null
       ? state.error
-      // A visitor with no handle has the field for one on the same card, an
-      // inch above this line, and the control is already dead. Saying it in
-      // words as well is a line the card cannot spare.
+      // A visitor with no handle has the field for one on the same card, but
+      // a dead control with nothing under it reads as broken, and "3 pulls
+      // left" under a button that will not press read as a bug. So it says
+      // what the pulls are counted against.
       : state.handle === null
-        ? null
+        ? "Pick a handle first. Pulls are counted against it."
         : state.busy
           ? "A round is running. The lever comes back when it ends."
           : left !== null && left <= 0
