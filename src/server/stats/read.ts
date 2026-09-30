@@ -93,6 +93,8 @@ export interface RoundRow {
   servCalls?: number;
   servMicroCents?: number;
   reconciled?: boolean;
+  /** Which checks ran and which failed. Absent on rounds stored before that was kept. */
+  reconciliation?: { ran?: string[]; failed?: Array<{ name?: string; expected?: string; actual?: string }> };
   agents?: Array<{
     agentId?: string;
     entered?: boolean;

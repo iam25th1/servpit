@@ -518,6 +518,12 @@ async function settleRound(ctx: FlowContext, plan: RoundPlan, progress: RunProgr
     rakeWei: prize.rakeWei.toString(),
     agents,
     reconciled: reconciliation.ok,
+    // The checks themselves, so a failure on file says what failed rather
+    // than only that something did.
+    reconciliation: {
+      ran: reconciliation.checks.map((c) => c.name),
+      failed: reconciliation.checks.filter((c) => !c.ok).map((c) => ({ name: c.name, expected: c.expected, actual: c.actual })),
+    },
     servCalls: plan.servCalls,
     servMicroCents: ctx.meter.estimatedMicroCents,
     ...(loanRecord.length > 0 ? { loans: loanRecord } : {}),

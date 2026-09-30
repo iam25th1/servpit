@@ -47,6 +47,22 @@ export interface StoredLoanDecision {
   situation?: BorrowerSituation;
 }
 
+/**
+ * What reconciliation looked at, and what it said.
+ *
+ * The verdict alone could say a round failed and never say which check or by
+ * how much, so 99 failing rounds on file took a rerun against the chain to
+ * explain. Names for everything that ran, and the two numbers that disagreed
+ * for everything that did not, which is what a person needs and no more: the
+ * passing checks' figures are the balances and amounts already on file.
+ */
+export interface StoredReconciliation {
+  /** Every check that ran, by name, in the order reconciliation ran them. */
+  ran: string[];
+  /** Only the ones that failed, with the two figures that disagreed. */
+  failed: Array<{ name: string; expected: string; actual: string }>;
+}
+
 export interface StoredRound {
   roundId: string;
   seed: string;
@@ -58,6 +74,8 @@ export interface StoredRound {
   rakeWei: string;
   agents: StoredAgentRound[];
   reconciled: boolean;
+  /** Which checks ran and which failed. Absent on rounds stored before this. */
+  reconciliation?: StoredReconciliation;
   servCalls: number;
   servMicroCents: number;
   /** What the lender answered this round. Absent when the bank is off. */

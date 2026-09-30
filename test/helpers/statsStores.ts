@@ -35,7 +35,26 @@ export function writeFixture(dir: string, network = "fake"): string {
       rounds: [
         { roundId: "r-1", createdAt: at(0), entrants: 24, winner: "bot-04", potWei: "20000000000000", rakeWei: "0", servCalls: 6, servMicroCents: 12_500, reconciled: true, agents: [agent("atlas", "serv", true), agent("blaze", "serv", false)] },
         { roundId: "r-2", createdAt: at(30), entrants: 24, winner: "agent-atlas", potWei: "50000000000000", rakeWei: "0", servCalls: 0, servMicroCents: 0, reconciled: true, agents: [agent("atlas", "learned", true), agent("blaze", "heuristic", false)] },
-        { roundId: "r-3", createdAt: at(60), entrants: 24, winner: "fighter-ash", potWei: "30000000000000", rakeWei: "0", servCalls: 0, servMicroCents: 0, reconciled: false, agents: [agent("atlas", "heuristic", false), agent("blaze", "heuristic", false)] },
+        {
+          roundId: "r-3",
+          createdAt: at(60),
+          entrants: 24,
+          winner: "fighter-ash",
+          potWei: "30000000000000",
+          rakeWei: "0",
+          servCalls: 0,
+          servMicroCents: 0,
+          reconciled: false,
+          // A failure with its checks kept, which is what a round records now.
+          reconciliation: {
+            ran: ["wallet 0x0000000000000000000000000000000000000a11 delta", "pot delta", "conservation", "pot covers payout"],
+            failed: [{ name: "wallet 0x0000000000000000000000000000000000000a11 delta", expected: "-10000000000000", actual: "-9993117944488" }],
+          },
+          agents: [agent("atlas", "heuristic", false), agent("blaze", "heuristic", false)],
+        },
+        // And one that failed before the checks were kept, so the cause is not
+        // on file at all.
+        { roundId: "r-4", createdAt: at(90), entrants: 24, winner: "bot-01", potWei: "10000000000000", rakeWei: "0", servCalls: 0, servMicroCents: 0, reconciled: false, agents: [agent("atlas", "heuristic", false)] },
       ],
     }),
   );
