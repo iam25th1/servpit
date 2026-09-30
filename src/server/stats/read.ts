@@ -38,6 +38,7 @@ export interface StorePaths {
   fighters: string;
   careers: string;
   leaderboard: string;
+  summaries: string;
 }
 
 export function storePaths(dataDir: string, network: string): StorePaths {
@@ -54,6 +55,7 @@ export function storePaths(dataDir: string, network: string): StorePaths {
     fighters: join(dataDir, `fighters-${network}.ndjson`),
     careers: join(dataDir, `careers-${network}.json`),
     leaderboard: join(dataDir, `leaderboard-${network}.json`),
+    summaries: join(dataDir, `summaries-${network}.ndjson`),
   };
 }
 
@@ -79,6 +81,8 @@ export interface Stores {
   fighters: LogLine[] | null;
   careers: CareerRow[] | null;
   leaderboard: BoardRow[] | null;
+  /** One permanent line per round, which is the only store that never rolls. */
+  summaries: LogLine[] | null;
 }
 
 /** Only the fields a stat reads. A store carrying more is not this file's business. */
@@ -121,6 +125,8 @@ export interface TransferRow {
 }
 
 export interface WreckRow {
+  /** The round it died in, which is how a wreck dates a round that aged out. */
+  roundId?: string;
   walletId?: string;
   identityId?: string;
   name?: string;
@@ -167,7 +173,9 @@ export interface BoardRow {
 }
 
 export interface PlanRow {
-  plan?: { decisions?: Array<{ source?: string; latencyMs?: number; model?: string; rejection?: string | null }> };
+  /** When the plan was quoted, which dates the round it was quoted for. */
+  quotedAt?: string;
+  plan?: { roundId?: string; decisions?: Array<{ source?: string; latencyMs?: number; model?: string; rejection?: string | null }> };
 }
 
 export interface ArenaFile {
@@ -246,5 +254,6 @@ export function loadStores(dataDir: string, network: string): Stores {
     fighters: readLog(paths.fighters),
     careers: rowsOf<CareerRow>(readJson(paths.careers), "rows"),
     leaderboard: rowsOf<BoardRow>(readJson(paths.leaderboard), "rows"),
+    summaries: readLog(paths.summaries),
   };
 }

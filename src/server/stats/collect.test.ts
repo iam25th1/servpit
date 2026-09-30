@@ -27,10 +27,21 @@ const stat = (label: string) => {
 };
 
 describe("the pit", () => {
-  it("counts the rounds on file and says the total is not recorded", () => {
-    expect(stat("rounds on file").text).toBe("4");
-    expect(stat("rounds played in total")).toMatchObject({ text: null });
-    expect(stat("rounds played in total").why).toContain("keeps the last 200");
+  it("counts the rounds it has in full and the rounds it can only name", () => {
+    expect(stat("rounds on file in full detail").text).toBe("4");
+    // Every round id any store still mentions, which reaches past the window.
+    expect(stat("rounds the pit has played, at least").text).toBe("5");
+    expect(stat("rounds the pit has played, at least").note).toContain("a floor");
+    expect(stat("where those round ids came from").text).toContain("first seen in the round store");
+  });
+
+  it("says which store each figure came from and what it covers", () => {
+    expect(stat("rounds on file in full detail").covers).toContain("the round store, the last 200 rounds");
+    expect(stat("rounds that settled on chain").covers).toContain("the ledger");
+    expect(stat("agents wrecked").covers).toContain("the wreck store");
+    expect(stat("handles claimed").covers).toContain("the append only logs");
+    // And the period, so a windowed figure can never read as a lifetime one.
+    expect(stat("rounds on file in full detail").covers).toMatch(/2026-09-30 to 2026-09-30/);
   });
 
   it("counts reconciliation both ways, from the verdict on each round", () => {
@@ -67,9 +78,17 @@ describe("the pit", () => {
 });
 
 describe("reasoning", () => {
+  it("counts a reasoned round that has aged out of the round store", () => {
+    expect(stat("rounds reasoned").number).toBe(2);
+    expect(stat("rounds reasoned").covers).toContain("the quoted plans");
+    // And the round the plan is for is in the lifetime count.
+    expect(stat("where those round ids came from").text).toContain("first seen in the plan store");
+  });
+
   it("counts calls, and the split between reasoned, learned and instinct", () => {
     expect(stat("SERV calls on file").text).toBe("6");
-    expect(stat("rounds reasoned").text).toBe("1");
+    // r-1 from the round store, and r-0 from a plan quoted before the window.
+    expect(stat("rounds reasoned").text).toBe("2");
     expect(stat("rounds drawn from what it learned").text).toBe("1");
     expect(stat("rounds on instinct").text).toBe("2");
     expect(stat("decisions the learning can draw on").text).toBe("2");
@@ -180,11 +199,13 @@ describe("with nothing on file", () => {
       fighters: null,
       careers: null,
       leaderboard: null,
+  summaries: null,
     };
     const bare = collect(empty);
     const numbers = bare.groups.flatMap((g) => g.stats).filter((s) => s.text !== null && /^[0-9]/.test(s.text));
     // The only counted line with nothing on file is the count of handles,
-    // which is genuinely zero across three logs that are not there.
+    // which is genuinely zero across three logs that are not there. Every
+    // round figure reads as not recorded, including the lifetime ones.
     expect(numbers.map((s) => s.label)).toEqual(["handles claimed"]);
     expect(bare.groups.flatMap((g) => g.stats).filter((s) => s.text === null).length).toBeGreaterThan(10);
   });
@@ -208,5 +229,23 @@ describe("counting the sources", () => {
 
   it("only counts a reasoned decision as learnable when it carries its situation", () => {
     expect(sourcesOf([{ roundId: "a", agents: [{ source: "serv" }, { source: "serv", situation: {} }] }]).learnable).toBe(1);
+  });
+});
+
+describe("where the figures come from", () => {
+  it("says the console is the authority on calls and spend, and this is not it", () => {
+    const notes = report.notes.join(" ");
+    expect(notes).toContain("SERV console is the authority");
+    expect(notes).toContain("Nothing in this report can see it");
+    expect(notes).toContain("game's own books");
+  });
+
+  it("gives the game's own call counts beside it", () => {
+    // Six calls in the fixture's window, and no permanent summaries in it.
+    expect(report.notes.join(" ")).toContain("6 calls in the round store's window of 4 rounds");
+  });
+
+  it("says the lifetime round count is a floor", () => {
+    expect(report.notes.join(" ")).toContain("which is a floor");
   });
 });

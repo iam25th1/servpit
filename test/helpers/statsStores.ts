@@ -123,7 +123,19 @@ export function writeFixture(dir: string, network = "fake"): string {
     }),
   );
 
-  writeFileSync(join(dir, `plans-${network}.json`), JSON.stringify({ network, version: 1, plans: [{ planId: "r-1", plan: { decisions: [{ source: "serv", latencyMs: 7_000 }, { source: "serv", latencyMs: 9_000 }] } }] }));
+  // A plan quoted for a round that has since aged out of the round store,
+  // which is the only way a reasoned round older than the window can still be
+  // counted as reasoned.
+  writeFileSync(
+    join(dir, `plans-${network}.json`),
+    JSON.stringify({
+      network,
+      version: 1,
+      plans: [
+        { planId: "r-0", quotedAt: at(-120), plan: { roundId: "r-0", decisions: [{ source: "serv", latencyMs: 7_000 }, { source: "serv", latencyMs: 9_000 }] } },
+      ],
+    }),
+  );
 
   writeFileSync(
     join(dir, `picks-${network}.ndjson`),
