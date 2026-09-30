@@ -150,6 +150,16 @@ export interface RoundPlan {
   fighters?: readonly ClaimedFighter[];
   entrants: Entrant[];
   servCalls: number;
+  /**
+   * What this round's calls cost, and the tokens behind it.
+   *
+   * This round's own, not the meter's running total: see spentSince in
+   * serv/meter.ts. Optional because a plan quoted before this was added has
+   * none, and a plan on disk is replayed rather than remade.
+   */
+  servMicroCents?: number;
+  servTokensIn?: number;
+  servTokensOut?: number;
   guardRefusals: number;
   rejections: Array<{ agentId: string; reason: string }>;
   /** Loans the bank agreed to this round. Empty when the bank is off. */

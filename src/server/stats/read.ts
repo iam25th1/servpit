@@ -92,7 +92,12 @@ export interface RoundRow {
   rakeWei?: string;
   servCalls?: number;
   servMicroCents?: number;
+  /** Present only on rounds whose cost is their own rather than a meter total. */
+  servTokensIn?: number;
+  servTokensOut?: number;
   reconciled?: boolean;
+  /** Which checks ran and which failed. Absent on rounds stored before that was kept. */
+  reconciliation?: { ran?: string[]; failed?: Array<{ name?: string; expected?: string; actual?: string }> };
   agents?: Array<{
     agentId?: string;
     entered?: boolean;

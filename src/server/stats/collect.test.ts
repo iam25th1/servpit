@@ -28,14 +28,21 @@ const stat = (label: string) => {
 
 describe("the pit", () => {
   it("counts the rounds on file and says the total is not recorded", () => {
-    expect(stat("rounds on file").text).toBe("3");
+    expect(stat("rounds on file").text).toBe("4");
     expect(stat("rounds played in total")).toMatchObject({ text: null });
     expect(stat("rounds played in total").why).toContain("keeps the last 200");
   });
 
   it("counts reconciliation both ways, from the verdict on each round", () => {
-    expect(stat("rounds reconciled").text).toBe("2 of 3 on file");
-    expect(stat("rounds that failed reconciliation").text).toBe("1 of 3 on file");
+    expect(stat("rounds reconciled").text).toBe("2 of 4 on file");
+    expect(stat("rounds that failed reconciliation").text).toBe("2 of 4 on file");
+  });
+
+  it("says why the failures failed, and how far out the worst one was", () => {
+    expect(stat("why they failed").text).toBe("1 wallet delta, 1 from rounds stored before the checks were kept");
+    // 10000000000000 against 9993117944488, which is the fee gap that caused
+    // every live failure.
+    expect(stat("worst disagreement").text).toBe("6,882,055,512 wei");
   });
 
   it("counts the rounds that reached the chain from the ledger, not the round window", () => {
@@ -51,7 +58,7 @@ describe("the pit", () => {
 
   it("names the largest pot and who won the rounds, in chips at the rate on file", () => {
     expect(stat("largest pot on file").text).toBe("50 chips");
-    expect(stat("who won them").text).toBe("1 bot, 1 agent, 1 fighter");
+    expect(stat("who won them").text).toBe("2 bot, 1 agent, 1 fighter");
   });
 
   it("adds up what winners were paid", () => {
@@ -64,17 +71,13 @@ describe("reasoning", () => {
     expect(stat("SERV calls on file").text).toBe("6");
     expect(stat("rounds reasoned").text).toBe("1");
     expect(stat("rounds drawn from what it learned").text).toBe("1");
-    expect(stat("rounds on instinct").text).toBe("1");
+    expect(stat("rounds on instinct").text).toBe("2");
     expect(stat("decisions the learning can draw on").text).toBe("2");
   });
 
-  it("bills only the rounds that actually called", () => {
-    expect(stat("spend on reasoning").text).toContain("$0.0001");
-    expect(stat("spend on reasoning").text).toContain("1 rounds that called");
-  });
-
-  it("says tokens are not recorded rather than zero", () => {
-    expect(stat("tokens in and out")).toMatchObject({ text: null });
+  it("totals only the rounds whose cost is their own, and says how many were left out", () => {
+    expect(stat("spend on reasoning").text).toBe("$0.014850 across 1 rounds that record their own cost, with 3 older rounds left out because theirs is a meter total");
+    expect(stat("tokens in and out").text).toBe("7,200 in, 900 out");
   });
 
   it("reads latency from the plans still on file", () => {
@@ -95,8 +98,9 @@ describe("the money", () => {
   });
 
   it("answers whether reconciliation has ever failed, and admits it cannot say which check", () => {
-    expect(stat("has reconciliation ever failed").text).toContain("yes, on 1 of the 3 rounds");
-    expect(stat("has reconciliation ever failed").text).toContain("which check failed is not recorded");
+    expect(stat("has reconciliation ever failed").text).toContain("yes, on 2 of the 4 rounds");
+    expect(stat("has reconciliation ever failed").text).toContain("1 wallet delta");
+    expect(stat("has reconciliation ever failed").text).toContain("1 stored before the checks were kept");
   });
 });
 

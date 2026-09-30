@@ -94,6 +94,21 @@ describe("two settles at once", () => {
     expect(store.get(second.roundId)?.roundId).toBe(second.roundId);
   });
 
+  it("records which checks ran, so a failure on file says what failed", async () => {
+    const { ctx, store } = await harness();
+    const plan = await planRound(ctx, "checks-kept");
+    const run = await runRound(ctx, plan);
+
+    const stored = store.get(plan.roundId)!;
+    expect(stored.reconciled).toBe(true);
+    // Every check reconciliation ran, by name, and nothing in the failed list
+    // on a round that passed.
+    expect(stored.reconciliation?.ran).toEqual(run.reconciliation.checks.map((c) => c.name));
+    expect(stored.reconciliation?.ran).toContain("conservation");
+    expect(stored.reconciliation?.ran).toContain("pot covers payout");
+    expect(stored.reconciliation?.failed).toEqual([]);
+  });
+
   it("does not lose one settle's rollover to the other", async () => {
     const { ctx, rollover } = await harness();
     const first = await planRound(ctx, "roll-one");

@@ -146,6 +146,41 @@ export function sourcesOf(rounds: readonly RoundRow[]): { reasoned: number; lear
   return { reasoned, learned, instinct, learnable };
 }
 
+/**
+ * Why the failures failed, counted by cause.
+ *
+ * A wallet check is named for the wallet it is about, so the names are
+ * flattened: a breakdown of "wallet 0x317E delta: 1" per address tells nobody
+ * anything. What is worth counting is which kind of check disagreed, and by
+ * how much at worst.
+ */
+export function failureCauses(rounds: readonly RoundRow[]): { causes: Map<string, number>; undetailed: number; worstGap: bigint | null } {
+  const causes = new Map<string, number>();
+  let undetailed = 0;
+  let worstGap: bigint | null = null;
+  for (const round of rounds) {
+    if (round.reconciled !== false) continue;
+    const failed = round.reconciliation?.failed;
+    if (failed === undefined || failed.length === 0) {
+      undetailed += 1;
+      continue;
+    }
+    for (const check of failed) {
+      const cause = (check.name ?? "unnamed").replace(/^wallet 0x[0-9a-fA-F]+ /, "wallet ");
+      causes.set(cause, (causes.get(cause) ?? 0) + 1);
+      // Both figures are decimal wei on every check but "pot covers payout",
+      // whose expected reads "at most N". A gap needs two numbers, so that one
+      // contributes a cause and no gap.
+      const expected = /^-?[0-9]+$/.test(check.expected ?? "") ? BigInt(check.expected!) : null;
+      const actual = /^-?[0-9]+$/.test(check.actual ?? "") ? BigInt(check.actual!) : null;
+      if (expected === null || actual === null) continue;
+      const gap = actual > expected ? actual - expected : expected - actual;
+      if (worstGap === null || gap > worstGap) worstGap = gap;
+    }
+  }
+  return { causes, undetailed, worstGap };
+}
+
 function pit(stores: Stores, rate: bigint | null): Group {
   const rounds = stores.rounds;
   const stats: Stat[] = [];
@@ -158,6 +193,13 @@ function pit(stores: Stores, rate: bigint | null): Group {
     const failed = rounds.filter((r) => r.reconciled === false).length;
     stats.push(said("rounds reconciled", `${ok.toLocaleString("en-US")} of ${rounds.length.toLocaleString("en-US")} on file`, ok));
     stats.push(said("rounds that failed reconciliation", failed === 0 ? "none of the rounds on file" : `${failed.toLocaleString("en-US")} of ${rounds.length.toLocaleString("en-US")} on file`, failed));
+    if (failed > 0) {
+      const { causes, undetailed, worstGap } = failureCauses(rounds);
+      const parts = [...causes].sort((a, b) => b[1] - a[1]).map(([cause, n]) => `${n} ${cause}`);
+      if (undetailed > 0) parts.push(`${undetailed} from rounds stored before the checks were kept`);
+      stats.push(said("why they failed", parts.join(", ")));
+      stats.push(worstGap === null ? missing("worst disagreement", "no failure on file carries the two figures") : said("worst disagreement", `${worstGap.toLocaleString("en-US")} wei`, Number(worstGap)));
+    }
     stats.push(count("fights on file", rounds.length, "one per round"));
     const pots = rounds.map((r) => big(r.potWei));
     const biggest = pots.reduce((a, b) => (b > a ? b : a), 0n);
@@ -210,22 +252,34 @@ function reasoning(stores: Stores): Group {
 
   const calls = sum(rounds.map((r) => r.servCalls ?? 0));
   stats.push(count("SERV calls on file", calls));
-  stats.push(missing("tokens in and out", "a round record keeps the number of calls and a cost, not the tokens"));
 
-  const costed = rounds.filter((r) => (r.servCalls ?? 0) > 0);
-  if (costed.length === 0) {
-    const stamped = new Set(rounds.filter((r) => (r.servMicroCents ?? 0) > 0).map((r) => r.servMicroCents));
+  // A round whose cost is its own carries the tokens behind it. One stored
+  // before that carries the meter's running total for the process it was
+  // played in, stamped onto every round in that process, which is not this
+  // round's spend and is not summable.
+  const ownCost = rounds.filter((r) => r.servTokensIn !== undefined || r.servTokensOut !== undefined);
+  const stamped = rounds.length - ownCost.length;
+  if (ownCost.length === 0) {
+    stats.push(missing("tokens in and out", `every round on file was stored before the tokens were recorded${stamped > 0 ? `, all ${stamped} of them` : ""}`));
+    const values = new Set(rounds.filter((r) => (r.servMicroCents ?? 0) > 0).map((r) => r.servMicroCents));
     stats.push(
       missing(
         "spend on reasoning",
-        stamped.size === 0
+        values.size === 0
           ? "no round on file called SERV, so there is nothing to bill"
-          : `no round on file called SERV, and the cost field carries the same ${[...stamped][0]?.toLocaleString("en-US")} micro cents on every one of them, which is a meter reading rather than a bill`,
+          : `every round on file carries the meter's running total rather than its own spend${values.size === 1 ? `, the same ${[...values][0]?.toLocaleString("en-US")} micro cents on all of them` : ""}, so it cannot be totalled`,
       ),
     );
   } else {
-    const micro = sum(costed.map((r) => r.servMicroCents ?? 0));
-    stats.push(said("spend on reasoning", `$${(micro / 1_000_000 / 100).toFixed(4)} across ${costed.length} rounds that called`, micro));
+    stats.push(said("tokens in and out", `${sum(ownCost.map((r) => r.servTokensIn ?? 0)).toLocaleString("en-US")} in, ${sum(ownCost.map((r) => r.servTokensOut ?? 0)).toLocaleString("en-US")} out`, sum(ownCost.map((r) => (r.servTokensIn ?? 0) + (r.servTokensOut ?? 0)))));
+    const micro = sum(ownCost.map((r) => r.servMicroCents ?? 0));
+    stats.push(
+      said(
+        "spend on reasoning",
+        `$${(micro / 100_000_000).toFixed(6)} across ${ownCost.length.toLocaleString("en-US")} rounds that record their own cost${stamped > 0 ? `, with ${stamped.toLocaleString("en-US")} older rounds left out because theirs is a meter total` : ""}`,
+        micro,
+      ),
+    );
   }
 
   const { reasoned, learned, instinct, learnable } = sourcesOf(rounds);
@@ -272,12 +326,16 @@ function moneyGroup(stores: Stores, rate: bigint | null): Group {
   if (rounds === null) stats.push(missing("has reconciliation ever failed", "there is no round store for this network"));
   else {
     const failed = rounds.filter((r) => r.reconciled === false).length;
+    const { causes, undetailed } = failureCauses(rounds);
+    const why = [...causes].sort((a, b) => b[1] - a[1]).map(([cause, n]) => `${n} ${cause}`);
     stats.push(
       said(
         "has reconciliation ever failed",
         failed === 0
           ? `not on any of the ${rounds.length} rounds on file`
-          : `yes, on ${failed} of the ${rounds.length} rounds on file. The record keeps the verdict and not the checks, so which check failed is not recorded`,
+          : why.length === 0
+            ? `yes, on ${failed} of the ${rounds.length} rounds on file, all of them stored before the checks were kept, so the cause is not recorded`
+            : `yes, on ${failed} of the ${rounds.length} rounds on file: ${why.join(", ")}${undetailed > 0 ? `, and ${undetailed} stored before the checks were kept` : ""}`,
         failed,
       ),
     );

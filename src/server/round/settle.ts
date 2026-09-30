@@ -18,6 +18,7 @@ import { reconcile, type ReconcileResult } from "../reconcile";
 import { collectEntry, disburseLoan, payWinner, refillSeat, repayBank, seizeToBank, type TransferOutcome } from "../transfers";
 import { repay } from "@/economy/rules";
 import { totalOwed } from "./debt";
+import { feesFromChain, type AppliedTransfer } from "./fees";
 import { overReached, type WreckRecord, type WreckTrigger } from "./wrecks";
 import { CREDIT_TERMS } from "@/config/economy";
 import { chooseOccupant, faceFor, generationOf } from "@/config/replacements";
@@ -26,6 +27,7 @@ import { splitPrize, type PrizeSplit } from "./prize";
 import { bankEnabled } from "@/config/economy";
 import { withSettleLock } from "./settleLock";
 import { splitCappedPrize } from "@/economy/prize";
+import type { Wallet } from "../wallets/types";
 import type { FlowContext, RoundPlan, RoundRun } from "./types";
 import { type StoredAgentRound } from "./store";
 
@@ -379,6 +381,38 @@ async function settleRound(ctx: FlowContext, plan: RoundPlan, progress: RunProgr
   // transfer, read back as though it had never been sent, on both sides, to
   // the wei of its fee. A mismatch that survives every read is still a
   // failure; one that clears on the next block never was.
+  // Every transfer that actually moved in this window, with the ledger key so
+  // a fee the chain disagrees with can be written back to the record.
+  const applied: AppliedTransfer[] = [
+    ...entries.filter((e) => e.applied),
+    ...loans.filter((l) => l.applied),
+    ...(payout?.applied ? [payout] : []),
+    ...(repayment?.outcome.applied ? [repayment.outcome] : []),
+    ...seizures.filter((x) => x.applied),
+    ...refills.filter((x) => x.applied),
+  ].map((outcome) => ({ key: outcome.key, from: outcome.from, txHash: outcome.txHash, feeWei: outcome.feeWei }));
+  const byAddress = new Map<string, Wallet>([
+    ...[...ctx.wallets.agents.values()].map((w) => [w.address, w] as const),
+    [pot.address, pot],
+    ...(bank ? [[bank.address, bank] as const] : []),
+    ...(operator ? [[operator.address, operator] as const] : []),
+  ]);
+  const feeDeps = {
+    walletFor: (address: string) => byAddress.get(address),
+    settles: ctx.chain.settles,
+    correct: (key: string, feeWei: bigint) => ctx.ledger.correctFee(key, feeWei),
+    onDrift: (drift: { key: string; from: string; recordedWei: bigint; chainWei: bigint }) =>
+      log.warn("the fee recorded at confirm time is not the fee the chain charged", {
+        roundId: plan.roundId,
+        key: drift.key,
+        from: drift.from,
+        recordedWei: drift.recordedWei.toString(),
+        chainWei: drift.chainWei.toString(),
+        driftWei: (drift.recordedWei - drift.chainWei).toString(),
+      }),
+    onUnread: (key: string, reason: string) => log.warn("could not read a receipt again for its fee", { roundId: plan.roundId, key, reason }),
+  };
+
   let after: Record<string, bigint> = {};
   const readBack = async () => {
     ctx.bankroll.invalidate();
@@ -403,14 +437,11 @@ async function settleRound(ctx: FlowContext, plan: RoundPlan, progress: RunProgr
       // The fee is charged to the sender: an entry costs the agent, a payout
       // costs the pot. The pot's fee matters on any round it actually pays a
       // winner, which no settled round did until an agent finally won one.
-      feesWei: [
-        ...entries.filter((e) => e.applied).map((e) => ({ address: e.from, amountWei: e.feeWei ?? 0n })),
-        ...loans.filter((l) => l.applied).map((l) => ({ address: l.from, amountWei: l.feeWei ?? 0n })),
-        ...(payout?.applied ? [{ address: payout.from, amountWei: payout.feeWei ?? 0n }] : []),
-        ...(repayment?.outcome.applied ? [{ address: repayment.outcome.from, amountWei: repayment.outcome.feeWei ?? 0n }] : []),
-        ...seizures.filter((x) => x.applied).map((x) => ({ address: x.from, amountWei: x.feeWei ?? 0n })),
-        ...refills.filter((x) => x.applied).map((x) => ({ address: x.from, amountWei: x.feeWei ?? 0n })),
-      ],
+      // Asked of the chain on every attempt rather than taken from what was
+      // recorded at confirm time. The recorded figure is not final: see
+      // fees.ts, and the 99 rounds it marked unreconciled while every coin was
+      // where it belonged.
+      feesWei: await feesFromChain(applied, feeDeps),
       loans: loans.map((l) => ({ address: l.to, amountWei: l.amountWei })),
       appliedLoans: loans.filter((l) => l.applied).map((l) => ({ address: l.to, amountWei: l.amountWei })),
       operatorAddress: operator?.address,
@@ -487,8 +518,19 @@ async function settleRound(ctx: FlowContext, plan: RoundPlan, progress: RunProgr
     rakeWei: prize.rakeWei.toString(),
     agents,
     reconciled: reconciliation.ok,
+    // The checks themselves, so a failure on file says what failed rather
+    // than only that something did.
+    reconciliation: {
+      ran: reconciliation.checks.map((c) => c.name),
+      failed: reconciliation.checks.filter((c) => !c.ok).map((c) => ({ name: c.name, expected: c.expected, actual: c.actual })),
+    },
     servCalls: plan.servCalls,
-    servMicroCents: ctx.meter.estimatedMicroCents,
+    // This round's own spend, from the plan that made the calls, rather than
+    // the meter's running total for the process. The tokens say which of the
+    // two a record carries.
+    servMicroCents: plan.servMicroCents ?? 0,
+    ...(plan.servTokensIn === undefined ? {} : { servTokensIn: plan.servTokensIn }),
+    ...(plan.servTokensOut === undefined ? {} : { servTokensOut: plan.servTokensOut }),
     ...(loanRecord.length > 0 ? { loans: loanRecord } : {}),
   });
 

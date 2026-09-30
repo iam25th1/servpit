@@ -116,6 +116,28 @@ export class TransferLedger {
     return r ? { ...r } : undefined;
   }
 
+  /**
+   * Writes the fee the chain reports for a transfer that is already complete.
+   *
+   * The fee recorded at confirm time is not final on an OP stack chain: the
+   * L1 component of a just mined receipt can read higher than the same receipt
+   * reports once the block has settled, and reconciliation adds that figure
+   * back to a balance delta. So the settle path asks the chain again and the
+   * ledger keeps the answer, rather than holding a number the chain disagrees
+   * with. Nothing else about the record moves: not the amount, not the hash,
+   * not the status.
+   */
+  correctFee(key: string, feeWei: bigint): boolean {
+    this.sync.read();
+    const record = this.records.get(key);
+    if (record === undefined || record.status !== "complete") return false;
+    if (record.feeWei === feeWei) return false;
+    record.feeWei = feeWei;
+    record.updatedAt = new Date().toISOString();
+    this.flush();
+    return true;
+  }
+
   forRound(roundId: string): TransferRecord[] {
     this.sync.read();
     return [...this.records.values()].filter((r) => r.roundId === roundId).map((r) => ({ ...r }));
