@@ -285,7 +285,7 @@ async function build(): Promise<Built> {
   screen([
     line(RUN.servCalls, `SERV calls for ${RUN.servSpend}`, "from the SERV console, not the game's books"),
     line(RUN.perRound, "a round"),
-    line(`${RUN.reasonedProven} proven + ${RUN.reasonedPulled} pulled`, "reasoned rounds"),
+    line(`${RUN.reasoned} reasoned + ${RUN.leverStarted} started by the lever`, "rounds", "npm run stats"),
     line(RUN.failedInARow, `SERV calls failed in a row, ${RUN.roundsDropped} rounds dropped`),
     `<div class="line">${MEASURED.map((m) => escape(m).replace(/(\d+(?:\.\d+)?s|free)$/, '<span class="num">$1</span>')).join(", ")}, all measured</div>`,
   ], 3.0, { head: "SERV Reasoning" });
@@ -297,19 +297,22 @@ async function build(): Promise<Built> {
     line(SETTLE.gasEth, "gas", `one wallet's fee on the first settled round, from its receipt: ${SETTLE.gasWei} wei`),
   ], 3.0, { head: `Every chip settles on ${SETTLE.network}. Nobody signs anything.`, itemSfx: "payoutTransient" });
   screen([
-    line(RUN.transfers, "transfers settled on chain"),
-    line(RUN.chips, "chips moved"),
-    line(RUN.reconFailures, `reconciliation failures, ${RUN.reconReal} of them real, every transfer correct to the wei`),
+    line(RUN.transactions, "transactions on chain", `${RUN.settledRounds} rounds settled on chain`),
+    line(RUN.chips, "chips moved", `${RUN.paidOut} paid out to winners`),
+    line(RUN.gas, "gas spent in total"),
+    line(RUN.reconciled, "rounds on file reconciled, none failed"),
   ], 2.6);
 
   // ------------------------------------------------------------ the game, in numbers
   screen([
-    line(RUN.rounds, "rounds played"),
+    line(RUN.rounds, `rounds played in ${RUN.span}, at least`),
     line(RUN.fightersPerRound, "fighters per round"),
     line(ODDS.ticks, `ticks a round on average, ${ODDS.seconds}`),
-    line(RUN.survived, `rounds survived by one fighter, cupcake, with ${RUN.wins} wins`),
-    line(RUN.kills, `kills, but only across ${RUN.claimedFighters} claimed fighters`),
+    line(RUN.biggestPot, `chips, the biggest pot on file; biggest payout ${RUN.biggestPayout} chips`),
+    line(RUN.cupcakeWins, `wins for cupcake in ${RUN.cupcakeRounds} rounds, ${RUN.cupcakeKills} kills, longest run ${RUN.cupcakeRun}`),
+    line(RUN.claimedKills, `kills, across ${RUN.claimedFighters} claimed fighters`),
     `<div class="line"><span class="num" style="color:var(--bad)">${escape(RUN.wrecked)}</span> agents wrecked</div>`,
+    line(RUN.loans, `loans from Marrow, ${RUN.lent} chips lent, ${RUN.writtenOff} written off`),
   ], 3.0);
   const tier = (label: string, v: string, c: string): string => `<div style="color:${c}">${escape(label)}</div><div class="v">${escape(v)}</div>`;
   screen([
@@ -317,7 +320,7 @@ async function build(): Promise<Built> {
     `<div class="line" style="margin-bottom:12px">Measured win rates by tier, against a ${escape(ODDS.baseline)} baseline</div><div class="tiers">${tier("common", ODDS.common, "var(--tier-common)")}${tier("uncommon", ODDS.uncommon, "var(--tier-uncommon)")}${tier("rare", ODDS.rare, "var(--tier-rare)")}${tier("three of a kind", ODDS.triple, "var(--bone-bright)")}</div>`,
   ], 3.4);
   screen([
-    line(`${RUN.days} days`, "running unattended"),
+    line(RUN.handles, `handles claimed, ${RUN.fullCalls} rounds called in full, ${RUN.fullCallsRight} right`),
     line(RUN.spectators, "spectators held comfortably on a Mac mini"),
     line(RUN.tests, "tests"),
   ], 2.4);

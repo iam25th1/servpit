@@ -52,29 +52,48 @@ export const SETTLE = {
   network: "Base Sepolia testnet",
 };
 
-/** The operator's figures, as given. SERV console where marked. */
+/**
+ * npm run stats against the live store, read 2026-10-05T06:54:08Z, except
+ * where marked: the SERV call count and spend are from the SERV console,
+ * which the game's books cannot see, and the rest are the operator's own.
+ */
 export const RUN = {
-  rounds: "2,300",
-  transfers: "2,231",
-  chips: "84,666",
+  rounds: "4,401", // at least: a round that left no trace cannot be counted
+  span: "14.2 days", // 2026-09-21 to 2026-10-05, every store that keeps a round id
+  transactions: "6,491",
+  settledRounds: "3,784",
+  chips: "124,146",
+  paidOut: "60,288",
+  gas: "0.000946 ETH",
+  biggestPot: "310",
+  biggestPayout: "1,120",
+  reconciled: "200 of 200",
+  loans: "108",
+  lent: "1,115",
+  writtenOff: "1,136",
+  wrecked: "13,571",
+  cupcakeWins: "131",
+  cupcakeRounds: "3,153",
+  cupcakeKills: "3,038",
+  cupcakeRun: "9",
+  claimedKills: "4,402",
+  claimedFighters: "3",
+  handles: "14",
+  fullCalls: "35",
+  fullCallsRight: "17",
+  reasoned: "3",
+  leverStarted: "17",
+  // SERV console, as given by the operator.
   servCalls: "1,012",
   servSpend: "$4.33",
   perRound: "$0.0209",
-  tests: "1,701",
+  // As given by the operator.
   failedInARow: "18",
   roundsDropped: "0",
-  survived: "1,440",
-  wins: "55",
-  kills: "2,681",
-  claimedFighters: "3",
-  wrecked: "3,969",
   spectators: "1,000",
-  days: "9.8",
-  reconFailures: "99",
-  reconReal: "0",
   fightersPerRound: "24",
-  reasonedProven: "3",
-  reasonedPulled: "17",
+  // npm test on this branch.
+  tests: "1,724",
 };
 
 /** Timings as measured, as given. */
