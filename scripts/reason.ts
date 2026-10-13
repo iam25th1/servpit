@@ -141,6 +141,15 @@ async function runFastMode(input: {
       const state = store.read();
       return { paused: state.paused === true, phase: state.round?.phase ?? null };
     },
+    // Read on every poll, from the lock the worker writes at the top of each
+    // interval. While it is alive, only the pit reading paused is quiet: the
+    // worker checks the pause file once an interval and then reads balances
+    // before it publishes planning, so a resting phase can be a round about
+    // to start.
+    workerAlive: () => {
+      const beat = heartbeatAt(env.dataDir, network);
+      return beat !== null && Date.now() - beat <= roundIntervalSeconds() * 1_000 + HEARTBEAT_MARGIN_MS;
+    },
     play: async () => {
       // nextAt is now: with the show off there is no dwell to cut short, and
       // nothing is waiting for the next round but this loop.

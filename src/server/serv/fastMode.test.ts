@@ -26,7 +26,7 @@ import { loadStores } from "@/server/stats/read";
 import { WalletRegistry } from "@/server/wallets/registry";
 import { FakeChain } from "@/server/wallets/fake";
 import { openWallets } from "@/server/wallets/open";
-import { fastMode } from "./fastMode";
+import { ROUND_SETTLE_ALLOWANCE_MS, fastMode, pauseWaitMsFor } from "./fastMode";
 import { reasonedSoFar } from "./reasonTo";
 
 let dir: string;
@@ -40,6 +40,7 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
+/** Nothing running: no round on file, and no worker to race. */
 const settled = () => ({ paused: false, phase: "resting" as string | null });
 
 const base = () => ({
@@ -101,7 +102,72 @@ describe("what a fast run touches", () => {
     expect(existsSync(join(dir, SERV_SCHEDULED_FILE))).toBe(true);
   });
 
-  it("waits for the round in flight, then plays", async () => {
+  it("keeps waiting while a worker is alive and the pit only reads resting", async () => {
+    // The race this exists for: the worker reads the pause file at the top of
+    // an interval, then awaits a funds check before it publishes planning. A
+    // pause file written into that gap leaves the arena file saying resting
+    // while a round is about to start, and playing then is two settles on the
+    // same six wallets.
+    const play = vi.fn(async () => "r-1");
+    let clock = 0;
+    const outcome = await fastMode({
+      ...base(),
+      arenaState: () => ({ paused: false, phase: "resting" }),
+      workerAlive: () => true,
+      play,
+      now: () => (clock += 10_000),
+      pauseWaitMs: 30_000,
+      pollMs: 1,
+    });
+
+    expect(play).not.toHaveBeenCalled();
+    expect(outcome.waitTimedOut).toBe(true);
+    expect(outcome.result.played).toBe(0);
+    // And the pause file it wrote is gone again.
+    expect(existsSync(join(dir, PAUSE_FILE))).toBe(false);
+  });
+
+  it("plays once the worker has acknowledged the pause", async () => {
+    const seen: Array<{ paused: boolean; phase: string }> = [];
+    let polls = 0;
+    const outcome = await fastMode({
+      ...base(),
+      // Resting but not yet paused, twice, then the worker writes paused.
+      arenaState: () => {
+        const state = polls++ < 2 ? { paused: false, phase: "resting" } : { paused: true, phase: "resting" };
+        seen.push(state);
+        return state;
+      },
+      workerAlive: () => true,
+      play: async () => "r-1",
+      pollMs: 1,
+    });
+
+    expect(seen.length).toBeGreaterThan(2);
+    expect(outcome.result.played).toBe(1);
+    expect(outcome.waitTimedOut).toBe(false);
+  });
+
+  it("says what it is waiting for, and that the worker reads the file once an interval", async () => {
+    const lines: string[] = [];
+    let polls = 0;
+    await fastMode({
+      ...base(),
+      arenaState: () => (polls++ < 1 ? { paused: false, phase: "deciding" } : { paused: true, phase: "resting" }),
+      workerAlive: () => true,
+      play: async () => "r-1",
+      say: (line) => lines.push(line),
+      pollMs: 1,
+    });
+    expect(lines.some((l) => l.includes("waiting for the worker to acknowledge the pause") && l.includes("deciding") && l.includes("once an interval"))).toBe(true);
+  });
+
+  it("waits a whole interval, its margin and a round before giving up", () => {
+    expect(pauseWaitMsFor(120_000, 5 * 60_000)).toBe(120_000 + 5 * 60_000 + ROUND_SETTLE_ALLOWANCE_MS);
+    expect(pauseWaitMsFor(0, 0)).toBe(ROUND_SETTLE_ALLOWANCE_MS);
+  });
+
+  it("waits for the round in flight to settle when no worker is alive", async () => {
     const phases = ["planning", "fight", "result", "resting"];
     let at = 0;
     const outcome = await fastMode({
@@ -115,7 +181,7 @@ describe("what a fast run touches", () => {
     expect(outcome.waitTimedOut).toBe(false);
   });
 
-  it("gives up rather than playing beside a round that will not settle", async () => {
+  it("gives up rather than playing beside a round that will not settle, with no worker alive", async () => {
     const play = vi.fn(async () => "r-1");
     let clock = 0;
     const outcome = await fastMode({
