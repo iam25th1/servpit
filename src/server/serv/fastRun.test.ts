@@ -1,7 +1,7 @@
 // The stop rules, the budget and cap arithmetic, and putting things back.
 
 import { describe, expect, it, vi } from "vitest";
-import { MAX_BUDGET_CENTS, MEASURE_AFTER, Restorer, budgetCentsFor, projectMs, runFast, saidAs, secondsPerRound, type FastRow } from "./fastRun";
+import { FALLBACK_ROUND_MS, MAX_BUDGET_CENTS, MEASURE_AFTER, REASONED_DECIDE_MS, Restorer, budgetCentsFor, expectedRoundMs, projectMs, runFast, saidAs, secondsPerRound, workMsOf, type FastRow } from "./fastRun";
 
 describe("pace", () => {
   it("averages the rounds it has played and projects the rest", () => {
@@ -16,6 +16,33 @@ describe("pace", () => {
     expect(saidAs(45_000)).toBe("45 s");
     expect(saidAs(20 * 60_000)).toBe("20.0 min");
     expect(saidAs(4.5 * 3_600_000)).toBe("4.5 hours");
+  });
+});
+
+describe("what a round should take, before one has been played", () => {
+  const phases = [
+    { phase: "planning", at: "2026-10-13T00:00:00.000Z" },
+    { phase: "deciding", at: "2026-10-13T00:00:01.000Z" },
+    { phase: "settling", at: "2026-10-13T00:00:04.000Z" },
+    { phase: "reels", at: "2026-10-13T00:00:07.300Z" },
+    { phase: "backing", at: "2026-10-13T00:00:13.300Z" },
+  ];
+
+  it("reads the work out of the phase marks, which is everything before the show", () => {
+    expect(workMsOf(phases)).toBe(7_300);
+    expect(workMsOf(undefined)).toBeNull();
+    expect(workMsOf([{ phase: "planning", at: "nonsense" }, { phase: "reels", at: "2026-10-13T00:00:07.300Z" }])).toBeNull();
+    // A reels mark before its planning mark is not a length.
+    expect(workMsOf([{ phase: "planning", at: "2026-10-13T00:00:07.300Z" }, { phase: "reels", at: "2026-10-13T00:00:00.000Z" }])).toBeNull();
+  });
+
+  it("adds the measured decision phase when the round it measured ran on instinct", () => {
+    expect(expectedRoundMs({ workMs: 7_300, reasoned: false })).toBe(7_300 + REASONED_DECIDE_MS);
+    expect(expectedRoundMs({ workMs: 19_300, reasoned: true })).toBe(19_300);
+  });
+
+  it("falls back when there is nothing on file to measure", () => {
+    expect(expectedRoundMs({ workMs: null, reasoned: true })).toBe(FALLBACK_ROUND_MS);
   });
 });
 

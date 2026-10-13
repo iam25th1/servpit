@@ -29,6 +29,52 @@ export const TIME_BUDGET_MS = 30 * 60_000;
 /** Rounds to play before the pace is worth projecting from. */
 export const MEASURE_AFTER = 2;
 
+/**
+ * What a reasoned decision phase takes, measured against live SERV.
+ *
+ * Six agents decide at once, so the phase is as long as the slowest of them
+ * rather than the sum: timed end to end on the live pit at 10974, 11813 and
+ * 12335 ms with both safety nets on. Used to allow for reasoning when the
+ * round being measured ran on instinct, which costs nothing and takes no
+ * time at all.
+ */
+export const REASONED_DECIDE_MS = 12_000;
+
+/** What a round takes when nothing on file can be measured. */
+export const FALLBACK_ROUND_MS = 25_000;
+
+/**
+ * The work in a round, from the phase marks the pit publishes.
+ *
+ * Planning to reels is planRound plus runRound: the balance reads, the
+ * decisions, the lending and the settle. Everything after it is the show,
+ * which a fast round skips. Null when the marks are not there to read.
+ */
+export function workMsOf(phases: ReadonlyArray<{ phase: string; at: string }> | undefined): number | null {
+  const at = (phase: string): number | null => {
+    const mark = phases?.find((p) => p.phase === phase);
+    const time = mark === undefined ? Number.NaN : Date.parse(mark.at);
+    return Number.isFinite(time) ? time : null;
+  };
+  const from = at("planning");
+  const to = at("reels");
+  if (from === null || to === null || to < from) return null;
+  return to - from;
+}
+
+/**
+ * How long a fast round should take, from this deployment's own last round.
+ *
+ * A round that reasoned already includes the decision phase. One that ran on
+ * instinct does not, so the measured allowance is added: the difference is
+ * most of a fast round, and projecting 88 rounds off an instinct round would
+ * promise less than half the real time.
+ */
+export function expectedRoundMs(sample: { workMs: number | null; reasoned: boolean }): number {
+  if (sample.workMs === null) return FALLBACK_ROUND_MS;
+  return sample.reasoned ? sample.workMs : sample.workMs + REASONED_DECIDE_MS;
+}
+
 /** Seconds a round took, averaged, or null before anything has been played. */
 export function secondsPerRound(rounds: number, elapsedMs: number): number | null {
   if (rounds <= 0) return null;

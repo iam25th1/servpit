@@ -42,7 +42,7 @@ import { readEnv } from "../src/server/env";
 import { budgetState } from "../src/server/pulls/budget";
 import { readPullSettings } from "../src/server/pulls/settings";
 import { RoundStore } from "../src/server/round/store";
-import { MEASURE_AFTER, TIME_BUDGET_MS, budgetCentsFor, saidAs } from "../src/server/serv/fastRun";
+import { MEASURE_AFTER, TIME_BUDGET_MS, budgetCentsFor, expectedRoundMs, saidAs, workMsOf } from "../src/server/serv/fastRun";
 import { fastMode } from "../src/server/serv/fastMode";
 import { dollars, measuredRate, microCentsFromDollars, newRounds, planRun, reasonedSoFar, shouldStop } from "../src/server/serv/reasonTo";
 import { scheduledReasoningOn, servReasoningOn, setScheduledReasoning } from "../src/server/serv/switch";
@@ -50,17 +50,6 @@ import { loadStores } from "../src/server/stats/read";
 import { loadLocalEnv } from "./lib/loadEnv";
 
 const POLL_MS = 10_000;
-
-/**
- * What a round takes with the show off, before this run has measured one.
- *
- * From the worker's own timings: about ten seconds reading six balances, about
- * thirty five for six agents to decide in parallel, about eleven to settle the
- * entries on chain. A loan adds about sixteen, because the lender is asked one
- * borrower at a time. It is an expectation and it is labelled as one; the real
- * figure is measured after the first two rounds.
- */
-const EXPECTED_ROUND_SECONDS = 60;
 
 /** Where the run writes a line per round, beside the terminal. */
 const LOG_FILE = "reason.log";
@@ -272,13 +261,23 @@ async function main(): Promise<void> {
     currentCents: settings.dailyBudgetCents,
   });
   if (args.fast) {
-    const expectedMs = plan.need * EXPECTED_ROUND_SECONDS * 1_000;
+    // Measured from this pit's own last round rather than assumed: planning to
+    // reels is the plan and the settle, which is all a fast round does, and
+    // the measured decision phase is added when that round ran on instinct.
+    const lastRound = (stores.arena as { last?: { phases?: Array<{ phase: string; at: string }>; reasoning?: boolean } } | null)?.last;
+    const perRoundMs = expectedRoundMs({ workMs: workMsOf(lastRound?.phases), reasoned: lastRound?.reasoning === true });
+    const expectedMs = plan.need * perRoundMs;
     console.log("");
     console.log(`fast mode: this process plays the rounds itself, back to back, with the spectator show off.`);
     console.log(`  one round at a time, because six wallets send under their own nonces and one settle lock makes overlapping rounds a way to pay twice.`);
     console.log(`  the same planRound, runRound, settle lock, stores and permanent line as a worker round. Real SERV calls, real settlement on ${network}.`);
-    console.log(`projected time: about ${saidAs(expectedMs)} for ${plan.need} round${plan.need === 1 ? "" : "s"}, at an expected ${EXPECTED_ROUND_SECONDS} s a round from the worker's own timings.`);
+    console.log(
+      `projected time: about ${saidAs(expectedMs)} for ${plan.need} round${plan.need === 1 ? "" : "s"}, at ${(perRoundMs / 1_000).toFixed(1)} s a round${
+        lastRound === undefined ? " (nothing on file to measure, so this is the fallback)" : `, from this pit's own last round${lastRound.reasoning === true ? "" : " plus the measured decision phase, since that one ran on instinct"}`
+      }.`,
+    );
     console.log(`  measured for real after ${MEASURE_AFTER} rounds, and if the projection is over ${saidAs(TIME_BUDGET_MS)} it asks whether to carry on.`);
+    if (expectedMs > TIME_BUDGET_MS) console.log(`  that is over ${saidAs(TIME_BUDGET_MS)} already. A lower target would fit: about ${Math.floor(TIME_BUDGET_MS / perRoundMs)} rounds.`);
     console.log(`it changes three things and puts all three back on any exit:`);
     console.log(`  the pause file ${join(env.dataDir, PAUSE_FILE)}${(stores.arena as { paused?: boolean } | null)?.paused === true ? ", which is already set, so it is left set" : ""}`);
     console.log(
