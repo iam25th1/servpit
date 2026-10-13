@@ -223,6 +223,18 @@ function failed(store: ArenaStore, reason: string, nextAt: number): void {
   store.write({ round, last: current.last, paused: current.paused, nextRoundAt: new Date(nextAt).toISOString() });
 }
 
+/** What a round may skip. Nothing here changes what it settles or records. */
+export interface RoundOptions {
+  /**
+   * False plays the round with no spectator timing at all.
+   *
+   * For a catch up run, which has nobody watching and wants the rounds rather
+   * than the show. Everything else is identical: the same planRound, the same
+   * runRound, the same settle lock, the same stores and the same summary line.
+   */
+  show?: boolean;
+}
+
 /**
  * Whether a round reasons, which is also what the round publishes about
  * itself.
@@ -252,8 +264,18 @@ export function roundReasons(gates: { pulled: boolean; scheduledReasoning: boole
  * phase starts: the seed, the log and the placements all decide the winner,
  * and the resolver is deterministic.
  */
-export async function playArenaRound(ctx: ServerContext, store: ArenaStore, nextAt: number, pulledBy: string | null = null): Promise<ArenaOutcome> {
+export async function playArenaRound(ctx: ServerContext, store: ArenaStore, nextAt: number, pulledBy: string | null = null, options: RoundOptions = {}): Promise<ArenaOutcome> {
   const flow = ctx.flow;
+  // The show is what a spectator is here for: six seconds to read the draw,
+  // the backing window, the fight played at the speed it happened, and a
+  // moment on the figures. A catch up run has no spectator and turns it off,
+  // which is the only difference between its rounds and a worker's: the plan,
+  // the settle, the stores and the records are the same path.
+  //
+  // With the show off the reel and backing marks are published as lasting
+  // nothing, so no window is ever open on a round that has already settled.
+  // The fight keeps its real length, because that is what a replay seeks by.
+  const show = options.show !== false;
   const seed = `arena-${Date.now().toString(36)}`;
   // A round somebody asked for reasons. A round the clock asked for does not,
   // unless an operator has said it should: the pit plays itself all day, and
@@ -434,9 +456,9 @@ export async function playArenaRound(ctx: ServerContext, store: ArenaStore, next
       })),
     },
     "reels",
-    { durationMs: REEL_REVEAL_MS },
+    { durationMs: show ? REEL_REVEAL_MS : 0 },
   );
-  await sleepMs(REEL_REVEAL_MS);
+  if (show) await sleepMs(REEL_REVEAL_MS);
 
   // Picks, between the draw and the fight.
   //
@@ -444,9 +466,9 @@ export async function playArenaRound(ctx: ServerContext, store: ArenaStore, next
   // and because the fight cannot have started: the outcome was fixed by the
   // seed at planning and is not published until the fight phase, so a window
   // that closed after it began would be a window on a known result.
-  const backingMs = backingWindowSeconds() * 1_000;
+  const backingMs = show ? backingWindowSeconds() * 1_000 : 0;
   publish({}, "backing", { durationMs: backingMs });
-  await sleepMs(backingMs);
+  if (backingMs > 0) await sleepMs(backingMs);
 
   // Settled. The fight can be shown now, and only now: everything in here
   // decides the winner, and the resolver is deterministic.
@@ -467,7 +489,7 @@ export async function playArenaRound(ctx: ServerContext, store: ArenaStore, next
     "fight",
     { durationMs },
   );
-  await sleepMs(durationMs);
+  if (show) await sleepMs(durationMs);
 
   publish(
     {
@@ -548,7 +570,7 @@ export async function playArenaRound(ctx: ServerContext, store: ArenaStore, next
   // The figures stand for a moment, then the pit is plainly waiting. A
   // resting phase with no reason is the ordinary gap between rounds, which is
   // what a viewer should see for most of an interval.
-  const dwellMs = Math.min(RESULT_DWELL_MS, Math.max(0, nextAt - Date.now()));
+  const dwellMs = show ? Math.min(RESULT_DWELL_MS, Math.max(0, nextAt - Date.now())) : 0;
   if (dwellMs > 0) await sleepMs(dwellMs);
   publish({}, "resting");
   return "played";

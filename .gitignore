@@ -54,3 +54,7 @@ __MACOSX/
 # local key material, never committed
 .env.local
 .env*.local
+
+# What a catch up run writes beside the terminal (npm run reason -- --fast).
+reason.log
+reason-pull-settings.backup.json
