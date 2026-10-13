@@ -20,6 +20,7 @@
     "pit:status": "node scripts/pit-status.mjs",
     "serv": "tsx scripts/serv.ts",
     "pulls": "tsx scripts/pulls.ts",
+    "reason": "tsx scripts/reason.ts",
     "fighters": "tsx scripts/fighters.ts",
     "loadtest": "tsx scripts/loadtest.ts",
     "stats": "tsx scripts/stats.ts",
