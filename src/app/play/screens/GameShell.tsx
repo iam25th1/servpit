@@ -16,7 +16,7 @@ import { seatFace } from "@/config/replacements";
 import type { Calls } from "@/config/reads";
 import { CALL_TERMS, lastLine, seatCall, styleLine, type CallSeat } from "../calls";
 import { ordinal as ordinalOf } from "../myFighter";
-import { liveBadge, type BadgeTone } from "./liveBadge";
+import { holdHeadline, liveBadge, type BadgeTone } from "./liveBadge";
 import { Dialog } from "@/ui/Dialog";
 import { Meter } from "@/ui/Meter";
 import { NinePatch } from "@/ui/NinePatch";
@@ -85,6 +85,7 @@ function Ticking({ render }: { render: (now: number) => string }) {
 
 function nextRoundLine(watching: WatchingShape, now: number): string {
   if (watching.paused) return "The pit is closed for now.";
+  if (watching.hold) return holdHeadline(watching.hold.kind);
   const seconds = secondsUntil(watching.nextRoundAt, now);
   if (seconds === null) return "The next round will start when the pit is ready.";
   if (seconds <= 0) return "The next round is starting.";
@@ -316,6 +317,11 @@ export interface WatchingShape {
   resting: boolean;
   restReason: string | null;
   paused: boolean;
+  /**
+   * Set while the pit has stopped itself because a round could not be paid
+   * for. The reason is the worker's own sentence. Absent means not held.
+   */
+  hold?: { kind: "funds" | "retirements"; reason: string } | null;
   nextRoundAt: string | null;
   /** Whether this round's agents reasoned, in one sentence, or null. */
   reasoning: string | null;
@@ -1315,6 +1321,7 @@ function Resting({
   // around it is never rebuilt to change a figure inside it.
   const headline = (now: number): string => {
     if (watching.paused) return "The pit is closed for now.";
+    if (watching.hold) return holdHeadline(watching.hold.kind);
     if (watching.restReason) return "The pit is sitting this one out.";
     const seconds = secondsUntil(watching.nextRoundAt, now);
     if (seconds === null) return "The pit is between rounds.";
@@ -1328,10 +1335,19 @@ function Resting({
           <h2 className={styles.restHead} data-rest-row="">
             <Ticking render={headline} />
           </h2>
-          {watching.restReason && (
-            <p className={styles.restReason} data-rest-row="">
-              {watching.restReason}
+          {/* Held, the worker's sentence says what ran out and that it starts
+              again on its own. The resting mark carries the same sentence, so
+              it is said once. */}
+          {watching.hold ? (
+            <p className={styles.restReason} data-rest-row="" data-hold={watching.hold.kind}>
+              {watching.hold.reason}
             </p>
+          ) : (
+            watching.restReason && (
+              <p className={styles.restReason} data-rest-row="">
+                {watching.restReason}
+              </p>
+            )
           )}
           {/* What the last round did, with the money said the way it moved:
               a house win pays nobody and rolls the pot on. */}

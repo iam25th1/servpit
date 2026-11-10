@@ -44,9 +44,16 @@ export interface ArenaFeedRound {
 }
 
 export interface ArenaFeedView {
-  pit: { network: string; backend: string; paused: boolean; nextRoundAt: string | null; updatedAt: string; reasonedRounds?: number; reasonedDecisions?: number };
+  pit: { network: string; backend: string; paused: boolean; nextRoundAt: string | null; updatedAt: string; reasonedRounds?: number; reasonedDecisions?: number; hold?: PitHold | null };
   round: ArenaFeedRound | null;
   last: ArenaFeedRound | null;
+}
+
+/** The pit holding itself for money or for its retirement limit, as the site shows it. */
+export interface PitHold {
+  kind: "funds" | "retirements";
+  since: string;
+  reason: string;
 }
 
 /** The shell's own screens, which arena mode reuses rather than replaces. */
@@ -63,6 +70,8 @@ export interface WatchState {
   /** When the next round is due, for the countdown. */
   nextRoundAt: string | null;
   paused: boolean;
+  /** Set while the pit cannot pay for a round, and null otherwise. */
+  hold: PitHold | null;
 }
 
 const SCREEN_FOR: Record<ArenaPhase, WatchScreen> = {
@@ -90,7 +99,7 @@ export function phaseMark(round: ArenaFeedRound | null, phase: ArenaPhase): { at
 
 export function watchState(view: ArenaFeedView | null): WatchState {
   if (!view || !view.round) {
-    return { screen: "resting", round: view?.last ?? null, resting: true, restReason: null, nextRoundAt: view?.pit.nextRoundAt ?? null, paused: view?.pit.paused ?? false };
+    return { screen: "resting", round: view?.last ?? null, resting: true, restReason: null, nextRoundAt: view?.pit.nextRoundAt ?? null, paused: view?.pit.paused ?? false, hold: view?.pit.hold ?? null };
   }
   const round = view.round;
   const screen = SCREEN_FOR[round.phase];
@@ -108,6 +117,7 @@ export function watchState(view: ArenaFeedView | null): WatchState {
     restReason: resting ? (phaseMark(round, round.phase)?.reason ?? null) : null,
     nextRoundAt: view.pit.nextRoundAt,
     paused: view.pit.paused,
+    hold: view.pit.hold ?? null,
   };
 }
 

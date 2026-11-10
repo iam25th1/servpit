@@ -100,7 +100,9 @@ describe("the clock a watcher reads", () => {
 describe("what it does not say", () => {
   it("carries no balance, no address, no pid and no path", () => {
     const answer = health(state({ last: round("result"), nextRoundAt: AT }), T0, INTERVAL, "fake", T0);
-    expect(Object.keys(answer).sort()).toEqual(["network", "nextRoundInSeconds", "ok", "pit", "sinceLastRoundSeconds", "worker"]);
+    // Why it is paused, when it is, but still no money: balances are on
+    // /api/status, which an uptime check does not poll.
+    expect(Object.keys(answer).sort()).toEqual(["network", "nextCheckAt", "nextRoundInSeconds", "ok", "pausedFor", "pit", "reason", "sinceLastRoundSeconds", "worker"]);
     const body = JSON.stringify(answer);
     expect(body).not.toMatch(/0x|wei|chips|pid|\/|balance/i);
   });

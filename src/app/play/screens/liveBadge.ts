@@ -17,6 +17,8 @@ export interface BadgeState {
   resting: boolean;
   /** True while an operator has stopped the pit. */
   paused: boolean;
+  /** Set while the pit has stopped itself, because a round could not be paid for. */
+  hold?: { kind: "funds" | "retirements" } | null;
   /** True while what is on screen is a recording rather than the pit. */
   replay: boolean;
 }
@@ -42,6 +44,17 @@ export function liveBadge(watching: BadgeState): Badge {
   if (watching.error) return { text: watching.error, tone: "offair" };
   if (!watching.live) return { text: "reconnecting", tone: "offair" };
   if (watching.paused) return { text: "the pit is paused", tone: "waiting" };
+  if (watching.hold) return { text: holdHeadline(watching.hold.kind).toLowerCase().replace(/\.$/, ""), tone: "waiting" };
   if (watching.resting) return { text: "between rounds", tone: "waiting" };
   return { text: "watching live", tone: "live" };
+}
+
+/**
+ * What a held pit is called, everywhere it is named.
+ *
+ * Said the same way on the badge, the countdown and the resting card, so a
+ * viewer reads one state rather than three descriptions of it.
+ */
+export function holdHeadline(kind: "funds" | "retirements"): string {
+  return kind === "funds" ? "Pit paused: out of funds." : "Pit paused: retirement limit reached.";
 }

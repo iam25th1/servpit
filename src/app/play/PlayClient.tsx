@@ -909,6 +909,7 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
                       pulling: pullFeed.pulling,
                       busy: watch.round !== null && !watch.resting,
                       handle,
+                      held: watch.hold?.kind ?? null,
                       // Read once per render rather than on a clock: the two
                       // figures it phrases move in minutes, and the card must
                       // not be rebuilt every second to say so.
@@ -918,6 +919,9 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
                       handle !== null &&
                       !pullFeed.pulling &&
                       watch.resting &&
+                      // A held pit cannot pay for the round a pull would
+                      // start, and the route says so; the lever says it first.
+                      watch.hold === null &&
                       (pullFeed.view?.left === null || (pullFeed.view?.left ?? 1) > 0),
                     onPull: () => {
                       if (!handle) return;
@@ -936,6 +940,7 @@ export function PlayClient({ bankEnabled = false, arenaMode = false }: { bankEna
                     resting: watch.resting,
                     restReason: watch.restReason,
                     paused: watch.paused,
+                    hold: watch.hold,
                     nextRoundAt: watch.nextRoundAt,
                     // A replay is showing the last round, so the line reads
                     // in the past tense exactly as the resting card does.

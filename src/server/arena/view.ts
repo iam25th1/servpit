@@ -14,7 +14,7 @@
 // outcome into the store before the fight phase, so there are two nets, and
 // this one is the one that would still hold if the other tore.
 
-import type { ArenaPhase, ArenaRound, ArenaState } from "./state";
+import type { ArenaHoldKind, ArenaPhase, ArenaRound, ArenaState } from "./state";
 
 /** Phases where the fight is being shown or is over. */
 const OUTCOME_VISIBLE: ReadonlySet<ArenaPhase> = new Set<ArenaPhase>(["fight", "result"]);
@@ -35,6 +35,12 @@ export interface ArenaView {
     reasonedRounds: number;
     /** Those decisions, counted. Neither says anything about how a round ended. */
     reasonedDecisions: number;
+    /**
+     * Set while the pit holds itself because a round cannot be paid for.
+     * What kind, since when, and the sentence to show. No balances: those
+     * are on /api/status, and a spectator needs the reason, not the ledger.
+     */
+    hold?: { kind: ArenaHoldKind; since: string; reason: string } | null;
   };
   /** The round being played, or the last one if the pit is resting. */
   round: ArenaRoundView | null;
@@ -108,6 +114,7 @@ export function arenaView(
       // any of them ended.
       reasonedRounds: learning.reasonedRounds,
       reasonedDecisions: learning.reasonedDecisions,
+      hold: state.hold ? { kind: state.hold.kind, since: state.hold.since, reason: state.hold.reason } : null,
     },
     round: roundView(state.round),
     // The last round is finished, so its fight and its result are history
@@ -124,6 +131,8 @@ export function phaseEvent(view: ArenaView): {
   durationMs: number | null;
   reason: string | null;
   paused: boolean;
+  /** What kind of hold the pit is in, or null, so a hold starting or lifting is a change. */
+  hold: ArenaHoldKind | null;
   nextRoundAt: string | null;
 } {
   const round = view.round;
@@ -135,6 +144,7 @@ export function phaseEvent(view: ArenaView): {
     durationMs: mark?.durationMs ?? null,
     reason: mark?.reason ?? null,
     paused: view.pit.paused,
+    hold: view.pit.hold?.kind ?? null,
     nextRoundAt: view.pit.nextRoundAt,
   };
 }
