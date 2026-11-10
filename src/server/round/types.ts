@@ -15,7 +15,18 @@ import type { PrizeSplit } from "./prize";
 import type { RolloverStore } from "./rollover";
 import type { DebtStore } from "./debt";
 import type { SummaryStore } from "./summaries";
-import type { WreckRecord, WreckStore } from "./wrecks";
+import type { WreckRecord, WreckStore, WreckTrigger } from "./wrecks";
+
+/**
+ * Why a retirement was held rather than carried out.
+ *
+ * no operator     there is no operator wallet to refill the seat from
+ * operator short  the operator cannot send a whole refill
+ * limit           the pit has retired as many agents as an hour allows
+ * cycle           this seat was emptied within the hour and its new agent
+ *                 has not played a round since
+ */
+export type RetirementHold = "no operator" | "operator short" | "limit" | "cycle";
 import type { ReconcileResult } from "../reconcile";
 import type { CostMeter, ServClient } from "../serv/client";
 import type { TransferOutcome } from "../transfers";
@@ -216,6 +227,12 @@ export interface RoundRun {
   seizures: TransferOutcome[];
   /** Who took each emptied seat, and what the operator put in it. */
   replacements: Array<{ walletId: string; identityId: string; name: string; face: string | null; occupantId: string; fundedWei: bigint; outcome: TransferOutcome | null }>;
+  /**
+   * Agents that met a retirement trigger and were kept in their seat instead,
+   * with why. Nothing was seized, written to the graveyard or refilled for
+   * them; the next round finds them exactly where this one left them.
+   */
+  held: Array<{ walletId: string; name: string; trigger: WreckTrigger; why: RetirementHold }>;
   payout: TransferOutcome | null;
   /**
    * Set when a house bot won. Eighteen of the twenty four entrants have no

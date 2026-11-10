@@ -39,6 +39,8 @@ export interface LeverState {
   /** This browser's handle, or null until one is chosen. */
   handle: string | null;
   now: number;
+  /** Set while the pit holds itself, and why. A pull then has no round to start. */
+  held?: "funds" | "retirements" | null;
 }
 
 /**
@@ -71,6 +73,12 @@ export function leverLines(state: LeverState): LeverLines {
   const blocked =
     state.error !== null
       ? state.error
+      // Held, the lever is dead for everybody, handle or not, and saying
+      // "3 pulls left" under it would promise a round the pit cannot pay for.
+      : state.held === "funds"
+        ? "The pit is paused until it is funded. The lever comes back when it plays again."
+      : state.held === "retirements"
+        ? "The pit is paused at its retirement limit. The lever comes back when it plays again."
       // A visitor with no handle has the field for one on the same card, but
       // a dead control with nothing under it reads as broken, and "3 pulls
       // left" under a button that will not press read as a bug. So it says

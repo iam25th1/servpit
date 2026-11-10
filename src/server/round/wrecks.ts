@@ -10,7 +10,9 @@
 // pushing, whether it was playing with borrowed chips, how far it had fallen
 // from its best, and how long it lasted.
 
-import { StoreFile, UNKNOWN_NETWORK } from "../store/file";
+import { graveyardOptions, type GraveyardOptions } from "@/config/graveyard";
+import { UNKNOWN_NETWORK } from "../store/file";
+import { GraveyardCache, appendWreck, graveyardPaths, type GraveyardPaths } from "./graveyard";
 
 /** The condition the rules module fired on. */
 export type WreckTrigger = "debt above the ceiling" | "broke and denied credit";
@@ -55,49 +57,61 @@ export function overReached(record: WreckRecord): boolean {
 }
 
 export class WreckStore {
-  private records: WreckRecord[] = [];
-  private readonly sync: StoreFile;
+  private readonly paths: GraveyardPaths;
+  private readonly cache: GraveyardCache;
 
   /**
    * The graveyard is served from the server context and written from the
-   * settle context, both in one process and each with its own store over this
-   * file. Read once at construction, the wall never grew: a round settled
-   * while the page was open left no mark on it until a restart.
+   * settle context, both in one process and each with its own store over
+   * these files. Every read checks the files first, so a round settled while
+   * the page was open is on the wall without a restart.
+   *
+   * Opened on the old single file name, wrecks-<network>.json, which is still
+   * read while it is there. New retirements go to the files beside it; see
+   * graveyard.ts.
    */
-  constructor(file: string, network: string = UNKNOWN_NETWORK) {
-    this.sync = new StoreFile(file, network, (body) => {
-      this.records = Array.isArray(body?.wrecks) ? (body.wrecks as WreckRecord[]) : [];
-    });
-    this.sync.read();
+  constructor(
+    file: string,
+    private readonly network: string = UNKNOWN_NETWORK,
+    private readonly options: GraveyardOptions = graveyardOptions(),
+  ) {
+    this.paths = graveyardPaths(file);
+    this.cache = new GraveyardCache(this.paths, network);
+    // Read once now, so a graveyard from another network refuses to open
+    // rather than refusing the first retirement.
+    this.cache.records();
   }
 
-  /** Records a wreck, or replaces the one already on file for that round. */
+  /** Records a wreck. A second record for the same round and seat replaces the first when read. */
   save(record: WreckRecord): void {
-    this.sync.read();
-    const i = this.records.findIndex((r) => r.roundId === record.roundId && r.walletId === record.walletId);
-    if (i >= 0) this.records[i] = record;
-    else this.records.push(record);
-    this.flush();
+    appendWreck(this.paths, this.network, record, this.options);
   }
 
   /** Whether this wallet has already been wrecked out of this round. */
   has(roundId: string, walletId: string): boolean {
-    this.sync.read();
-    return this.records.some((r) => r.roundId === roundId && r.walletId === walletId);
+    return this.cache.records().some((r) => r.roundId === roundId && r.walletId === walletId);
   }
 
   all(): WreckRecord[] {
-    this.sync.read();
-    return [...this.records];
+    return [...this.cache.records()];
+  }
+
+  /** How many agents were retired at or after this moment, in epoch ms. */
+  countSince(sinceMs: number): number {
+    return this.cache.records().filter((r) => Date.parse(r.at) >= sinceMs).length;
+  }
+
+  /** The most recent retirement from this seat, or null when it has had none. */
+  lastFor(walletId: string): WreckRecord | null {
+    let last: WreckRecord | null = null;
+    for (const r of this.cache.records()) {
+      if (r.walletId === walletId && (last === null || Date.parse(r.at) >= Date.parse(last.at))) last = r;
+    }
+    return last;
   }
 
   /** How many times this seat has been emptied, which sets the next identity. */
   countFor(walletId: string): number {
-    this.sync.read();
-    return this.records.filter((r) => r.walletId === walletId).length;
-  }
-
-  private flush(): void {
-    this.sync.write({ version: 1, wrecks: this.records, updatedAt: new Date().toISOString() });
+    return this.cache.records().filter((r) => r.walletId === walletId).length;
   }
 }

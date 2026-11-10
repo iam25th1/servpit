@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_SERV } from "@/config/serv";
-import { stakeWeiFrom, toChips, weiPerChip } from "@/config/stake";
+import { seatRefillWei, stakeWeiFrom, toChips } from "@/config/stake";
 import { BankrollCache } from "../bankroll";
 import { TransferLedger } from "../ledger";
 import { CostMeter, ServClient, type ChatTransport } from "../serv/client";
@@ -27,7 +27,6 @@ import { overReached } from "./wrecks";
 import { NAMED_AGENTS } from "@/config/agents";
 import { ORIGINAL_FACES, REPLACEMENTS } from "@/config/replacements";
 import { totalOwed } from "./debt";
-import { wreckMoments } from "@/app/play/screens/wreckMoment";
 
 const FUNDED_WEI = 100_000_000_000_000n;
 let dir: string;
@@ -501,8 +500,11 @@ describe("a broke agent does not get to sit out quietly", () => {
     const seat = stakeWeiFrom();
     dir = mkdtempSync(join(tmpdir(), "servpit-bankflag-"));
     const chain = new FakeChain({ initialBalanceWei: seat / 2n });
-    const wallets = await openWallets(chain, new WalletRegistry(join(dir, "wallets.json")), { bank: true });
+    // An operator with refills to give: a retirement it could not refill
+    // would be held rather than carried out, which is its own test below.
+    const wallets = await openWallets(chain, new WalletRegistry(join(dir, "wallets.json")), { bank: true, operator: true });
     chain.fund(wallets.bank!.address, seat * 200n);
+    chain.fund(wallets.operator!.address, seat * 500n);
     const debts = new DebtStore(join(dir, "debts.json"));
     const wreckStore = new WreckStore(join(dir, "wrecks.json"));
     const ctx = {
@@ -556,8 +558,9 @@ describe("a broke agent does not get to sit out quietly", () => {
     const seat = stakeWeiFrom();
     dir = mkdtempSync(join(tmpdir(), "servpit-bankflag-"));
     const chain = new FakeChain({ initialBalanceWei: seat + seat / 2n, gasReserveWei: seat * 2n });
-    const wallets = await openWallets(chain, new WalletRegistry(join(dir, "wallets.json")), { bank: true });
+    const wallets = await openWallets(chain, new WalletRegistry(join(dir, "wallets.json")), { bank: true, operator: true });
     chain.fund(wallets.bank!.address, seat * 200n);
+    chain.fund(wallets.operator!.address, seat * 500n);
     const wreckStore = new WreckStore(join(dir, "wrecks.json"));
     const ctx = {
       chain,
@@ -908,43 +911,39 @@ describe("when the money runs out", () => {
     expect(chain.balanceOf(wallets.bank!.address)).toBe(0n);
   });
 
-  it("leaves a wrecked seat empty when the operator is empty, and says so plainly", async () => {
-    // The bank has money and says no, so the agents are wrecked for want of
-    // credit rather than for want of a lender.
-    const { ctx, chain, wallets, seat } = await pit({ bankWei: seatMultiple(200), operatorWei: 0n, lends: false });
+  it("holds the retirement when the operator cannot refill the seat, rather than seating somebody with nothing", async () => {
+    // The bank has money and says no, so these agents meet the trigger for
+    // want of credit. The operator has nothing, so nobody could take their
+    // seats with anything to play with: retiring them would seat an agent
+    // that is short the moment it sits down, which is the loop.
+    const { ctx, chain, wallets } = await pit({ bankWei: seatMultiple(200), operatorWei: 0n, lends: false });
     const run = await runRound(ctx, await planRound(ctx, "dry-operator"));
 
-    expect(run.wrecks.length).toBeGreaterThan(0);
-    expect(run.replacements.length).toBe(run.wrecks.length);
-    for (const r of run.replacements) expect(r.fundedWei).toBe(0n);
+    expect(run.wrecks).toEqual([]);
+    expect(run.replacements).toEqual([]);
+    expect(run.held.length).toBeGreaterThan(0);
+    for (const h of run.held) expect(h.why).toBe("operator short");
+    expect(ctx.wreckStore.all()).toEqual([]);
     expect(chain.balanceOf(wallets.operator!.address)).toBe(0n);
     expect(run.reconciliation.ok).toBe(true);
-
-    // What the player is told. The sentence is the wreck screen's, built from
-    // the same figures.
-    const moments = wreckMoments(
-      run.wrecks.map((w) => ({ ...w, face: null, overReached: overReached(w) })),
-      run.replacements.map((r) => ({ walletId: r.walletId, name: r.name, face: r.face, arrival: "", fundedWei: r.fundedWei.toString() })),
-      weiPerChip(),
-    );
-    for (const moment of moments) expect(moment.heir?.staked).toMatch(/sits down with nothing\. The operator had none to give\./);
-    expect(seat).toBeGreaterThan(0n);
   });
 
-  it("funds the next replacement as soon as the operator has chips, with nothing else changed", async () => {
+  it("retires and refills in full as soon as the operator has chips, with nothing else changed", async () => {
     const { ctx, chain, wallets, seat } = await pit({ bankWei: seatMultiple(200), operatorWei: 0n, lends: false });
     const first = await runRound(ctx, await planRound(ctx, "before-funding"));
-    expect(first.replacements.length).toBeGreaterThan(0);
-    for (const r of first.replacements) expect(r.fundedWei).toBe(0n);
+    expect(first.replacements).toEqual([]);
+    expect(first.held.length).toBeGreaterThan(0);
 
     // The only change: somebody funds the operator wallet.
     chain.fund(wallets.operator!.address, seat * 500n);
     ctx.bankroll.invalidate();
 
     const second = await runRound(ctx, await planRound(ctx, "after-funding"));
-    const funded = second.replacements.filter((r) => r.fundedWei > 0n);
-    expect(funded.length).toBeGreaterThan(0);
-    for (const r of funded) expect(r.outcome?.txHash).toMatch(/^0x[0-9a-f]{64}$/);
+    expect(second.replacements.length).toBeGreaterThan(0);
+    for (const r of second.replacements) {
+      expect(r.fundedWei).toBe(seatRefillWei(seat));
+      expect(r.outcome?.txHash).toMatch(/^0x[0-9a-f]{64}$/);
+    }
     expect(second.reconciliation.ok).toBe(true);
   });
 });

@@ -213,6 +213,58 @@ export interface ArenaRound {
   result?: ArenaResult;
 }
 
+/** One wallet the pit spends from, against what a round needs it to hold. */
+export interface ArenaWalletFunds {
+  /** What it holds, in chips and in wei. */
+  chips: number;
+  wei: string;
+  /** What a round needs it to hold, in chips and in wei. */
+  neededChips: number;
+  neededWei: string;
+  /** What it is short of that, zero when it is not. */
+  shortChips: number;
+  shortWei: string;
+  ok: boolean;
+}
+
+/**
+ * What the pit last found when it asked whether it could fund a round.
+ *
+ * Written by the worker every time it looks, so the status route can answer
+ * from the file rather than reading the chain on every request. A wallet the
+ * pit does not use, a bank with the bank off or an operator with no key, is
+ * null rather than a zero, because a zero would read as broke.
+ */
+export interface ArenaFunds {
+  checkedAt: string;
+  ok: boolean;
+  pot: ArenaWalletFunds;
+  bank: ArenaWalletFunds | null;
+  operator: ArenaWalletFunds | null;
+  /** Agents retired in the last hour, against the most an hour may retire. */
+  retirements?: { lastHour: number; cap: number };
+}
+
+/** Why the pit is not playing on its own account, rather than an operator's. */
+export type ArenaHoldKind = "funds" | "retirements";
+
+/**
+ * The pit holding itself, because a round would spend money it does not have.
+ *
+ * Separate from paused, which is an operator's own stop and is lifted by the
+ * operator. A hold is lifted by the worker, the first time it looks and finds
+ * the round can be paid for.
+ */
+export interface ArenaHold {
+  kind: ArenaHoldKind;
+  /** When it started holding. */
+  since: string;
+  /** A sentence a player can read. */
+  reason: string;
+  /** When it will look again. */
+  nextCheckAt: string;
+}
+
 export interface ArenaState {
   /** The round being played, or the last one if the pit is resting. */
   round: ArenaRound | null;
@@ -222,10 +274,24 @@ export interface ArenaState {
   paused: boolean;
   /** When the next round is due, so a client can show a countdown. */
   nextRoundAt: string | null;
+  /**
+   * Set while the pit cannot fund a round, and cleared the round it can.
+   * Absent on a file written before holds existed, which reads as none.
+   */
+  hold?: ArenaHold | null;
+  /** The last funding check, or null before the first one. */
+  funds?: ArenaFunds | null;
   updatedAt: string;
 }
 
-const EMPTY: ArenaState = { round: null, last: null, paused: false, nextRoundAt: null, updatedAt: new Date(0).toISOString() };
+/**
+ * What a writer passes. hold and funds may be left out, and are then carried
+ * forward from what is on file: most writes are a round publishing its next
+ * phase, and a phase has nothing to say about either.
+ */
+export type ArenaWrite = Omit<ArenaState, "updatedAt">;
+
+const EMPTY: ArenaState = { round: null, last: null, paused: false, nextRoundAt: null, hold: null, funds: null, updatedAt: new Date(0).toISOString() };
 
 export class ArenaStore {
   private state: ArenaState = { ...EMPTY };
@@ -240,6 +306,8 @@ export class ArenaStore {
         last,
         paused: body?.paused === true,
         nextRoundAt: typeof body?.nextRoundAt === "string" ? body.nextRoundAt : null,
+        hold: (body?.hold ?? null) as ArenaHold | null,
+        funds: (body?.funds ?? null) as ArenaFunds | null,
         updatedAt: typeof body?.updatedAt === "string" ? body.updatedAt : EMPTY.updatedAt,
       };
     });
@@ -252,8 +320,11 @@ export class ArenaStore {
     return this.state;
   }
 
-  write(next: Omit<ArenaState, "updatedAt">): ArenaState {
-    this.state = { ...next, updatedAt: new Date().toISOString() };
+  write(next: ArenaWrite): ArenaState {
+    this.sync.read();
+    const hold = next.hold === undefined ? (this.state.hold ?? null) : next.hold;
+    const funds = next.funds === undefined ? (this.state.funds ?? null) : next.funds;
+    this.state = { ...next, hold, funds, updatedAt: new Date().toISOString() };
     this.sync.write(this.state as unknown as Record<string, unknown>);
     return this.state;
   }

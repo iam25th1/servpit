@@ -20,8 +20,9 @@ import { existsSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { PAUSE_FILE, arenaMode, roundIntervalSeconds } from "../src/config/arena";
 import { SERV_OFF_FILE } from "../src/config/serv";
-import { maxLoanStakes } from "../src/config/economy";
-import { CHIPS_PER_FUNDED_WALLET, stakeWeiFrom, toChips, weiPerChip } from "../src/config/stake";
+import { formatEther } from "viem";
+import { stakeWeiFrom, toChips, toChipsUp } from "../src/config/stake";
+import { bankNeedsWei, lends, operatorNeedsWei, potNeedsWei } from "../src/server/arena/funding";
 import { servReasoningOn } from "../src/server/serv/switch";
 import { getServerContext } from "../src/server/context";
 import { readEnv } from "../src/server/env";
@@ -74,6 +75,7 @@ function operate(command: Exclude<Command, "run">, dataDir: string, network: str
   console.log(`this shell: arena mode ${arenaMode() ? "on" : "off"}, a round every ${roundIntervalSeconds()} s`);
   // A round has no id until its plan lands, so the phase is the whole answer
   // for the first few seconds of one.
+  if (state.hold) console.log(`held since ${state.hold.since}: ${state.hold.reason} Next look at ${state.hold.nextCheckAt}.`);
   if (state.round) console.log(`current round: phase ${state.round.phase}${state.round.roundId ? `, ${state.round.roundId}` : ""}`);
   if (state.nextRoundAt && !paused) console.log(`next round at: ${state.nextRoundAt}`);
   if (state.last?.result) {
@@ -89,10 +91,10 @@ function operate(command: Exclude<Command, "run">, dataDir: string, network: str
  *
  * Only for status, and only on the machine: this opens every wallet and reads
  * the chain, which is why pause and resume do not. The thresholds are the ones
- * the pit actually fails on, rather than a number somebody liked: the pot has
- * to cover the prize it carries plus the fee a payout costs, the bank has to
- * cover the largest loan it is allowed to make, and the operator has to cover
- * funding one replacement.
+ * the worker holds on, from the same functions: the pot has to cover the
+ * prize it carries plus the fee a payout costs, the bank the largest loan it
+ * is allowed to make plus its fee, and the operator one whole refill plus its
+ * fee.
  */
 async function reportBalances(): Promise<void> {
   let ctx;
@@ -104,26 +106,32 @@ async function reportBalances(): Promise<void> {
   }
   ctx.bankroll.invalidate();
   const chips = (wei: bigint): string => `${toChips(wei)} chips`;
+  // What to send, rounded up, so following the line always clears the bar.
+  const send = (shortWei: bigint): string => `${toChipsUp(shortWei)} chips, ${formatEther(shortWei)} ETH`;
   const warnings: string[] = [];
+  const stakeWei = stakeWeiFrom();
+  const reserveWei = ctx.chain.gasReserveWei;
 
+  // The same bars the worker holds on, from the same functions, so this and
+  // the pit cannot disagree about whether it will play.
   const potWei = await ctx.bankroll.get(ctx.wallets.pot);
   const carriedWei = ctx.flow.rollover.carriedWei;
-  const needsWei = carriedWei + ctx.chain.gasReserveWei;
+  const potNeeds = potNeedsWei(carriedWei, reserveWei);
   console.log(`pot: ${chips(potWei)}${carriedWei > 0n ? `, carrying ${chips(carriedWei)} into the next round` : ""}`);
-  if (potWei <= needsWei) warnings.push("The pot cannot cover the prize it carries and the fee a payout costs. The pit will rest until it is topped up.");
+  if (potWei < potNeeds) warnings.push(`The pot cannot cover the prize it carries and the fee a payout costs. The pit holds until it is topped up. Send at least ${send(potNeeds - potWei)}.`);
 
-  if (ctx.wallets.bank) {
+  if (lends(ctx) && ctx.wallets.bank) {
     const bankWei = await ctx.bankroll.get(ctx.wallets.bank);
-    const largestLoanWei = maxLoanStakes() * stakeWeiFrom();
-    console.log(`bank: ${chips(bankWei)}`);
-    if (bankWei < largestLoanWei) warnings.push(`Marrow is under the largest loan it may make, ${chips(largestLoanWei)}, so it will refuse borrowers it would otherwise carry.`);
+    const needs = bankNeedsWei(stakeWei, reserveWei);
+    console.log(`bank: ${chips(bankWei)}, a round needs ${chips(needs)}`);
+    if (bankWei < needs) warnings.push(`Marrow is under the largest loan it may make and its fee. The pit holds until it is topped up. Send at least ${send(needs - bankWei)}.`);
   }
 
-  if (ctx.wallets.operator) {
+  if (lends(ctx) && ctx.wallets.operator) {
     const operatorWei = await ctx.bankroll.get(ctx.wallets.operator);
-    const replacementWei = weiPerChip() * BigInt(CHIPS_PER_FUNDED_WALLET);
-    console.log(`operator: ${chips(operatorWei)}`);
-    if (operatorWei < replacementWei) warnings.push(`The operator is under one replacement, ${chips(replacementWei)}, so a wrecked seat will stay empty.`);
+    const needs = operatorNeedsWei(stakeWei, reserveWei);
+    console.log(`operator: ${chips(operatorWei)}, a round needs ${chips(needs)}`);
+    if (operatorWei < needs) warnings.push(`The operator is under one whole refill and its fee, so no agent can be retired. The pit holds until it is topped up. Send at least ${send(needs - operatorWei)}.`);
   }
 
   for (const warning of warnings) console.log(`warning: ${warning}`);

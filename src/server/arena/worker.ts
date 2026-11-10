@@ -13,6 +13,7 @@ import { existsSync } from "node:fs";
 import { backingWindowSeconds } from "@/config/backing";
 import { bankEnabled } from "@/config/economy";
 import { PULL_POLL_MS } from "@/config/pulls";
+import { fundsCheckSeconds } from "@/config/arena";
 import { profileFor } from "@/config/replacements";
 import { toChips, weiPerChip } from "@/config/stake";
 import { ticksToMs } from "@/config/playback";
@@ -27,7 +28,8 @@ import { readPullSettings } from "../pulls/settings";
 import { settleBackingQuietly } from "../backing/settle";
 import { settleReadsQuietly } from "../calls/settle";
 import { settleFightersQuietly } from "../fighters/settle";
-import { ArenaStore, type ArenaPhase, type ArenaRound, type ArenaSeat, type ArenaState, type PhaseMark } from "./state";
+import { fundingCheck, type FundingReport } from "./funding";
+import { ArenaStore, type ArenaFunds, type ArenaPhase, type ArenaRound, type ArenaSeat, type ArenaState, type PhaseMark } from "./state";
 
 const sleepMs = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
 
@@ -72,7 +74,24 @@ export interface LoopOptions {
   play?: (ctx: ServerContext, store: ArenaStore, nextAt: number, pulledBy?: string | null) => Promise<ArenaOutcome | void>;
   /** The queue of asks from the site, when the pit takes them. */
   pulls?: PullSource;
+  /**
+   * How long a pit that cannot fund a round waits before it looks again.
+   * The real one is SERVPIT_FUNDS_CHECK_SECONDS, ten minutes by default.
+   */
+  fundsCheckMs?: number;
+  /** Injected by tests. The real one is fundingCheck. */
+  checkFunds?: (ctx: ServerContext, now: number) => Promise<FundingReport>;
 }
+
+/**
+ * How often a holding pit still says it is alive.
+ *
+ * The heartbeat is otherwise written once an interval, and a hold waits ten
+ * minutes between looks: long enough for the health route to call a worker
+ * that is only waiting for money a dead one. Once a minute is well inside the
+ * margin and costs one small write.
+ */
+export const HOLD_BEAT_MS = 60_000;
 
 /**
  * What the loop needs from the pull log.
@@ -102,11 +121,19 @@ export async function runArenaLoop(options: LoopOptions): Promise<{ played: numb
   const play = options.play ?? playArenaRound;
   const maxRounds = options.maxRounds ?? 0;
   const counts = { played: 0, failed: 0, rested: 0 };
+  const fundsCheckMs = options.fundsCheckMs ?? fundsCheckSeconds() * 1_000;
+  const checkFunds = options.checkFunds ?? fundingCheck;
 
   while (running()) {
     const startedAt = now();
-    const nextAt = startedAt + intervalMs;
+    let nextAt = startedAt + intervalMs;
+    // True while the pit is holding for money. A hold waits the slow interval
+    // and nothing cuts it short: an ask from the site is a round the pit has
+    // just said it cannot pay for, and reading the chain every time somebody
+    // pulls the lever would be the busy loop this is here to stop.
+    let holding = false;
     options.beat?.();
+    let beatAt = startedAt;
     try {
       if (existsSync(pauseFile)) {
         rest(store, "Paused by the operator.", true, nextAt);
@@ -114,12 +141,15 @@ export async function runArenaLoop(options: LoopOptions): Promise<{ played: numb
         log.info("arena paused", { pauseFile });
       } else {
         clearPause(store);
-        const funds = await fundsCheck(ctx);
-        if (!funds.ok) {
-          rest(store, funds.reason, false, nextAt);
+        const report = await checkFunds(ctx, now());
+        if (!report.ok) {
+          nextAt = now() + fundsCheckMs;
+          holdForFunds(store, report, nextAt, now());
+          holding = true;
           counts.rested += 1;
-          log.warn("arena resting on funds", { reason: funds.reason });
         } else {
+          resumeIfHeld(store, report);
+          log.info("arena treasury", { potChips: report.pot.chips, ...(report.bank ? { bankChips: report.bank.chips } : {}), ...(report.operator ? { operatorChips: report.operator.chips } : {}) });
           // Somebody asking for this round, if anybody did. Taken before the
           // round starts so a second ask cannot queue behind it while the
           // plan is being built, and named on the round itself.
@@ -155,9 +185,13 @@ export async function runArenaLoop(options: LoopOptions): Promise<{ played: numb
     // it started, exactly as a scheduled one is.
     let waitMs = nextAt - now();
     while (waitMs > 0 && running()) {
-      if (options.pulls?.pending()) break;
+      if (!holding && options.pulls?.pending()) break;
       const slice = Math.min(waitMs, PULL_POLL_MS);
       await sleep(slice);
+      if (holding && now() - beatAt >= HOLD_BEAT_MS) {
+        options.beat?.();
+        beatAt = now();
+      }
       waitMs = nextAt - now();
     }
     if (!running()) break;
@@ -165,33 +199,55 @@ export async function runArenaLoop(options: LoopOptions): Promise<{ played: numb
   return counts;
 }
 
+/** What the state keeps of a check: the report without its sentence. */
+function fundsOf(report: FundingReport): ArenaFunds {
+  const funds: ArenaFunds = { checkedAt: report.checkedAt, ok: report.ok, pot: report.pot, bank: report.bank, operator: report.operator };
+  return report.retirements ? { ...funds, retirements: report.retirements } : funds;
+}
+
 /**
- * Whether a round could do anything except fail on money.
+ * The pit cannot pay for a round, so it plays none and says why.
  *
- * Two things are checked, both about the pot, because the pot is the only
- * wallet whose emptiness fails a round rather than degrading it. A bank with
- * nothing in it lends nothing and the round plays; an operator with nothing
- * leaves a wrecked seat empty and the round plays. A pot that cannot pay
- * cannot finish: entries are collected and then the payout throws, which is
- * the one shape where agents have paid for a round nobody can settle.
+ * Logged once, on the check that starts the hold, and never again while it
+ * lasts: a pit left broke overnight wrote a warning every three minutes,
+ * which buried the one line that mattered under a few hundred copies of it.
  *
- * The bank's balance is read as well, and reported, so an operator watching
- * the log can see the treasury drain before anybody asks them about it.
+ * What a viewer sees is the last round that finished, with the reason under
+ * it. The round on file used to be whatever the last interval left there,
+ * which on a broke pit was a round of retirements; a held pit shows the last
+ * real result instead, and adds one resting mark to it rather than one per
+ * look.
  */
-export async function fundsCheck(ctx: ServerContext): Promise<{ ok: true } | { ok: false; reason: string }> {
-  const potWei = await ctx.bankroll.get(ctx.wallets.pot);
-  const reserveWei = ctx.chain.gasReserveWei;
-  const carriedWei = ctx.flow.rollover.carriedWei;
-  if (ctx.wallets.bank) {
-    log.info("arena treasury", { bankChips: toChips(await ctx.bankroll.get(ctx.wallets.bank)), potChips: toChips(potWei) });
+function holdForFunds(store: ArenaStore, report: FundingReport, nextCheckAt: number, at: number): void {
+  const current = store.read();
+  const reason = report.reason ?? "The pit is paused because it is out of funds.";
+  const kind = report.holdKind ?? "funds";
+  const already = current.hold ?? null;
+  if (already && already.kind === kind) {
+    store.write({ round: current.round, last: current.last, paused: current.paused, nextRoundAt: null, hold: { ...already, reason, nextCheckAt: new Date(nextCheckAt).toISOString() }, funds: fundsOf(report) });
+    return;
   }
-  if (potWei <= reserveWei) {
-    return { ok: false, reason: "The pot has nothing spare for the fees a payout costs, so a winner could not be paid." };
-  }
-  if (potWei < carriedWei + reserveWei) {
-    return { ok: false, reason: "The pot is holding less than the prize it carries, so a win could not be paid out." };
-  }
-  return { ok: true };
+  const since = already ? already.since : new Date(at).toISOString();
+  const shown = current.last ?? current.round;
+  const marked = new Date(at).toISOString();
+  const round = shown ? { ...shown, phase: "resting" as ArenaPhase, phases: [...shown.phases, { phase: "resting" as ArenaPhase, at: marked, reason }] } : null;
+  store.write({ round, last: current.last, paused: current.paused, nextRoundAt: null, hold: { kind, since, reason, nextCheckAt: new Date(nextCheckAt).toISOString() }, funds: fundsOf(report) });
+  log.warn(kind === "funds" ? "arena paused: out of funds" : "arena paused: retirement limit", {
+    reason,
+    potChips: report.pot.chips,
+    potShortChips: report.pot.shortChips,
+    ...(report.bank ? { bankChips: report.bank.chips, bankShortChips: report.bank.shortChips } : {}),
+    ...(report.operator ? { operatorChips: report.operator.chips, operatorShortChips: report.operator.shortChips } : {}),
+    ...(report.retirements ? { retiredLastHour: report.retirements.lastHour, retirementCap: report.retirements.cap } : {}),
+  });
+}
+
+/** The money is back: the hold is lifted, once, and said once. */
+function resumeIfHeld(store: ArenaStore, report: FundingReport): void {
+  const current = store.read();
+  const held = current.hold ?? null;
+  store.write({ round: current.round, last: current.last, paused: current.paused, nextRoundAt: current.nextRoundAt, hold: null, funds: fundsOf(report) });
+  if (held) log.info("arena resumed", { kind: held.kind, heldSince: held.since, potChips: report.pot.chips, ...(report.bank ? { bankChips: report.bank.chips } : {}), ...(report.operator ? { operatorChips: report.operator.chips } : {}) });
 }
 
 /**

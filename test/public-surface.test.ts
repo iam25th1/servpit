@@ -54,6 +54,7 @@ describe("the route inventory", () => {
       "src/app/api/pull/route.ts GET,POST",
       "src/app/api/round/plan/route.ts POST",
       "src/app/api/round/run/route.ts POST",
+      "src/app/api/status/route.ts GET",
     ]);
   });
 
@@ -149,6 +150,7 @@ describe("in production", () => {
     bodies.push(await (await (await import("@/app/api/leaderboard/route")).GET(new NextRequest("http://localhost/api/leaderboard"))).text());
     bodies.push(await (await (await import("@/app/api/graveyard/route")).GET()).text());
     bodies.push(await (await (await import("@/app/api/health/route")).GET()).text());
+    bodies.push(await (await (await import("@/app/api/status/route")).GET()).text());
     bodies.push(await (await (await import("@/app/api/calls/route")).GET(new NextRequest("http://localhost/api/calls?handle=ash"))).text());
     for (const body of bodies) {
       // No key, no url with a credential in it, no path on the operator's

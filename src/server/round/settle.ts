@@ -23,13 +23,13 @@ import { classOfSources } from "./summaries";
 import { overReached, type WreckRecord, type WreckTrigger } from "./wrecks";
 import { CREDIT_TERMS } from "@/config/economy";
 import { chooseOccupant, faceFor, generationOf } from "@/config/replacements";
-import { CHIPS_PER_FUNDED_WALLET } from "@/config/stake";
+import { seatRefillWei } from "@/config/stake";
 import { splitPrize, type PrizeSplit } from "./prize";
-import { bankEnabled } from "@/config/economy";
+import { RETIREMENT_WINDOW_MS, bankEnabled, retirementsPerHour } from "@/config/economy";
 import { withSettleLock } from "./settleLock";
 import { splitCappedPrize } from "@/economy/prize";
 import type { Wallet } from "../wallets/types";
-import type { FlowContext, RoundPlan, RoundRun } from "./types";
+import type { FlowContext, RetirementHold, RoundPlan, RoundRun } from "./types";
 import { type StoredAgentRound } from "./store";
 
 /** Reads of the chain before a mismatch is reported as one. */
@@ -260,9 +260,23 @@ async function settleRound(ctx: FlowContext, plan: RoundPlan, progress: RunProgr
   const seizures: TransferOutcome[] = [];
   const refills: TransferOutcome[] = [];
   const replacements: RoundRun["replacements"] = [];
+  const held: RoundRun["held"] = [];
   if (bankEnabled() && bank) {
     const ceilingWei = CREDIT_TERMS.debtCeilingStakes * plan.stakeWei;
     const denied = new Set(plan.deniedCredit);
+    // A retirement empties a seat and the operator fills it again. Both
+    // halves or neither: a seat emptied with nothing to refill it seats an
+    // agent that is short the moment it sits down, and the next round
+    // retires that one too. That loop retired eighty nine thousand agents on
+    // Base Sepolia before anybody noticed. So what the operator can send is
+    // read once here and spent down as seats are refilled, and a retirement
+    // it cannot pay for in full is held rather than carried out.
+    const refillWei = seatRefillWei(plan.stakeWei);
+    const operatorHeldWei = operator ? await ctx.bankroll.get(operator) : 0n;
+    let spareWei = operatorHeldWei > ctx.chain.gasReserveWei ? operatorHeldWei - ctx.chain.gasReserveWei : 0n;
+    const nowMs = Date.now();
+    const cap = retirementsPerHour();
+    let retiredThisHour = ctx.wreckStore.countSince(nowMs - RETIREMENT_WINDOW_MS);
     for (const snapshot of plan.snapshots) {
       const walletId = snapshot.profile.id;
       const identityId = ctx.debts.currentIdentity(walletId);
@@ -272,6 +286,21 @@ async function settleRound(ctx: FlowContext, plan: RoundPlan, progress: RunProgr
       const trigger: WreckTrigger | null =
         totalOwed(owed) > ceilingWei ? "debt above the ceiling" : denied.has(walletId) && balanceWei < plan.stakeWei + ctx.chain.gasReserveWei ? "broke and denied credit" : null;
       if (trigger === null) continue;
+
+      const why = retirementHeld({
+        hasOperator: Boolean(operator),
+        spareWei,
+        refillWei,
+        retiredThisHour,
+        cap,
+        playedSince: () => playedSinceLastRetirement(ctx, plan, walletId, nowMs),
+      });
+      if (why !== null) {
+        held.push({ walletId, name: snapshot.profile.name, trigger, why });
+        log.warn("retirement held", { roundId: plan.roundId, agentId: walletId, trigger, why });
+        continue;
+      }
+      retiredThisHour += 1;
 
       // The bank takes what is there and writes off the rest. It can never
       // take more than is owed: seizing beyond the debt would be taking money
@@ -345,22 +374,15 @@ async function settleRound(ctx: FlowContext, plan: RoundPlan, progress: RunProgr
 
       // Funded from operator capital, never from an agent's playing balance
       // and never out of the prize pool. A seat with nobody solvent in it is
-      // not a seat.
+      // not a seat. Always the whole refill: the gate above has already made
+      // sure the operator can send it, and a part refill is a seat that is
+      // short again by the next round.
       if (operator) {
-        const seatWei = plan.stakeWei * BigInt(CHIPS_PER_FUNDED_WALLET) / BigInt(toChips(plan.stakeWei) || 1);
-        const operatorWei = await ctx.bankroll.get(operator);
-        // Same rule as the seizure: the operator pays its own gas, so it can
-        // only send what it holds above the reserve.
-        const sendableWei = operatorWei > ctx.chain.gasReserveWei ? operatorWei - ctx.chain.gasReserveWei : 0n;
-        const fundingWei = sendableWei >= seatWei ? seatWei : sendableWei;
-        if (fundingWei > 0n) {
-          const seat = ctx.wallets.agents.get(walletId)!;
-          arrival.outcome = await refillSeat(transferCtx, plan.roundId, walletId, operator, seat, fundingWei);
-          arrival.fundedWei = fundingWei;
-          refills.push(arrival.outcome);
-        } else {
-          log.warn("no operator capital to refill a seat", { roundId: plan.roundId, agentId: walletId });
-        }
+        const seat = ctx.wallets.agents.get(walletId)!;
+        arrival.outcome = await refillSeat(transferCtx, plan.roundId, walletId, operator, seat, refillWei);
+        arrival.fundedWei = refillWei;
+        refills.push(arrival.outcome);
+        spareWei -= refillWei;
       }
       replacements.push(arrival);
       log.info("seat refilled", { roundId: plan.roundId, walletId, identityId: nextIdentityId, name: arrival.name, fundedWei: arrival.fundedWei.toString() });
@@ -565,7 +587,54 @@ async function settleRound(ctx: FlowContext, plan: RoundPlan, progress: RunProgr
     payoutMinorUnits: fromWei(prizeWei),
   });
 
-  return { plan, round, entries, loans, interest, repayment, wrecks, seizures, replacements, payout, retained, prize, rolloverInWei, reconciliation };
+  return { plan, round, entries, loans, interest, repayment, wrecks, seizures, replacements, held, payout, retained, prize, rolloverInWei, reconciliation };
 }
 
 export { heuristicDecision };
+
+/**
+ * Whether a retirement must wait, and why, or null when it may go ahead.
+ *
+ * In order of what an operator can do about it: there is no operator wallet
+ * at all, the operator cannot send a whole refill, the hour has retired as
+ * many agents as it may, or this seat was emptied within the hour and the
+ * agent sat in it has not played a round since. The last is the loop itself,
+ * caught by its shape rather than by its cause: a seat should never be
+ * emptied twice by the same hour unless somebody actually played in it.
+ *
+ * playedSince is a function so the round store is only read when the cheaper
+ * reasons have all said yes.
+ */
+export function retirementHeld(gate: {
+  hasOperator: boolean;
+  spareWei: bigint;
+  refillWei: bigint;
+  retiredThisHour: number;
+  cap: number;
+  playedSince: () => boolean;
+}): RetirementHold | null {
+  if (!gate.hasOperator) return "no operator";
+  if (gate.spareWei < gate.refillWei) return "operator short";
+  if (gate.retiredThisHour >= gate.cap) return "limit";
+  if (!gate.playedSince()) return "cycle";
+  return null;
+}
+
+/**
+ * Whether the agent in this seat has played since the seat was last emptied.
+ *
+ * True when the seat has not been emptied within the hour, which is the only
+ * window the guard cares about. Otherwise true only if this seat entered a
+ * round after the one that emptied it, this round included: this round is not
+ * in the round store yet, because the store is written after the wrecks.
+ */
+function playedSinceLastRetirement(ctx: FlowContext, plan: RoundPlan, walletId: string, nowMs: number): boolean {
+  const last = ctx.wreckStore.lastFor(walletId);
+  if (last === null) return true;
+  if (nowMs - Date.parse(last.at) >= RETIREMENT_WINDOW_MS) return true;
+  if (plan.entering.some((e) => e.agentId === walletId)) return true;
+  const rounds = ctx.store.all();
+  const at = rounds.findIndex((r) => r.roundId === last.roundId);
+  const after = at >= 0 ? rounds.slice(at + 1) : rounds;
+  return after.some((r) => r.roundId !== plan.roundId && r.agents.some((a) => a.agentId === walletId && a.entered));
+}

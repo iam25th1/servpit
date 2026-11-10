@@ -155,6 +155,9 @@ export function requestPull(state: ArenaStateLike, input: PullInput, deps: PullD
   }
 
   if (roundInFlight(state)) return { ok: false, status: 409, message: "A round is already running. This one plays out first." };
+  // A held pit cannot pay for a round, so an ask would sit in the queue
+  // spending this browser's allowance on a round that is not coming.
+  if (state.hold) return { ok: false, status: 409, message: state.hold.kind === "funds" ? "The pit is paused: it is out of funds. It plays again on its own once it is topped up." : "The pit is paused: it has retired as many agents as an hour allows. It plays again on its own once the hour has room." };
 
   const asked = deps.store.request(handle, hash);
   if (asked.outcome === "handle taken") return { ok: false, status: 409, message: "That handle belongs to another browser. Pick another one." };
