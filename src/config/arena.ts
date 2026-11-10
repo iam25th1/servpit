@@ -48,3 +48,26 @@ export function roundIntervalSeconds(env: NodeJS.ProcessEnv = process.env): numb
  * effect before the next round rather than during one.
  */
 export const PAUSE_FILE = "arena-paused";
+
+/**
+ * How often a pit that is out of funds looks again, in seconds.
+ *
+ * Ten minutes by default. A pit that cannot fund a round plays nothing, so
+ * there is nothing to watch for and no reason to ask the chain every few
+ * seconds; ten minutes is soon enough that a top up is noticed within one
+ * coffee, and rare enough that a pit left broke overnight makes a few dozen
+ * balance reads rather than thousands.
+ */
+export const DEFAULT_FUNDS_CHECK_SECONDS = 600;
+export const MIN_FUNDS_CHECK_SECONDS = 10;
+export const MAX_FUNDS_CHECK_SECONDS = 24 * 3_600;
+
+export function fundsCheckSeconds(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = env.SERVPIT_FUNDS_CHECK_SECONDS?.trim();
+  if (raw === undefined || raw.length === 0) return DEFAULT_FUNDS_CHECK_SECONDS;
+  const seconds = Number(raw);
+  if (!Number.isInteger(seconds) || seconds < MIN_FUNDS_CHECK_SECONDS || seconds > MAX_FUNDS_CHECK_SECONDS) {
+    throw new RangeError(`SERVPIT_FUNDS_CHECK_SECONDS must be a whole number of seconds between ${MIN_FUNDS_CHECK_SECONDS} and ${MAX_FUNDS_CHECK_SECONDS}, got ${raw}`);
+  }
+  return seconds;
+}

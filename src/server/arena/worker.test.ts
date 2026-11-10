@@ -11,7 +11,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { ArenaStore } from "./state";
-import { fundsCheck, roundReasons, runArenaLoop } from "./worker";
+import { fundingCheck } from "./funding";
+import { roundReasons, runArenaLoop } from "./worker";
 import type { ServerContext } from "../context";
 
 let dir: string;
@@ -121,15 +122,15 @@ describe("resting rather than overspending", () => {
   });
 
   it("rests when the pot holds less than the prize it is carrying", async () => {
-    const check = await fundsCheck(context({ potWei: 50n, reserveWei: 10n, carriedWei: 100n }));
+    const check = await fundingCheck(context({ potWei: 50n, reserveWei: 10n, carriedWei: 100n }));
     expect(check.ok).toBe(false);
-    if (check.ok) return;
-    expect(check.reason).toMatch(/less than the prize it carries/);
+    expect(check.reason).toMatch(/the pot is out of funds/);
   });
 
-  it("plays on an empty bank, because that is a lender saying no rather than a round that cannot finish", async () => {
-    const check = await fundsCheck(context({ potWei: 500n, reserveWei: 10n, carriedWei: 0n, bankWei: 0n }));
-    expect(check.ok).toBe(true);
+  it("holds on an empty bank, because every short agent it refused would be retired", async () => {
+    const check = await fundingCheck(context({ potWei: 500n, reserveWei: 10n, carriedWei: 0n, bankWei: 0n }));
+    expect(check.ok).toBe(false);
+    expect(check.reason).toMatch(/the bank is out of funds/);
   });
 });
 

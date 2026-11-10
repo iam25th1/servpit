@@ -88,3 +88,14 @@ export function toChipsUp(wei: bigint, env: NodeJS.ProcessEnv = process.env): nu
   if (per <= 0n || wei <= 0n) return 0;
   return Number((wei + per - 1n) / per);
 }
+
+/**
+ * What the operator sends a seat it refills: a freshly funded wallet's worth.
+ *
+ * From the round's own stake rather than from the funding target, so the
+ * figure the settle sends and the figure the funding check asks for are one
+ * calculation and can never disagree.
+ */
+export function seatRefillWei(stakeWei: bigint, env: NodeJS.ProcessEnv = process.env): bigint {
+  return (stakeWei * BigInt(CHIPS_PER_FUNDED_WALLET)) / BigInt(toChips(stakeWei, env) || 1);
+}
