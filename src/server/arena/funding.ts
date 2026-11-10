@@ -17,7 +17,7 @@
 // them cannot cover its part. Nothing here moves money or writes a store:
 // it reads balances and says what it found.
 
-import { bankEnabled, maxLoanStakes, maxStakeMultiple } from "@/config/economy";
+import { RETIREMENT_WINDOW_MS, bankEnabled, maxLoanStakes, maxStakeMultiple, retirementsPerHour } from "@/config/economy";
 import { seatRefillWei, stakeWeiFrom, toChips, toChipsUp } from "@/config/stake";
 import type { ServerContext } from "../context";
 import type { ArenaFunds, ArenaHoldKind, ArenaWalletFunds } from "./state";
@@ -31,7 +31,9 @@ export interface FundingReport extends ArenaFunds {
 }
 
 /** The parts of a context the check reads. A test can hand it just these. */
-export type FundingContext = Pick<ServerContext, "chain" | "wallets" | "bankroll"> & { flow: Pick<ServerContext["flow"], "rollover"> };
+export type FundingContext = Pick<ServerContext, "chain" | "wallets" | "bankroll"> & {
+  flow: Pick<ServerContext["flow"], "rollover"> & Partial<Pick<ServerContext["flow"], "wreckStore">>;
+};
 
 /**
  * Whether this pit lends at all.
@@ -100,6 +102,11 @@ export function outOfFundsReason(short: string[]): string {
   return `The pit is paused because ${who} ${verb} out of funds. It starts again on its own once ${them} topped up.`;
 }
 
+/** The sentence on the paused screen when the hour has retired all it may. */
+export function retirementLimitReason(lastHour: number, cap: number): string {
+  return `The pit is paused because it retired ${lastHour} agents in the last hour, and ${cap} is its limit. It starts again on its own once the hour has room.`;
+}
+
 /**
  * Reads the three wallets and says whether a round can be paid for.
  *
@@ -117,15 +124,22 @@ export async function fundingCheck(ctx: FundingContext, now: number = Date.now()
   const bank = lending && ctx.wallets.bank ? walletFunds(await ctx.bankroll.get(ctx.wallets.bank), bankNeedsWei(stakeWei, reserveWei)) : null;
   const operator = lending && ctx.wallets.operator ? walletFunds(await ctx.bankroll.get(ctx.wallets.operator), operatorNeedsWei(stakeWei, reserveWei)) : null;
 
+  // The hour's retirements, from the graveyard. A pit that is retiring
+  // agents faster than any honest run of luck would is a pit in a loop,
+  // whatever its balances say, and it stops until the hour has room.
+  const retirements = lending && ctx.flow.wreckStore ? { lastHour: ctx.flow.wreckStore.countSince(now - RETIREMENT_WINDOW_MS), cap: retirementsPerHour() } : undefined;
+  const capped = retirements !== undefined && retirements.lastHour >= retirements.cap;
+
   const short = [...(bank && !bank.ok ? ["the bank"] : []), ...(operator && !operator.ok ? ["the operator"] : []), ...(!pot.ok ? ["the pot"] : [])];
-  const ok = short.length === 0;
+  const ok = short.length === 0 && !capped;
   return {
     checkedAt: new Date(now).toISOString(),
     ok,
     pot,
     bank,
     operator,
-    reason: ok ? null : outOfFundsReason(short),
-    holdKind: ok ? null : "funds",
+    ...(retirements ? { retirements } : {}),
+    reason: short.length > 0 ? outOfFundsReason(short) : capped ? retirementLimitReason(retirements.lastHour, retirements.cap) : null,
+    holdKind: short.length > 0 ? "funds" : capped ? "retirements" : null,
   };
 }

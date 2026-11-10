@@ -91,6 +91,22 @@ export class WreckStore {
     return [...this.records];
   }
 
+  /** How many agents were retired at or after this moment, in epoch ms. */
+  countSince(sinceMs: number): number {
+    this.sync.read();
+    return this.records.filter((r) => Date.parse(r.at) >= sinceMs).length;
+  }
+
+  /** The most recent retirement from this seat, or null when it has had none. */
+  lastFor(walletId: string): WreckRecord | null {
+    this.sync.read();
+    let last: WreckRecord | null = null;
+    for (const r of this.records) {
+      if (r.walletId === walletId && (last === null || Date.parse(r.at) >= Date.parse(last.at))) last = r;
+    }
+    return last;
+  }
+
   /** How many times this seat has been emptied, which sets the next identity. */
   countFor(walletId: string): number {
     this.sync.read();

@@ -218,3 +218,26 @@ export function economyConfig(stakeWei: bigint, overrides: Partial<EconomyConfig
     ...overrides,
   };
 }
+
+/**
+ * The most agents the pit may retire in an hour, and the hour it counts over.
+ *
+ * Twelve by default. Six seats, each of which may honestly go under once in
+ * an hour on a bad run, is six; twice that is room for a rough hour without
+ * being room for a loop. The busiest honest day on Base Sepolia retired a
+ * hundred agents, about four an hour, and the loop this guards against
+ * retired a hundred an hour. Hitting it holds the pit until the hour has
+ * room again.
+ */
+export const DEFAULT_RETIREMENTS_PER_HOUR = 12;
+export const RETIREMENT_WINDOW_MS = 60 * 60 * 1000;
+
+export function retirementsPerHour(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = env.SERVPIT_RETIREMENTS_PER_HOUR?.trim();
+  if (raw === undefined || raw.length === 0) return DEFAULT_RETIREMENTS_PER_HOUR;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < 1 || value > 1_000) {
+    throw new RangeError(`SERVPIT_RETIREMENTS_PER_HOUR must be a whole number between 1 and 1000, got ${raw}`);
+  }
+  return value;
+}
