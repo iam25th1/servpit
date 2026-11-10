@@ -24,6 +24,7 @@
     "loadtest": "tsx scripts/loadtest.ts",
     "stats": "tsx scripts/stats.ts",
     "backfill-summaries": "tsx scripts/backfill-summaries.ts",
+    "compact-graveyard": "tsx scripts/compact-graveyard.ts",
     "generate-wallets": "tsx scripts/generate-wallets.ts",
     "fund-wallets": "tsx scripts/fund-wallets.ts"
   },

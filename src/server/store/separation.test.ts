@@ -1,6 +1,6 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { TransferLedger } from "../ledger";
 import { WalletRegistry } from "../wallets/registry";
@@ -50,7 +50,9 @@ describe("a store belongs to one chain", () => {
   it("stamps what it writes", () => {
     const file = path("wrecks.json");
     new WreckStore(file, "fake").save(wreck("flint"));
-    expect(JSON.parse(readFileSync(file, "utf8")).network).toBe("fake");
+    // One line per retirement now, and the first line is the stamp.
+    const head = JSON.parse(readFileSync(path("wrecks.ndjson"), "utf8").split("\n")[0]) as { k: string; network: string };
+    expect(head).toMatchObject({ k: "head", network: "fake" });
   });
 
   it("refuses to read another chain's graveyard", () => {
@@ -99,19 +101,20 @@ describe("a store belongs to one chain", () => {
   });
 
   it("adopts a file written before the stamp, so no existing data is lost", () => {
-    const file = path("wrecks.json");
-    new WreckStore(file, "fake").save(wreck("flint"));
-    // What an older build left behind: the same body without a network.
-    const body = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
-    delete body.network;
+    // What an older build left behind: one body, rewritten whole, without a
+    // network in it.
     const legacy = path("legacy.json");
-    new WreckStore(legacy, "fake");
-    rmSync(legacy, { force: true });
-    writeFileSync(legacy, JSON.stringify(body));
+    mkdirSync(dirname(legacy), { recursive: true });
+    writeFileSync(legacy, JSON.stringify({ version: 1, wrecks: [wreck("flint")] }));
+    const before = readFileSync(legacy, "utf8");
 
     const adopted = new WreckStore(legacy, "base-sepolia");
     expect(adopted.all()).toHaveLength(1);
     adopted.save(wreck("ember"));
-    expect(JSON.parse(readFileSync(legacy, "utf8")).network).toBe("base-sepolia");
+    expect(adopted.all().map((w) => w.walletId)).toEqual(["flint", "ember"]);
+    // The new line is stamped, and the old file is read rather than rewritten.
+    const head = JSON.parse(readFileSync(path("legacy.ndjson"), "utf8").split("\n")[0]) as { network: string };
+    expect(head.network).toBe("base-sepolia");
+    expect(readFileSync(legacy, "utf8")).toBe(before);
   });
 });

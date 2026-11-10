@@ -93,7 +93,7 @@ export interface StoredRound {
   loans?: StoredLoanDecision[];
 }
 
-const MAX_ROUNDS = 200;
+export const MAX_ROUNDS = 200;
 
 export class RoundStore {
   private rounds: StoredRound[] = [];

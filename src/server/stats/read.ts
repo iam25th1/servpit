@@ -15,6 +15,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { readGraveyard } from "../round/graveyard";
 
 /** The network the live pit plays on, and what the report defaults to. */
 export const LIVE_NETWORK = "base-sepolia";
@@ -200,6 +201,20 @@ export interface ArenaRoundLike {
 /** One line per record, with a line cut in half by a crash skipped. */
 export type LogLine = Record<string, unknown> & { k?: string };
 
+/**
+ * Every retirement, across the old single file and the rotated ones.
+ *
+ * Null when there is none of them, or when they will not read, which is the
+ * same absent-not-empty rule every other store here follows.
+ */
+function readWrecks(path: string, network: string): WreckRow[] | null {
+  try {
+    return readGraveyard(path, network) as unknown as WreckRow[] | null;
+  } catch {
+    return null;
+  }
+}
+
 function readJson(path: string): unknown {
   if (!existsSync(path)) return null;
   try {
@@ -244,7 +259,7 @@ export function loadStores(dataDir: string, network: string): Stores {
     dataDir,
     rounds: rowsOf<RoundRow>(readJson(paths.rounds), "rounds"),
     transfers: ledger === null ? null : Object.values(ledger),
-    wrecks: rowsOf<WreckRow>(readJson(paths.wrecks), "wrecks"),
+    wrecks: readWrecks(paths.wrecks, network),
     debts: mapOf<DebtRow>(readJson(paths.debts), "debts"),
     rollover: readJson(paths.rollover) as { rolloverWei?: string } | null,
     arena: readJson(paths.arena) as ArenaFile | null,
